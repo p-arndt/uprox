@@ -11,6 +11,17 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Gauge from '@lucide/svelte/icons/gauge';
+	import Wallet from '@lucide/svelte/icons/wallet';
+	import DatabaseZap from '@lucide/svelte/icons/database-zap';
+
+	const fmtBudget = (daily: string | number, monthly: string | number) => {
+		const d = Number(daily);
+		const m = Number(monthly);
+		const parts: string[] = [];
+		if (d > 0) parts.push(`$${d}/day`);
+		if (m > 0) parts.push(`$${m}/mo`);
+		return parts.length ? parts.join(' · ') : 'No budget';
+	};
 
 	let { data, form } = $props();
 	let open = $state(false);
@@ -93,6 +104,40 @@
 						/>
 						<p class="text-xs text-muted-foreground">0 = unlimited.</p>
 					</div>
+					<div class="grid grid-cols-2 gap-4">
+						<div class="space-y-2">
+							<Label for="dailyBudgetUsd">Daily budget (USD)</Label>
+							<Input
+								id="dailyBudgetUsd"
+								name="dailyBudgetUsd"
+								type="number"
+								min="0"
+								step="0.01"
+								value="0"
+							/>
+						</div>
+						<div class="space-y-2">
+							<Label for="monthlyBudgetUsd">Monthly budget (USD)</Label>
+							<Input
+								id="monthlyBudgetUsd"
+								name="monthlyBudgetUsd"
+								type="number"
+								min="0"
+								step="0.01"
+								value="0"
+							/>
+						</div>
+					</div>
+					<p class="-mt-2 text-xs text-muted-foreground">
+						Per-service spend ceilings (UTC windows). 0 = unlimited.
+					</p>
+					<div class="space-y-2">
+						<Label for="cacheTtlSeconds">Cache TTL (seconds)</Label>
+						<Input id="cacheTtlSeconds" name="cacheTtlSeconds" type="number" min="0" value="0" />
+						<p class="text-xs text-muted-foreground">
+							Exact-match cache for non-streaming chat/embeddings. 0 = disabled.
+						</p>
+					</div>
 					<Dialog.Footer>
 						<Button type="submit">Create policy</Button>
 					</Dialog.Footer>
@@ -161,9 +206,21 @@
 								</div>
 							{/if}
 						</div>
-						<div class="flex items-center gap-1.5 text-xs text-muted-foreground">
-							<Gauge class="size-3.5" />
-							{p.rateLimitPerMinute === 0 ? 'Unlimited' : `${p.rateLimitPerMinute} req/min`}
+						<div
+							class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground"
+						>
+							<span class="flex items-center gap-1.5">
+								<Gauge class="size-3.5" />
+								{p.rateLimitPerMinute === 0 ? 'Unlimited' : `${p.rateLimitPerMinute} req/min`}
+							</span>
+							<span class="flex items-center gap-1.5">
+								<Wallet class="size-3.5" />
+								{fmtBudget(p.dailyBudgetUsd, p.monthlyBudgetUsd)}
+							</span>
+							<span class="flex items-center gap-1.5">
+								<DatabaseZap class="size-3.5" />
+								{p.cacheTtlSeconds === 0 ? 'No cache' : `Cache ${p.cacheTtlSeconds}s`}
+							</span>
 						</div>
 					</Card.Content>
 				</Card.Root>

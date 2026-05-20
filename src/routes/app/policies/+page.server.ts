@@ -29,7 +29,10 @@ export const actions: Actions = {
 			name,
 			allowedProviders,
 			allowedModels,
-			rateLimitPerMinute: Number(data.get('rateLimitPerMinute')) || 0
+			rateLimitPerMinute: Number(data.get('rateLimitPerMinute')) || 0,
+			dailyBudgetUsd: Number(data.get('dailyBudgetUsd')) || 0,
+			monthlyBudgetUsd: Number(data.get('monthlyBudgetUsd')) || 0,
+			cacheTtlSeconds: Number(data.get('cacheTtlSeconds')) || 0
 		});
 		return { success: true };
 	},

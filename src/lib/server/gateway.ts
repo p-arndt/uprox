@@ -13,6 +13,9 @@ import {
 	type ProviderDef
 } from '$lib/server/providers';
 import { audit } from '$lib/server/audit';
+import { checkRateLimit } from '$lib/server/ratelimit';
+import { checkBudget } from '$lib/server/budget';
+import { cacheKeyFor, getCached, putCached } from '$lib/server/cache';
 
 /** OpenAI-style error envelope, so OpenAI SDK clients parse it correctly. */
 export function gatewayError(status: number, message: string, type = 'invalid_request_error') {
@@ -23,25 +26,35 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 	return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+interface DrainedSse {
+	usage: { input?: number; output?: number } | null;
+	/** the verbatim SSE body, reassembled — used to cache a streamed response */
+	raw: string;
+	/** false if the stream errored/aborted before completing (don't cache) */
+	complete: boolean;
+}
+
 /**
- * Drain an SSE response stream and return the last token usage it reports.
+ * Drain an SSE response stream: capture the last token usage it reports and
+ * accumulate the raw body so a streamed response can be cached and replayed.
  * Handles both the chat/completions shape (`{ usage: {...} }` on a trailing
  * chunk) and the Responses API shape (`{ response: { usage: {...} } }`).
  */
-async function readSseUsage(
-	stream: ReadableStream<Uint8Array>
-): Promise<{ input?: number; output?: number } | null> {
+async function readSseUsage(stream: ReadableStream<Uint8Array>): Promise<DrainedSse> {
 	const reader = stream.getReader();
 	const decoder = new TextDecoder();
 	let buffer = '';
+	let raw = '';
 	let usage: { input?: number; output?: number } | null = null;
+	let complete = false;
 
 	const take = (line: string) => {
 		const data = line.slice(5).trim(); // strip "data:"
 		if (!data || data === '[DONE]') return;
 		try {
 			const obj = JSON.parse(data) as Record<string, unknown>;
-			const u = (isRecord(obj.usage) && obj.usage) ||
+			const u =
+				(isRecord(obj.usage) && obj.usage) ||
 				(isRecord(obj.response) && isRecord(obj.response.usage) && obj.response.usage);
 			if (u) {
 				const rec = u as Record<string, unknown>;
@@ -58,7 +71,9 @@ async function readSseUsage(
 		for (;;) {
 			const { done, value } = await reader.read();
 			if (done) break;
-			buffer += decoder.decode(value, { stream: true });
+			const chunk = decoder.decode(value, { stream: true });
+			raw += chunk;
+			buffer += chunk;
 			let nl: number;
 			while ((nl = buffer.indexOf('\n')) !== -1) {
 				const line = buffer.slice(0, nl);
@@ -67,12 +82,13 @@ async function readSseUsage(
 			}
 		}
 		if (buffer.startsWith('data:')) take(buffer);
+		complete = true;
 	} catch {
-		// stream aborted; return whatever usage we saw (likely null)
+		// stream aborted; return whatever we saw and mark it incomplete
 	} finally {
 		reader.releaseLock();
 	}
-	return usage;
+	return { usage, raw, complete };
 }
 
 /** Pull the bearer token out of the Authorization header. */
@@ -194,6 +210,101 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		return gatewayError(403, `Request denied by policy: ${decision.reason}`, 'permission_error');
 	}
 
+	// rate limiting (in-memory, per token) — protects the gateway and upstream
+	// from runaway callers before we do any I/O.
+	const rl = checkRateLimit(token.tokenId, token.policy?.rateLimitPerMinute ?? 0);
+	if (!rl.ok) {
+		await audit({
+			organizationId: token.organizationId,
+			action: 'policy.deny',
+			status: 'deny',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: 429,
+			ip,
+			detail: `rate limit exceeded (${rl.limit}/min)`
+		});
+		return new Response(
+			JSON.stringify({
+				error: {
+					message: `Rate limit exceeded: ${rl.limit} requests/min`,
+					type: 'rate_limit_error',
+					code: null,
+					param: null
+				}
+			}),
+			{
+				status: 429,
+				headers: {
+					'content-type': 'application/json',
+					'retry-after': String(rl.retryAfter ?? 1)
+				}
+			}
+		);
+	}
+
+	// exact-match cache: opt-in per policy, non-streaming chat/embeddings only.
+	// A hit replays the stored upstream response for free — no key, no upstream
+	// call, no spend — so we check it before the budget gate.
+	// Streaming responses are cacheable too: we buffer the SSE body below and
+	// replay it verbatim on a hit. The cache key includes the request's `stream`
+	// flag, so a streamed request only ever matches a stored SSE body and a
+	// buffered request only matches stored JSON — formats never cross.
+	const cacheTtl = token.policy?.cacheTtlSeconds ?? 0;
+	const cacheable = (scope === 'chat' || scope === 'embeddings') && cacheTtl > 0;
+	const cacheKey = cacheable ? cacheKeyFor(provider.id, path, body) : null;
+	if (cacheKey) {
+		const hit = await getCached(token.organizationId, cacheKey);
+		if (hit) {
+			await audit({
+				organizationId: token.organizationId,
+				action: `gateway.${scope}`,
+				status: 'ok',
+				serviceId: token.serviceId,
+				tokenId: token.tokenId,
+				provider: provider.id,
+				model,
+				statusCode: hit.statusCode,
+				costUsd: 0,
+				latencyMs: Date.now() - started,
+				ip,
+				detail: stream ? 'cache hit (stream)' : 'cache hit'
+			});
+			return new Response(hit.response, {
+				status: hit.statusCode,
+				headers: stream
+					? {
+							'content-type': 'text/event-stream',
+							'cache-control': 'no-cache',
+							'x-uprox-cache': 'HIT'
+						}
+					: { 'content-type': 'application/json', 'x-uprox-cache': 'HIT' }
+			});
+		}
+	}
+
+	// budget enforcement: per-service daily/monthly spend ceilings from the policy.
+	if (token.policy) {
+		const budget = await checkBudget(token.serviceId, token.policy);
+		if (!budget.ok) {
+			await audit({
+				organizationId: token.organizationId,
+				action: 'policy.deny',
+				status: 'deny',
+				serviceId: token.serviceId,
+				tokenId: token.tokenId,
+				provider: provider.id,
+				model,
+				statusCode: 402,
+				ip,
+				detail: budget.reason
+			});
+			return gatewayError(402, `Request denied: ${budget.reason}`, 'insufficient_quota');
+		}
+	}
+
 	// upstream credentials
 	const apiKey = await loadProviderKey(token.organizationId, provider.id);
 	if (!apiKey) {
@@ -259,11 +370,9 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	if (stream && upstream.ok && upstream.body) {
 		const [clientBranch, costBranch] = upstream.body.tee();
 		void (async () => {
-			const usage = await readSseUsage(costBranch);
+			const { usage, raw, complete } = await readSseUsage(costBranch);
 			const { estimateCostUsd } = await import('$lib/server/providers');
-			const cost = usage
-				? estimateCostUsd(model, usage.input, usage.output)
-				: null;
+			const cost = usage ? estimateCostUsd(model, usage.input, usage.output) : null;
 			await audit({
 				organizationId: token.organizationId,
 				action: `gateway.${scope}`,
@@ -278,12 +387,25 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 				ip,
 				detail: 'stream'
 			});
+			// only cache a stream that finished cleanly — never a truncated one
+			if (cacheKey && complete && raw) {
+				await putCached({
+					organizationId: token.organizationId,
+					cacheKey,
+					provider: provider.id,
+					model,
+					statusCode: upstream.status,
+					response: raw,
+					ttlSeconds: cacheTtl
+				});
+			}
 		})();
 		return new Response(clientBranch, {
 			status: upstream.status,
 			headers: {
 				'content-type': upstream.headers.get('content-type') ?? 'text/event-stream',
-				'cache-control': 'no-cache'
+				'cache-control': 'no-cache',
+				...(cacheKey ? { 'x-uprox-cache': 'MISS' } : {})
 			}
 		});
 	}
@@ -324,9 +446,25 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		ip
 	});
 
+	// populate the cache on a successful, cacheable response
+	if (cacheKey && upstream.ok) {
+		await putCached({
+			organizationId: token.organizationId,
+			cacheKey,
+			provider: provider.id,
+			model,
+			statusCode: upstream.status,
+			response: text,
+			ttlSeconds: cacheTtl
+		});
+	}
+
 	return new Response(text, {
 		status: upstream.status,
-		headers: { 'content-type': 'application/json' }
+		headers: {
+			'content-type': 'application/json',
+			...(cacheKey ? { 'x-uprox-cache': 'MISS' } : {})
+		}
 	});
 }
 

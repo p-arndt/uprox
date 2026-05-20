@@ -125,9 +125,48 @@ export const policy = pgTable(
 			.default(sql`'{}'::text[]`),
 		// requests per minute, 0 = unlimited
 		rateLimitPerMinute: integer('rate_limit_per_minute').notNull().default(0),
+		// spend ceilings in USD over a rolling window, summed per service. 0 = unlimited.
+		dailyBudgetUsd: numeric('daily_budget_usd', { precision: 12, scale: 4 }).notNull().default('0'),
+		monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 4 })
+			.notNull()
+			.default('0'),
+		// exact-match response cache TTL in seconds. 0 = caching disabled.
+		cacheTtlSeconds: integer('cache_ttl_seconds').notNull().default(0),
 		createdAt: timestamp('created_at').defaultNow().notNull()
 	},
 	(t) => [index('policy_org_idx').on(t.organizationId)]
+);
+
+/**
+ * Exact-match response cache. Keyed by a hash of (provider, path, normalized
+ * request body); shared per organization so identical requests from any of an
+ * org's services hit the same entry. Only successful, non-streaming responses
+ * are cached, and only when the request's policy opts in via cacheTtlSeconds.
+ */
+export const responseCache = pgTable(
+	'response_cache',
+	{
+		id: text('id')
+			.primaryKey()
+			.$defaultFn(() => crypto.randomUUID()),
+		organizationId: text('organization_id')
+			.notNull()
+			.references(() => organization.id, { onDelete: 'cascade' }),
+		// sha256 of provider + path + canonical-JSON body
+		cacheKey: text('cache_key').notNull(),
+		provider: text('provider').notNull(),
+		model: text('model'),
+		statusCode: integer('status_code').notNull(),
+		// the verbatim upstream JSON body to replay
+		response: text('response').notNull(),
+		hits: integer('hits').notNull().default(0),
+		createdAt: timestamp('created_at').defaultNow().notNull(),
+		expiresAt: timestamp('expires_at').notNull()
+	},
+	(t) => [
+		uniqueIndex('response_cache_org_key_uidx').on(t.organizationId, t.cacheKey),
+		index('response_cache_expires_idx').on(t.expiresAt)
+	]
 );
 
 /**

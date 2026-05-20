@@ -211,6 +211,9 @@ export async function createPolicy(
 		allowedProviders?: string[];
 		allowedModels?: string[];
 		rateLimitPerMinute?: number;
+		dailyBudgetUsd?: number;
+		monthlyBudgetUsd?: number;
+		cacheTtlSeconds?: number;
 	}
 ) {
 	const [row] = await db
@@ -220,7 +223,10 @@ export async function createPolicy(
 			name: input.name,
 			allowedProviders: input.allowedProviders ?? [],
 			allowedModels: input.allowedModels ?? [],
-			rateLimitPerMinute: input.rateLimitPerMinute ?? 0
+			rateLimitPerMinute: input.rateLimitPerMinute ?? 0,
+			dailyBudgetUsd: String(input.dailyBudgetUsd ?? 0),
+			monthlyBudgetUsd: String(input.monthlyBudgetUsd ?? 0),
+			cacheTtlSeconds: input.cacheTtlSeconds ?? 0
 		})
 		.returning();
 	return row;
@@ -234,11 +240,20 @@ export async function updatePolicy(
 		allowedProviders?: string[];
 		allowedModels?: string[];
 		rateLimitPerMinute?: number;
+		dailyBudgetUsd?: number;
+		monthlyBudgetUsd?: number;
+		cacheTtlSeconds?: number;
 	}
 ) {
+	// numeric columns round-trip as strings in drizzle/pg
+	const { dailyBudgetUsd, monthlyBudgetUsd, ...rest } = patch;
 	const [row] = await db
 		.update(policy)
-		.set(patch)
+		.set({
+			...rest,
+			...(dailyBudgetUsd !== undefined ? { dailyBudgetUsd: String(dailyBudgetUsd) } : {}),
+			...(monthlyBudgetUsd !== undefined ? { monthlyBudgetUsd: String(monthlyBudgetUsd) } : {})
+		})
 		.where(and(eq(policy.id, id), eq(policy.organizationId, orgId)))
 		.returning();
 	return row ?? null;

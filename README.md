@@ -37,10 +37,33 @@ Agent/App  --(Bearer uprox_live_…)-->  /v1/chat/completions
    1. resolve token  (sha256 lookup, check revoked/expired)
    2. route by model (gpt-* → openai, claude-* → anthropic)
    3. enforce policy (scopes, allowed providers, allowed models)
-   4. load + decrypt the org's upstream provider key
-   5. proxy to the provider (streaming passthrough supported)
-   6. write an audit log entry (status, cost, latency)
+   4. rate limit     (per-token req/min ceiling → 429 + Retry-After)
+   5. cache lookup   (exact-match hit replays the stored response for free)
+   6. budget check   (per-service daily/monthly spend ceiling → 402)
+   7. load + decrypt the org's upstream provider key
+   8. proxy to the provider (streaming passthrough supported)
+   9. write an audit log entry (status, cost, latency) + cache the response
 ```
+
+### Policy controls
+
+A policy attaches to a service and enforces, in addition to allowed
+providers/models:
+
+- **Rate limit** — requests/min per token (in-memory sliding window; `0` =
+  unlimited). Over the limit returns `429` with a `Retry-After` header.
+- **Budgets** — daily and monthly USD spend ceilings, summed per service from
+  the audit log over UTC windows (`0` = unlimited). Exhausted returns `402`
+  with `type: insufficient_quota`.
+- **Cache** — exact-match response cache for chat/embeddings, opt-in via a TTL
+  in seconds (`0` = disabled). Identical requests across an org's services
+  replay the stored upstream response at zero cost; responses carry an
+  `x-uprox-cache: HIT|MISS` header. **Streaming is cached too**: the SSE body is
+  buffered as it streams to the client (only if it completes cleanly) and
+  replayed verbatim as `text/event-stream` on a hit — the `stream` flag is part
+  of the cache key, so streamed and buffered variants never cross. Exact-match
+  only — it keys on a canonicalized request body and never matches paraphrased
+  prompts; responses above ~1 MB are not cached.
 
 ### Security model
 
