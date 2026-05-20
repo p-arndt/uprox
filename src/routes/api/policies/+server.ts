@@ -19,7 +19,8 @@ export const POST: RequestHandler = async (event) => {
 		rateLimitPerMinute: Number(body.rateLimitPerMinute) || 0,
 		dailyBudgetUsd: Number(body.dailyBudgetUsd) || 0,
 		monthlyBudgetUsd: Number(body.monthlyBudgetUsd) || 0,
-		cacheTtlSeconds: Number(body.cacheTtlSeconds) || 0
+		// null/absent = inherit the org default; a number overrides it
+		cacheTtlSeconds: body.cacheTtlSeconds == null ? null : Number(body.cacheTtlSeconds) || 0
 	});
 	return json(row, { status: 201 });
 };

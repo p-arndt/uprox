@@ -10,6 +10,7 @@
 	import Activity from '@lucide/svelte/icons/activity';
 	import ShieldX from '@lucide/svelte/icons/shield-x';
 	import DollarSign from '@lucide/svelte/icons/dollar-sign';
+	import DatabaseZap from '@lucide/svelte/icons/database-zap';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 
 	let { data } = $props();
@@ -47,16 +48,33 @@
 	</div>
 
 	<div class="grid gap-4 lg:grid-cols-3">
-		<Card.Root class="lg:col-span-1">
-			<Card.Header class="flex flex-row items-center justify-between space-y-0 pb-2">
-				<Card.Title class="text-sm font-medium text-muted-foreground">Estimated spend</Card.Title>
-				<DollarSign class="size-4 text-muted-foreground" />
-			</Card.Header>
-			<Card.Content>
-				<div class="text-3xl font-semibold tabular-nums">{formatUsd(data.stats.costUsd)}</div>
-				<p class="mt-1 text-xs text-muted-foreground">Across all proxied requests</p>
-			</Card.Content>
-		</Card.Root>
+		<div class="space-y-4 lg:col-span-1">
+			<Card.Root>
+				<Card.Header class="flex flex-row items-center justify-between space-y-0 pb-2">
+					<Card.Title class="text-sm font-medium text-muted-foreground">Estimated spend</Card.Title>
+					<DollarSign class="size-4 text-muted-foreground" />
+				</Card.Header>
+				<Card.Content>
+					<div class="text-3xl font-semibold tabular-nums">{formatUsd(data.stats.costUsd)}</div>
+					<p class="mt-1 text-xs text-muted-foreground">Across all proxied requests</p>
+				</Card.Content>
+			</Card.Root>
+
+			<Card.Root>
+				<Card.Header class="flex flex-row items-center justify-between space-y-0 pb-2">
+					<Card.Title class="text-sm font-medium text-muted-foreground">Cache hit rate</Card.Title>
+					<DatabaseZap class="size-4 text-muted-foreground" />
+				</Card.Header>
+				<Card.Content>
+					<div class="text-3xl font-semibold tabular-nums">
+						{(data.stats.cacheHitRate * 100).toFixed(1)}%
+					</div>
+					<p class="mt-1 text-xs text-muted-foreground">
+						{data.stats.cacheHits} hits · {formatUsd(data.stats.cacheSavedUsd)} saved
+					</p>
+				</Card.Content>
+			</Card.Root>
+		</div>
 
 		<Card.Root class="lg:col-span-2">
 			<Card.Header class="flex flex-row items-center justify-between">

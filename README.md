@@ -55,15 +55,22 @@ providers/models:
 - **Budgets** — daily and monthly USD spend ceilings, summed per service from
   the audit log over UTC windows (`0` = unlimited). Exhausted returns `402`
   with `type: insufficient_quota`.
-- **Cache** — exact-match response cache for chat/embeddings, opt-in via a TTL
-  in seconds (`0` = disabled). Identical requests across an org's services
-  replay the stored upstream response at zero cost; responses carry an
-  `x-uprox-cache: HIT|MISS` header. **Streaming is cached too**: the SSE body is
-  buffered as it streams to the client (only if it completes cleanly) and
-  replayed verbatim as `text/event-stream` on a hit — the `stream` flag is part
-  of the cache key, so streamed and buffered variants never cross. Exact-match
-  only — it keys on a canonicalized request body and never matches paraphrased
-  prompts; responses above ~1 MB are not cached.
+- **Cache** — exact-match response cache for chat, embeddings, and the
+  Responses API. Unlike the access
+  controls above, caching is an **org-wide setting** (Settings → Response cache,
+  a default TTL in seconds; `0` = off) and applies to every service, with or
+  without a policy. A policy's `cacheTtlSeconds` *overrides* the org default when
+  set: blank = inherit, `0` = force off, `>0` = override the TTL. Identical
+  requests across an org's services replay the stored upstream response at zero
+  cost; responses carry an `x-uprox-cache: HIT|MISS` header. **Streaming is
+  cached too**: the SSE body is buffered as it streams to the client (only if it
+  completes cleanly) and replayed verbatim as `text/event-stream` on a hit — the
+  `stream` flag is part of the cache key, so streamed and buffered variants never
+  cross. Exact-match only — it keys on a canonicalized request body and never
+  matches paraphrased prompts; responses above ~1 MB are not cached. Output-
+  irrelevant fields (`user`, `metadata`, `store`) are stripped from the key so
+  they don't cause spurious misses, and a Responses API call with `store: false`
+  is never cached (its `id` isn't persisted upstream to replay against).
 
 ### Security model
 

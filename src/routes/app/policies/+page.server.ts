@@ -25,6 +25,9 @@ export const actions: Actions = {
 			.map((m) => m.trim())
 			.filter(Boolean);
 
+		// blank cache field = inherit the org default (null); a number overrides it
+		const rawCache = data.get('cacheTtlSeconds')?.toString().trim() ?? '';
+
 		await createPolicy(organizationId, {
 			name,
 			allowedProviders,
@@ -32,7 +35,7 @@ export const actions: Actions = {
 			rateLimitPerMinute: Number(data.get('rateLimitPerMinute')) || 0,
 			dailyBudgetUsd: Number(data.get('dailyBudgetUsd')) || 0,
 			monthlyBudgetUsd: Number(data.get('monthlyBudgetUsd')) || 0,
-			cacheTtlSeconds: Number(data.get('cacheTtlSeconds')) || 0
+			cacheTtlSeconds: rawCache === '' ? null : Number(rawCache) || 0
 		});
 		return { success: true };
 	},

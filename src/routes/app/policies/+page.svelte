@@ -133,9 +133,15 @@
 					</p>
 					<div class="space-y-2">
 						<Label for="cacheTtlSeconds">Cache TTL (seconds)</Label>
-						<Input id="cacheTtlSeconds" name="cacheTtlSeconds" type="number" min="0" value="0" />
+						<Input
+							id="cacheTtlSeconds"
+							name="cacheTtlSeconds"
+							type="number"
+							min="0"
+							placeholder="inherit org default"
+						/>
 						<p class="text-xs text-muted-foreground">
-							Exact-match cache for non-streaming chat/embeddings. 0 = disabled.
+							Overrides the org-wide cache setting. Blank = inherit, 0 = force off, &gt;0 = TTL.
 						</p>
 					</div>
 					<Dialog.Footer>
@@ -219,7 +225,11 @@
 							</span>
 							<span class="flex items-center gap-1.5">
 								<DatabaseZap class="size-3.5" />
-								{p.cacheTtlSeconds === 0 ? 'No cache' : `Cache ${p.cacheTtlSeconds}s`}
+								{p.cacheTtlSeconds == null
+									? 'Cache: inherit'
+									: p.cacheTtlSeconds === 0
+										? 'Cache: off'
+										: `Cache ${p.cacheTtlSeconds}s`}
 							</span>
 						</div>
 					</Card.Content>

@@ -15,6 +15,20 @@
       "when": 1779315143456,
       "tag": "0001_handy_wallop",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779315889440,
+      "tag": "0002_new_lake",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1779316480367,
+      "tag": "0003_abnormal_sinister_six",
+      "breakpoints": true
     }
   ]
 }

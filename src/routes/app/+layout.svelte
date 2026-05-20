@@ -13,6 +13,7 @@
 	import Plug from '@lucide/svelte/icons/plug';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
 	import ShieldHalf from '@lucide/svelte/icons/shield-half';
+	import Settings from '@lucide/svelte/icons/settings';
 	import LogOut from '@lucide/svelte/icons/log-out';
 
 	let { data, children } = $props();
@@ -23,7 +24,8 @@
 		{ href: '/app/tokens', label: 'Machine Tokens', icon: KeyRound },
 		{ href: '/app/providers', label: 'Providers', icon: Plug },
 		{ href: '/app/policies', label: 'Policies', icon: ShieldHalf },
-		{ href: '/app/audit', label: 'Audit Log', icon: ScrollText }
+		{ href: '/app/audit', label: 'Audit Log', icon: ScrollText },
+		{ href: '/app/settings', label: 'Settings', icon: Settings }
 	];
 
 	function isActive(href: string, exact?: boolean) {

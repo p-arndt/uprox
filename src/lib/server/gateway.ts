@@ -245,15 +245,27 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		);
 	}
 
-	// exact-match cache: opt-in per policy, non-streaming chat/embeddings only.
+	// exact-match cache: applies to chat, embeddings, and the Responses API.
 	// A hit replays the stored upstream response for free — no key, no upstream
 	// call, no spend — so we check it before the budget gate.
 	// Streaming responses are cacheable too: we buffer the SSE body below and
 	// replay it verbatim on a hit. The cache key includes the request's `stream`
 	// flag, so a streamed request only ever matches a stored SSE body and a
 	// buffered request only matches stored JSON — formats never cross.
-	const cacheTtl = token.policy?.cacheTtlSeconds ?? 0;
-	const cacheable = (scope === 'chat' || scope === 'embeddings') && cacheTtl > 0;
+	// caching is an org-wide optimization, not access control: it applies even
+	// to services with no policy. A policy's cacheTtlSeconds, when set (non-null),
+	// overrides the org default — including 0 to explicitly opt a policy out.
+	// Note on the Responses API: a multi-turn call carries `previous_response_id`,
+	// which differs every turn, so its body never collides with another turn —
+	// only a byte-identical request is ever served from cache.
+	const cacheTtl = token.policy?.cacheTtlSeconds ?? token.orgCacheTtlSeconds;
+	// A Responses API call with store:false isn't persisted by OpenAI, so its
+	// returned `id` can't be referenced later — don't cache/replay one.
+	const responsesStoreOff = scope === 'responses' && isRecord(body) && body.store === false;
+	const cacheable =
+		(scope === 'chat' || scope === 'embeddings' || scope === 'responses') &&
+		cacheTtl > 0 &&
+		!responsesStoreOff;
 	const cacheKey = cacheable ? cacheKeyFor(provider.id, path, body) : null;
 	if (cacheKey) {
 		const hit = await getCached(token.organizationId, cacheKey);
@@ -268,6 +280,8 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 				model,
 				statusCode: hit.statusCode,
 				costUsd: 0,
+				// exact savings: what this request would have cost upstream
+				savedUsd: hit.costUsd,
 				latencyMs: Date.now() - started,
 				ip,
 				detail: stream ? 'cache hit (stream)' : 'cache hit'
@@ -396,6 +410,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 					model,
 					statusCode: upstream.status,
 					response: raw,
+					costUsd: cost,
 					ttlSeconds: cacheTtl
 				});
 			}
@@ -455,6 +470,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 			model,
 			statusCode: upstream.status,
 			response: text,
+			costUsd: cost,
 			ttlSeconds: cacheTtl
 		});
 	}

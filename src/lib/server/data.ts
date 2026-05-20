@@ -1,6 +1,13 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { service, machineToken, providerSecret, policy, auditLog } from '$lib/server/db/schema';
+import {
+	service,
+	machineToken,
+	providerSecret,
+	policy,
+	auditLog,
+	orgSettings
+} from '$lib/server/db/schema';
 import { encrypt } from '$lib/server/crypto';
 import { issueToken } from '$lib/server/tokens';
 import { audit } from '$lib/server/audit';
@@ -213,7 +220,8 @@ export async function createPolicy(
 		rateLimitPerMinute?: number;
 		dailyBudgetUsd?: number;
 		monthlyBudgetUsd?: number;
-		cacheTtlSeconds?: number;
+		// null = inherit org default, 0 = off, >0 = override
+		cacheTtlSeconds?: number | null;
 	}
 ) {
 	const [row] = await db
@@ -226,7 +234,7 @@ export async function createPolicy(
 			rateLimitPerMinute: input.rateLimitPerMinute ?? 0,
 			dailyBudgetUsd: String(input.dailyBudgetUsd ?? 0),
 			monthlyBudgetUsd: String(input.monthlyBudgetUsd ?? 0),
-			cacheTtlSeconds: input.cacheTtlSeconds ?? 0
+			cacheTtlSeconds: input.cacheTtlSeconds ?? null
 		})
 		.returning();
 	return row;
@@ -242,7 +250,7 @@ export async function updatePolicy(
 		rateLimitPerMinute?: number;
 		dailyBudgetUsd?: number;
 		monthlyBudgetUsd?: number;
-		cacheTtlSeconds?: number;
+		cacheTtlSeconds?: number | null;
 	}
 ) {
 	// numeric columns round-trip as strings in drizzle/pg
@@ -261,6 +269,30 @@ export async function updatePolicy(
 
 export async function deletePolicy(orgId: string, id: string) {
 	await db.delete(policy).where(and(eq(policy.id, id), eq(policy.organizationId, orgId)));
+}
+
+/* -------------------------------- org settings ---------------------------------- */
+
+/** Read an org's settings, falling back to defaults when no row exists yet. */
+export async function getOrgSettings(orgId: string): Promise<{ cacheTtlSeconds: number }> {
+	const [row] = await db
+		.select()
+		.from(orgSettings)
+		.where(eq(orgSettings.organizationId, orgId))
+		.limit(1);
+	return { cacheTtlSeconds: row?.cacheTtlSeconds ?? 0 };
+}
+
+/** Upsert an org's gateway settings. */
+export async function updateOrgSettings(orgId: string, input: { cacheTtlSeconds: number }) {
+	const cacheTtlSeconds = Math.max(0, Math.floor(input.cacheTtlSeconds) || 0);
+	await db
+		.insert(orgSettings)
+		.values({ organizationId: orgId, cacheTtlSeconds })
+		.onConflictDoUpdate({
+			target: orgSettings.organizationId,
+			set: { cacheTtlSeconds }
+		});
 }
 
 /* ------------------------------------ audit ------------------------------------- */
@@ -306,16 +338,28 @@ export async function orgStats(orgId: string) {
 		.select({
 			total: sql<number>`count(*)`,
 			cost: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)`,
-			denied: sql<number>`count(*) filter (where ${auditLog.status} = 'deny')`
+			denied: sql<number>`count(*) filter (where ${auditLog.status} = 'deny')`,
+			// cache hits log detail 'cache hit' / 'cache hit (stream)' at cost 0
+			cacheHits: sql<number>`count(*) filter (where ${auditLog.detail} like 'cache hit%')`,
+			// exact savings: each hit recorded the cached entry's original cost
+			cacheSaved: sql<string>`coalesce(sum(${auditLog.savedUsd}), 0)`
 		})
 		.from(auditLog)
 		.where(and(eq(auditLog.organizationId, orgId), sql`${auditLog.action} like 'gateway.%'`));
 
+	const cacheHits = Number(reqs?.cacheHits ?? 0);
+	const total = Number(reqs?.total ?? 0);
+
 	return {
 		services: Number(counts?.services ?? 0),
 		activeTokens: Number(tokenCount?.active ?? 0),
-		requests: Number(reqs?.total ?? 0),
+		requests: total,
 		denied: Number(reqs?.denied ?? 0),
-		costUsd: Number(reqs?.cost ?? 0)
+		costUsd: Number(reqs?.cost ?? 0),
+		cacheHits,
+		// share of all gateway requests served from cache (0–1)
+		cacheHitRate: total > 0 ? cacheHits / total : 0,
+		// exact: sum of each hit's recorded saved amount
+		cacheSavedUsd: Number(reqs?.cacheSaved ?? 0)
 	};
 }

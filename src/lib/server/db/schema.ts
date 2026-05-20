@@ -130,8 +130,9 @@ export const policy = pgTable(
 		monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 4 })
 			.notNull()
 			.default('0'),
-		// exact-match response cache TTL in seconds. 0 = caching disabled.
-		cacheTtlSeconds: integer('cache_ttl_seconds').notNull().default(0),
+		// exact-match cache TTL override, in seconds. NULL = inherit the org
+		// default; 0 = explicitly disabled; >0 = override the org default.
+		cacheTtlSeconds: integer('cache_ttl_seconds'),
 		createdAt: timestamp('created_at').defaultNow().notNull()
 	},
 	(t) => [index('policy_org_idx').on(t.organizationId)]
@@ -159,6 +160,9 @@ export const responseCache = pgTable(
 		statusCode: integer('status_code').notNull(),
 		// the verbatim upstream JSON body to replay
 		response: text('response').notNull(),
+		// the cost the original (miss) response was billed at — replayed as the
+		// exact amount saved on each subsequent hit
+		costUsd: numeric('cost_usd', { precision: 12, scale: 6 }),
 		hits: integer('hits').notNull().default(0),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
 		expiresAt: timestamp('expires_at').notNull()
@@ -168,6 +172,25 @@ export const responseCache = pgTable(
 		index('response_cache_expires_idx').on(t.expiresAt)
 	]
 );
+
+/**
+ * Org-wide gateway settings (one row per organization). Holds optimization
+ * knobs that aren't access control — currently the default response-cache TTL,
+ * which applies to every service unless a policy overrides it. Kept in an
+ * app-owned table (not on the better-auth `organization` table, which is
+ * generated and would clobber hand-added columns on regeneration).
+ */
+export const orgSettings = pgTable('org_settings', {
+	organizationId: text('organization_id')
+		.primaryKey()
+		.references(() => organization.id, { onDelete: 'cascade' }),
+	// default exact-match cache TTL in seconds for the whole org. 0 = off.
+	cacheTtlSeconds: integer('cache_ttl_seconds').notNull().default(0),
+	updatedAt: timestamp('updated_at')
+		.defaultNow()
+		.$onUpdate(() => new Date())
+		.notNull()
+});
 
 /**
  * Append-only audit trail of every gateway request and admin action.
@@ -191,6 +214,8 @@ export const auditLog = pgTable(
 		status: text('status').notNull(),
 		statusCode: integer('status_code'),
 		costUsd: numeric('cost_usd', { precision: 12, scale: 6 }),
+		// for cache hits: the exact amount saved (the cached entry's original cost)
+		savedUsd: numeric('saved_usd', { precision: 12, scale: 6 }),
 		latencyMs: integer('latency_ms'),
 		ip: text('ip'),
 		detail: text('detail'),

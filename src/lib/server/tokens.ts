@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { machineToken, service, policy } from '$lib/server/db/schema';
+import { machineToken, service, policy, orgSettings } from '$lib/server/db/schema';
 import { sha256 } from '$lib/server/crypto';
 
 export const TOKEN_PREFIX = 'uprox_live_';
@@ -36,6 +36,8 @@ export interface ResolvedToken {
 	serviceName: string;
 	scopes: string[];
 	policy: typeof policy.$inferSelect | null;
+	/** org-wide default cache TTL (seconds); policy.cacheTtlSeconds overrides it */
+	orgCacheTtlSeconds: number;
 }
 
 /**
@@ -51,11 +53,13 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 		.select({
 			token: machineToken,
 			service: service,
-			policy: policy
+			policy: policy,
+			orgSettings: orgSettings
 		})
 		.from(machineToken)
 		.innerJoin(service, eq(service.id, machineToken.serviceId))
 		.leftJoin(policy, eq(policy.id, service.policyId))
+		.leftJoin(orgSettings, eq(orgSettings.organizationId, machineToken.organizationId))
 		.where(and(eq(machineToken.hashedToken, hashed), isNull(machineToken.revokedAt)))
 		.limit(1);
 
@@ -79,6 +83,7 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 		serviceId: row.service.id,
 		serviceName: row.service.name,
 		scopes: row.token.scopes ?? [],
-		policy: row.policy
+		policy: row.policy,
+		orgCacheTtlSeconds: row.orgSettings?.cacheTtlSeconds ?? 0
 	};
 }

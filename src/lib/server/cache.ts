@@ -1,7 +1,8 @@
 /**
- * Exact-match response cache for the gateway. Caching is opt-in per policy
- * (`cacheTtlSeconds > 0`) and only applies to deterministic-by-default,
- * non-streaming endpoints (chat completions, embeddings). Entries are scoped
+ * Exact-match response cache for the gateway. Caching is enabled by a non-zero
+ * TTL (org-wide default, overridable per policy) and applies to chat
+ * completions, embeddings, and the Responses API — streamed or buffered.
+ * Entries are scoped
  * to an organization and keyed by a hash of the upstream target plus a
  * canonicalized request body, so byte-for-byte identical requests replay the
  * stored upstream response for free.
@@ -16,6 +17,15 @@ import { db } from '$lib/server/db';
 import { responseCache } from '$lib/server/db/schema';
 import { sha256 } from '$lib/server/crypto';
 
+/**
+ * Top-level request fields that don't affect the model's output, so they're
+ * dropped before hashing — two requests that differ only in these still share a
+ * cache entry. `user` is an end-user tag for abuse monitoring; `metadata` is
+ * arbitrary developer tagging on the Responses API; `store` only controls
+ * server-side persistence, not the content.
+ */
+const IGNORED_KEYS = new Set(['user', 'metadata', 'store']);
+
 /** Recursively sort object keys so semantically-equal bodies hash the same. */
 function canonicalize(value: unknown): unknown {
 	if (Array.isArray(value)) return value.map(canonicalize);
@@ -29,14 +39,22 @@ function canonicalize(value: unknown): unknown {
 	return value;
 }
 
-/** Build the cache key for a request. */
+/** Build the cache key for a request, ignoring output-irrelevant noise fields. */
 export function cacheKeyFor(provider: string, path: string, body: unknown): string {
-	return sha256(`${provider}\n${path}\n${JSON.stringify(canonicalize(body))}`);
+	let normalized = body;
+	if (body && typeof body === 'object' && !Array.isArray(body)) {
+		normalized = Object.fromEntries(
+			Object.entries(body as Record<string, unknown>).filter(([k]) => !IGNORED_KEYS.has(k))
+		);
+	}
+	return sha256(`${provider}\n${path}\n${JSON.stringify(canonicalize(normalized))}`);
 }
 
 export interface CachedResponse {
 	response: string;
 	statusCode: number;
+	/** what the original (miss) response was billed — the exact amount this hit saves */
+	costUsd: number | null;
 }
 
 /** Look up a live (unexpired) cache entry and bump its hit counter. */
@@ -45,7 +63,8 @@ export async function getCached(orgId: string, cacheKey: string): Promise<Cached
 		.select({
 			id: responseCache.id,
 			response: responseCache.response,
-			statusCode: responseCache.statusCode
+			statusCode: responseCache.statusCode,
+			costUsd: responseCache.costUsd
 		})
 		.from(responseCache)
 		.where(
@@ -65,7 +84,11 @@ export async function getCached(orgId: string, cacheKey: string): Promise<Cached
 		.where(eq(responseCache.id, row.id))
 		.catch(() => {});
 
-	return { response: row.response, statusCode: row.statusCode };
+	return {
+		response: row.response,
+		statusCode: row.statusCode,
+		costUsd: row.costUsd != null ? Number(row.costUsd) : null
+	};
 }
 
 /**
@@ -86,10 +109,13 @@ export async function putCached(opts: {
 	model: string | null;
 	statusCode: number;
 	response: string;
+	/** the cost this response was billed at, stored so each hit can report it as saved */
+	costUsd: number | null;
 	ttlSeconds: number;
 }): Promise<void> {
 	if (opts.response.length > MAX_CACHED_BYTES) return;
 	const expiresAt = new Date(Date.now() + opts.ttlSeconds * 1000);
+	const costUsd = opts.costUsd != null ? opts.costUsd.toFixed(6) : null;
 	try {
 		await db
 			.insert(responseCache)
@@ -100,12 +126,13 @@ export async function putCached(opts: {
 				model: opts.model,
 				statusCode: opts.statusCode,
 				response: opts.response,
+				costUsd,
 				hits: 0,
 				expiresAt
 			})
 			.onConflictDoUpdate({
 				target: [responseCache.organizationId, responseCache.cacheKey],
-				set: { response: opts.response, statusCode: opts.statusCode, expiresAt, hits: 0 }
+				set: { response: opts.response, statusCode: opts.statusCode, costUsd, expiresAt, hits: 0 }
 			});
 	} catch (err) {
 		console.error('[cache] failed to store entry', err);
