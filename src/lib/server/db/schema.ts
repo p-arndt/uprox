@@ -1,6 +1,7 @@
 import {
 	pgTable,
 	text,
+	uuid,
 	timestamp,
 	integer,
 	numeric,
@@ -17,17 +18,15 @@ import { organization, user } from './auth.schema';
 export const service = pgTable(
 	'service',
 	{
-		id: text('id')
-			.primaryKey()
-			.$defaultFn(() => crypto.randomUUID()),
-		organizationId: text('organization_id')
+		id: uuid('id').primaryKey().defaultRandom(),
+		organizationId: uuid('organization_id')
 			.notNull()
 			.references(() => organization.id, { onDelete: 'cascade' }),
 		name: text('name').notNull(),
 		// free-form classification e.g. "agent", "workload", "app"
 		type: text('type').notNull().default('app'),
 		description: text('description'),
-		policyId: text('policy_id').references(() => policy.id, { onDelete: 'set null' }),
+		policyId: uuid('policy_id').references(() => policy.id, { onDelete: 'set null' }),
 		createdAt: timestamp('created_at').defaultNow().notNull()
 	},
 	(t) => [index('service_org_idx').on(t.organizationId)]
@@ -40,13 +39,11 @@ export const service = pgTable(
 export const machineToken = pgTable(
 	'machine_token',
 	{
-		id: text('id')
-			.primaryKey()
-			.$defaultFn(() => crypto.randomUUID()),
-		organizationId: text('organization_id')
+		id: uuid('id').primaryKey().defaultRandom(),
+		organizationId: uuid('organization_id')
 			.notNull()
 			.references(() => organization.id, { onDelete: 'cascade' }),
-		serviceId: text('service_id')
+		serviceId: uuid('service_id')
 			.notNull()
 			.references(() => service.id, { onDelete: 'cascade' }),
 		name: text('name').notNull(),
@@ -61,7 +58,7 @@ export const machineToken = pgTable(
 		lastUsedAt: timestamp('last_used_at'),
 		expiresAt: timestamp('expires_at'),
 		revokedAt: timestamp('revoked_at'),
-		createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+		createdByUserId: uuid('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
 		createdAt: timestamp('created_at').defaultNow().notNull()
 	},
 	(t) => [
@@ -77,10 +74,8 @@ export const machineToken = pgTable(
 export const providerSecret = pgTable(
 	'provider_secret',
 	{
-		id: text('id')
-			.primaryKey()
-			.$defaultFn(() => crypto.randomUUID()),
-		organizationId: text('organization_id')
+		id: uuid('id').primaryKey().defaultRandom(),
+		organizationId: uuid('organization_id')
 			.notNull()
 			.references(() => organization.id, { onDelete: 'cascade' }),
 		// "openai" | "anthropic" | "azure" | …
@@ -90,11 +85,16 @@ export const providerSecret = pgTable(
 		// is per-organization (Azure OpenAI's resource endpoint); NULL otherwise,
 		// in which case the provider's static baseUrl is used.
 		baseUrl: text('base_url'),
+		// Routing priority among the org's providers that share a model namespace
+		// (OpenAI vs Azure both serve "gpt-*"). Higher wins; ties fall back to a
+		// fixed provider order. Default 0, so adding Azure doesn't displace an
+		// existing OpenAI secret unless its priority is raised. See resolveProvider.
+		priority: integer('priority').notNull().default(0),
 		// AES-256-GCM payload: iv:authTag:ciphertext (all base64)
 		encryptedSecret: text('encrypted_secret').notNull(),
 		// last 4 chars of the raw key, for display only
 		hint: text('hint'),
-		createdByUserId: text('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
+		createdByUserId: uuid('created_by_user_id').references(() => user.id, { onDelete: 'set null' }),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
 		updatedAt: timestamp('updated_at')
 			.defaultNow()
@@ -111,10 +111,8 @@ export const providerSecret = pgTable(
 export const policy = pgTable(
 	'policy',
 	{
-		id: text('id')
-			.primaryKey()
-			.$defaultFn(() => crypto.randomUUID()),
-		organizationId: text('organization_id')
+		id: uuid('id').primaryKey().defaultRandom(),
+		organizationId: uuid('organization_id')
 			.notNull()
 			.references(() => organization.id, { onDelete: 'cascade' }),
 		name: text('name').notNull(),
@@ -127,11 +125,8 @@ export const policy = pgTable(
 			.array()
 			.notNull()
 			.default(sql`'{}'::text[]`),
-		// Which OpenAI-compatible backend to use when the org has both OpenAI and
-		// Azure configured: a provider id ("openai" | "azure") that wins for models
-		// in the shared "gpt-*"/o-series namespace. NULL = no preference (defaults
-		// to provider declaration order, i.e. OpenAI). Only matters when both are
-		// configured; with one, that one is used. See resolveProvider.
+		// When OpenAI and Azure both serve a shared model namespace, this provider
+		// id wins for this policy's services. NULL = fall back to priority/order.
 		preferredProvider: text('preferred_provider'),
 		// requests per minute, 0 = unlimited
 		rateLimitPerMinute: integer('rate_limit_per_minute').notNull().default(0),
@@ -157,10 +152,8 @@ export const policy = pgTable(
 export const responseCache = pgTable(
 	'response_cache',
 	{
-		id: text('id')
-			.primaryKey()
-			.$defaultFn(() => crypto.randomUUID()),
-		organizationId: text('organization_id')
+		id: uuid('id').primaryKey().defaultRandom(),
+		organizationId: uuid('organization_id')
 			.notNull()
 			.references(() => organization.id, { onDelete: 'cascade' }),
 		// sha256 of provider + path + canonical-JSON body
@@ -191,7 +184,7 @@ export const responseCache = pgTable(
  * generated and would clobber hand-added columns on regeneration).
  */
 export const orgSettings = pgTable('org_settings', {
-	organizationId: text('organization_id')
+	organizationId: uuid('organization_id')
 		.primaryKey()
 		.references(() => organization.id, { onDelete: 'cascade' }),
 	// default exact-match cache TTL in seconds for the whole org. 0 = off.
@@ -218,11 +211,9 @@ export const orgSettings = pgTable('org_settings', {
 export const modelPrice = pgTable(
 	'model_price',
 	{
-		id: text('id')
-			.primaryKey()
-			.$defaultFn(() => crypto.randomUUID()),
+		id: uuid('id').primaryKey().defaultRandom(),
 		// NULL = platform default (shared by all orgs); set = org-specific price.
-		organizationId: text('organization_id').references(() => organization.id, {
+		organizationId: uuid('organization_id').references(() => organization.id, {
 			onDelete: 'cascade'
 		}),
 		// model name or longest-prefix key, matched like the legacy static map
@@ -258,14 +249,12 @@ export const modelPrice = pgTable(
 export const auditLog = pgTable(
 	'audit_log',
 	{
-		id: text('id')
-			.primaryKey()
-			.$defaultFn(() => crypto.randomUUID()),
-		organizationId: text('organization_id')
+		id: uuid('id').primaryKey().defaultRandom(),
+		organizationId: uuid('organization_id')
 			.notNull()
 			.references(() => organization.id, { onDelete: 'cascade' }),
-		serviceId: text('service_id').references(() => service.id, { onDelete: 'set null' }),
-		tokenId: text('token_id').references(() => machineToken.id, { onDelete: 'set null' }),
+		serviceId: uuid('service_id').references(() => service.id, { onDelete: 'set null' }),
+		tokenId: uuid('token_id').references(() => machineToken.id, { onDelete: 'set null' }),
 		// "gateway.chat", "gateway.models", "token.create", "policy.deny", …
 		action: text('action').notNull(),
 		provider: text('provider'),

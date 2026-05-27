@@ -1,1 +1,0 @@
-ALTER TABLE "policy" ADD COLUMN "preferred_provider" text;

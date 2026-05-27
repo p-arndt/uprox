@@ -1,8 +1,8 @@
 import { relations } from 'drizzle-orm';
-import { pgTable, text, timestamp, boolean, index, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, uuid, timestamp, boolean, index, uniqueIndex } from 'drizzle-orm/pg-core';
 
 export const user = pgTable('user', {
-	id: text('id').primaryKey(),
+	id: uuid('id').primaryKey().defaultRandom(),
 	name: text('name').notNull(),
 	email: text('email').notNull().unique(),
 	emailVerified: boolean('email_verified').default(false).notNull(),
@@ -17,7 +17,7 @@ export const user = pgTable('user', {
 export const session = pgTable(
 	'session',
 	{
-		id: text('id').primaryKey(),
+		id: uuid('id').primaryKey().defaultRandom(),
 		expiresAt: timestamp('expires_at').notNull(),
 		token: text('token').notNull().unique(),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -26,10 +26,10 @@ export const session = pgTable(
 			.notNull(),
 		ipAddress: text('ip_address'),
 		userAgent: text('user_agent'),
-		userId: text('user_id')
+		userId: uuid('user_id')
 			.notNull()
 			.references(() => user.id, { onDelete: 'cascade' }),
-		activeOrganizationId: text('active_organization_id')
+		activeOrganizationId: uuid('active_organization_id')
 	},
 	(table) => [index('session_userId_idx').on(table.userId)]
 );
@@ -37,10 +37,10 @@ export const session = pgTable(
 export const account = pgTable(
 	'account',
 	{
-		id: text('id').primaryKey(),
+		id: uuid('id').primaryKey().defaultRandom(),
 		accountId: text('account_id').notNull(),
 		providerId: text('provider_id').notNull(),
-		userId: text('user_id')
+		userId: uuid('user_id')
 			.notNull()
 			.references(() => user.id, { onDelete: 'cascade' }),
 		accessToken: text('access_token'),
@@ -61,7 +61,7 @@ export const account = pgTable(
 export const verification = pgTable(
 	'verification',
 	{
-		id: text('id').primaryKey(),
+		id: uuid('id').primaryKey().defaultRandom(),
 		identifier: text('identifier').notNull(),
 		value: text('value').notNull(),
 		expiresAt: timestamp('expires_at').notNull(),
@@ -77,7 +77,7 @@ export const verification = pgTable(
 export const organization = pgTable(
 	'organization',
 	{
-		id: text('id').primaryKey(),
+		id: uuid('id').primaryKey().defaultRandom(),
 		name: text('name').notNull(),
 		slug: text('slug').notNull().unique(),
 		logo: text('logo'),
@@ -90,11 +90,11 @@ export const organization = pgTable(
 export const member = pgTable(
 	'member',
 	{
-		id: text('id').primaryKey(),
-		organizationId: text('organization_id')
+		id: uuid('id').primaryKey().defaultRandom(),
+		organizationId: uuid('organization_id')
 			.notNull()
 			.references(() => organization.id, { onDelete: 'cascade' }),
-		userId: text('user_id')
+		userId: uuid('user_id')
 			.notNull()
 			.references(() => user.id, { onDelete: 'cascade' }),
 		role: text('role').default('member').notNull(),
@@ -109,8 +109,8 @@ export const member = pgTable(
 export const invitation = pgTable(
 	'invitation',
 	{
-		id: text('id').primaryKey(),
-		organizationId: text('organization_id')
+		id: uuid('id').primaryKey().defaultRandom(),
+		organizationId: uuid('organization_id')
 			.notNull()
 			.references(() => organization.id, { onDelete: 'cascade' }),
 		email: text('email').notNull(),
@@ -118,7 +118,7 @@ export const invitation = pgTable(
 		status: text('status').default('pending').notNull(),
 		expiresAt: timestamp('expires_at').notNull(),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
-		inviterId: text('inviter_id')
+		inviterId: uuid('inviter_id')
 			.notNull()
 			.references(() => user.id, { onDelete: 'cascade' })
 	},

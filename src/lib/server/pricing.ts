@@ -12,6 +12,7 @@ import { and, eq, isNotNull, isNull, or } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { modelPrice } from '$lib/server/db/schema';
 import { audit } from '$lib/server/audit';
+import { DEFAULT_MODEL_PRICES, providerForModel } from '$lib/server/providers';
 
 type PriceMap = Record<string, { in: number; out: number }>;
 
@@ -21,6 +22,25 @@ const cache = new Map<string, { map: PriceMap; expires: number }>();
 /** Drop an org's cached effective price map (call after any write). */
 export function invalidatePriceCache(orgId: string): void {
 	cache.delete(orgId);
+}
+
+/**
+ * Seed the platform-default prices (NULL-org rows) from the built-in list.
+ * Idempotent — existing defaults are left untouched — so it's safe to run on
+ * every server start. This is where the defaults live now (not in a migration).
+ */
+export async function seedDefaultModelPrices(): Promise<void> {
+	const rows = Object.entries(DEFAULT_MODEL_PRICES).map(([model, p]) => ({
+		organizationId: null,
+		model,
+		provider: providerForModel(model)?.id ?? null,
+		inputPerMtok: String(p.in),
+		outputPerMtok: String(p.out)
+	}));
+	if (rows.length === 0) return;
+	// ON CONFLICT DO NOTHING against the default partial unique index (model
+	// where org is null), so re-runs never duplicate or overwrite.
+	await db.insert(modelPrice).values(rows).onConflictDoNothing();
 }
 
 /** All rows visible to an org: platform defaults plus the org's own. */

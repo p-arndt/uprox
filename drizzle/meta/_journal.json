@@ -5,57 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1779309417555,
-      "tag": "0000_next_eternals",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1779315143456,
-      "tag": "0001_handy_wallop",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1779315889440,
-      "tag": "0002_new_lake",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1779316480367,
-      "tag": "0003_abnormal_sinister_six",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1779904469604,
-      "tag": "0004_azure_provider_endpoint",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1779905280087,
-      "tag": "0005_fuzzy_blue_blade",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1779906200777,
-      "tag": "0006_confused_the_liberteens",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1779909397622,
-      "tag": "0007_mature_freak",
+      "when": 1779909891089,
+      "tag": "0000_married_toad",
       "breakpoints": true
     }
   ]

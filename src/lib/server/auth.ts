@@ -6,7 +6,15 @@ import { env } from '$env/dynamic/private';
 import { getRequestEvent } from '$app/server';
 import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { member, organization as organizationTable } from '$lib/server/db/auth.schema';
+import {
+	user as authUser,
+	session as authSession,
+	account as authAccount,
+	verification as authVerification,
+	organization as organizationTable,
+	member,
+	invitation as authInvitation
+} from '$lib/server/db/auth.schema';
 
 /** Make a url-safe, reasonably unique slug from a seed. */
 function slugify(seed: string): string {
@@ -21,7 +29,25 @@ function slugify(seed: string): string {
 export const auth = betterAuth({
 	baseURL: env.ORIGIN,
 	secret: env.BETTER_AUTH_SECRET,
-	database: drizzleAdapter(db, { provider: 'pg' }),
+	// Let Postgres generate ids (uuid defaultRandom) instead of better-auth's
+	// string ids, so every table uses a native uuid primary key.
+	advanced: {
+		database: {
+			generateId: false
+		}
+	},
+	database: drizzleAdapter(db, {
+		provider: 'pg',
+		schema: {
+			user: authUser,
+			session: authSession,
+			account: authAccount,
+			verification: authVerification,
+			organization: organizationTable,
+			member,
+			invitation: authInvitation
+		}
+	}),
 	emailAndPassword: { enabled: true, autoSignIn: true },
 	databaseHooks: {
 		user: {
@@ -33,7 +59,6 @@ export const auth = betterAuth({
 					const [org] = await db
 						.insert(organizationTable)
 						.values({
-							id: crypto.randomUUID(),
 							name: orgName,
 							slug: slugify(createdUser.email.split('@')[0] ?? createdUser.name),
 							createdAt: new Date()
@@ -41,7 +66,6 @@ export const auth = betterAuth({
 						.returning();
 
 					await db.insert(member).values({
-						id: crypto.randomUUID(),
 						organizationId: org.id,
 						userId: createdUser.id,
 						role: 'owner',
