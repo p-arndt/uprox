@@ -255,15 +255,12 @@
 						<Table.Row class="group transition-colors hover:bg-accent/40">
 							<Table.Cell class="font-medium">{t.name}</Table.Cell>
 							<Table.Cell>
-								<button
-									type="button"
-									onclick={() => copy(t.display)}
-									title="Copy token prefix"
-									class="inline-flex items-center gap-1.5 rounded-md bg-muted/60 px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+								<span
+									title="Token prefix (the full token is shown only once at creation)"
+									class="inline-flex items-center rounded-md bg-muted/60 px-2 py-1 font-mono text-xs text-muted-foreground"
 								>
 									{t.display}
-									<Copy class="size-3 opacity-0 transition-opacity group-hover:opacity-100" />
-								</button>
+								</span>
 							</Table.Cell>
 							<Table.Cell class="text-muted-foreground">{t.serviceName}</Table.Cell>
 							<Table.Cell>
