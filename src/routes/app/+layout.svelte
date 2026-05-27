@@ -19,7 +19,6 @@
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
 	import Search from '@lucide/svelte/icons/search';
 	import Settings from '@lucide/svelte/icons/settings';
-	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import ShieldHalf from '@lucide/svelte/icons/shield-half';
 	import Users from '@lucide/svelte/icons/users';
 	import Sun from '@lucide/svelte/icons/sun';
@@ -95,10 +94,8 @@
 				<DropdownMenu.Trigger
 					class="flex w-full items-center gap-2 rounded-lg py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-sidebar-accent"
 				>
-					<div
-						class="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground"
-					>
-						<ShieldCheck class="size-5" />
+					<div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-white p-1">
+						<img src="/uprox-logo.png" alt="uprox" class="size-full object-contain" />
 					</div>
 					<div class="grid flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
 						<span class="truncate text-sm font-semibold">uprox</span>

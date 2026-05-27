@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/uprox-logo.png" alt="uprox" width="350"/>
+
 # uprox
 
 **One OpenAI-compatible endpoint for all your AI workloads — with auth, policy, and cost control built in.**
