@@ -3,11 +3,12 @@
 	import { invalidateAll } from '$app/navigation';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { NativeSelect } from '$lib/components/ui/native-select/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
 	import { can } from '$lib/permissions';
 	import ShieldHalf from '@lucide/svelte/icons/shield-half';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -28,6 +29,7 @@
 
 	let { data, form } = $props();
 	let open = $state(false);
+	let createPreferredProvider = $state('');
 	let editing = $state<{
 		id: string;
 		name: string;
@@ -45,6 +47,8 @@
 	const sharedNamespaceProviders = $derived(
 		data.providers.filter((p) => p.id === 'openai' || p.id === 'azure')
 	);
+	const preferredLabel = (id: string) =>
+		id ? (sharedNamespaceProviders.find((p) => p.id === id)?.label ?? id) : 'No preference';
 	const canManage = $derived(can(data.role, 'policies:manage', data.memberPermissions));
 
 	$effect(() => {
@@ -118,12 +122,17 @@
 					</div>
 					<div class="space-y-2">
 						<Label for="preferredProvider">Preferred OpenAI backend</Label>
-						<NativeSelect id="preferredProvider" name="preferredProvider" class="w-full">
-							<option value="">No preference</option>
-							{#each sharedNamespaceProviders as p (p.id)}
-								<option value={p.id}>{p.label}</option>
-							{/each}
-						</NativeSelect>
+						<Select.Root type="single" name="preferredProvider" bind:value={createPreferredProvider}>
+							<Select.Trigger id="preferredProvider" class="w-full"
+								>{preferredLabel(createPreferredProvider)}</Select.Trigger
+							>
+							<Select.Content>
+								<Select.Item value="" label="No preference">No preference</Select.Item>
+								{#each sharedNamespaceProviders as p (p.id)}
+									<Select.Item value={p.id} label={p.label}>{p.label}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 						<p class="text-xs text-muted-foreground">
 							When both OpenAI and Azure are configured, which one serves shared models (<code
 								>gpt-*</code
@@ -231,24 +240,45 @@
 							>
 								<Pencil class="size-4" />
 							</Button>
-							<form
-								method="post"
-								action="?/delete"
-								use:enhance={() =>
-									async ({ update }) =>
-										update()}
-							>
-								<input type="hidden" name="id" value={p.id} />
-								<Button
-									type="submit"
-									variant="ghost"
-									size="icon"
-									class="size-8 text-muted-foreground hover:text-destructive"
-									title="Delete policy"
-								>
-									<Trash2 class="size-4" />
-								</Button>
-							</form>
+							<AlertDialog.Root>
+								<AlertDialog.Trigger>
+									{#snippet child({ props })}
+										<Button
+											{...props}
+											variant="ghost"
+											size="icon"
+											class="size-8 text-muted-foreground hover:text-destructive"
+											title="Delete policy"
+										>
+											<Trash2 class="size-4" />
+										</Button>
+									{/snippet}
+								</AlertDialog.Trigger>
+								<AlertDialog.Content>
+									<AlertDialog.Header>
+										<AlertDialog.Title>Delete “{p.name}”?</AlertDialog.Title>
+										<AlertDialog.Description>
+											Services assigned to this policy will no longer be governed by it. This can't
+											be undone.
+										</AlertDialog.Description>
+									</AlertDialog.Header>
+									<AlertDialog.Footer>
+										<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+										<form
+											method="post"
+											action="?/delete"
+											use:enhance={() =>
+												async ({ update }) =>
+													update()}
+										>
+											<input type="hidden" name="id" value={p.id} />
+											<AlertDialog.Action type="submit" variant="destructive">
+												Delete policy
+											</AlertDialog.Action>
+										</form>
+									</AlertDialog.Footer>
+								</AlertDialog.Content>
+							</AlertDialog.Root>
 							</div>
 						{/if}
 					</Card.Header>
@@ -365,17 +395,17 @@
 				</div>
 				<div class="space-y-2">
 					<Label for="edit-preferredProvider">Preferred OpenAI backend</Label>
-					<NativeSelect
-						id="edit-preferredProvider"
-						name="preferredProvider"
-						class="w-full"
-						bind:value={editing.preferredProvider}
-					>
-						<option value="">No preference</option>
-						{#each sharedNamespaceProviders as p (p.id)}
-							<option value={p.id}>{p.label}</option>
-						{/each}
-					</NativeSelect>
+					<Select.Root type="single" name="preferredProvider" bind:value={editing.preferredProvider}>
+						<Select.Trigger id="edit-preferredProvider" class="w-full"
+							>{preferredLabel(editing?.preferredProvider ?? '')}</Select.Trigger
+						>
+						<Select.Content>
+							<Select.Item value="" label="No preference">No preference</Select.Item>
+							{#each sharedNamespaceProviders as p (p.id)}
+								<Select.Item value={p.id} label={p.label}>{p.label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 					<p class="text-xs text-muted-foreground">
 						When both OpenAI and Azure are configured, which one serves shared models (<code
 							>gpt-*</code

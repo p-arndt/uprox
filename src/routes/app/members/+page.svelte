@@ -4,11 +4,12 @@
 	import { toast } from 'svelte-sonner';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as Table from '$lib/components/ui/table/index.js';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { NativeSelect } from '$lib/components/ui/native-select/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
 	import { can } from '$lib/permissions';
 	import { formatDateTime } from '$lib/format';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -20,6 +21,22 @@
 
 	let { data, form } = $props();
 	let inviteOpen = $state(false);
+	let inviteRole = $state('member');
+
+	const roleOptions = [
+		{ value: 'member', label: 'Member' },
+		{ value: 'admin', label: 'Admin' }
+	];
+	const roleLabel = (r: string) => roleOptions.find((o) => o.value === r)?.label ?? r;
+
+	// The inline role select writes the new value into its hidden field, then
+	// submits the row form to persist the change.
+	function submitRole(formId: string, role: string) {
+		const form = document.getElementById(formId) as HTMLFormElement | null;
+		if (!form) return;
+		(form.elements.namedItem('role') as HTMLInputElement).value = role;
+		form.requestSubmit();
+	}
 
 	const canManage = $derived(can(data.role, 'members:manage', data.memberPermissions));
 
@@ -89,10 +106,14 @@
 						</div>
 						<div class="space-y-2">
 							<Label for="role">Role</Label>
-							<NativeSelect id="role" name="role" class="w-full">
-								<option value="member">Member</option>
-								<option value="admin">Admin</option>
-							</NativeSelect>
+							<Select.Root type="single" name="role" bind:value={inviteRole}>
+								<Select.Trigger id="role" class="w-full">{roleLabel(inviteRole)}</Select.Trigger>
+								<Select.Content>
+									{#each roleOptions as o (o.value)}
+										<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
 						</div>
 						{#if form?.message}
 							<p class="text-sm text-destructive">{form.message}</p>
@@ -132,20 +153,25 @@
 								<form
 									method="post"
 									action="?/changeRole"
+									id={`role-form-${m.id}`}
 									use:enhance={() =>
 										async ({ update }) =>
 											update()}
 								>
 									<input type="hidden" name="memberId" value={m.id} />
-									<NativeSelect
-										name="role"
+									<input type="hidden" name="role" value={m.role} />
+									<Select.Root
+										type="single"
 										value={m.role}
-										class="h-8 w-28"
-										onchange={(e) => e.currentTarget.form?.requestSubmit()}
+										onValueChange={(v) => submitRole(`role-form-${m.id}`, v)}
 									>
-										<option value="member">Member</option>
-										<option value="admin">Admin</option>
-									</NativeSelect>
+										<Select.Trigger class="h-8 w-28">{roleLabel(m.role)}</Select.Trigger>
+										<Select.Content>
+											{#each roleOptions as o (o.value)}
+												<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+											{/each}
+										</Select.Content>
+									</Select.Root>
 								</form>
 							{:else}
 								<Badge variant={roleVariant(m.role)}>{m.role}</Badge>
@@ -154,24 +180,45 @@
 						<Table.Cell class="text-muted-foreground">{formatDateTime(m.createdAt)}</Table.Cell>
 						<Table.Cell>
 							{#if canManage && !isSelf && m.role !== 'owner'}
-								<form
-									method="post"
-									action="?/remove"
-									use:enhance={() =>
-										async ({ update }) =>
-											update()}
-								>
-									<input type="hidden" name="memberIdOrEmail" value={m.id} />
-									<Button
-										type="submit"
-										variant="ghost"
-										size="icon"
-										class="size-8 text-muted-foreground hover:text-destructive"
-										title="Remove member"
-									>
-										<Trash2 class="size-4" />
-									</Button>
-								</form>
+								<AlertDialog.Root>
+									<AlertDialog.Trigger>
+										{#snippet child({ props })}
+											<Button
+												{...props}
+												variant="ghost"
+												size="icon"
+												class="size-8 text-muted-foreground hover:text-destructive"
+												title="Remove member"
+											>
+												<Trash2 class="size-4" />
+											</Button>
+										{/snippet}
+									</AlertDialog.Trigger>
+									<AlertDialog.Content>
+										<AlertDialog.Header>
+											<AlertDialog.Title>Remove {m.name}?</AlertDialog.Title>
+											<AlertDialog.Description>
+												They immediately lose access to this organization. You can re-invite them
+												later.
+											</AlertDialog.Description>
+										</AlertDialog.Header>
+										<AlertDialog.Footer>
+											<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+											<form
+												method="post"
+												action="?/remove"
+												use:enhance={() =>
+													async ({ update }) =>
+														update()}
+											>
+												<input type="hidden" name="memberIdOrEmail" value={m.id} />
+												<AlertDialog.Action type="submit" variant="destructive">
+													Remove member
+												</AlertDialog.Action>
+											</form>
+										</AlertDialog.Footer>
+									</AlertDialog.Content>
+								</AlertDialog.Root>
 							{/if}
 						</Table.Cell>
 					</Table.Row>
@@ -217,24 +264,45 @@
 											<Copy class="size-4" />
 										</Button>
 										{#if canManage}
-											<form
-												method="post"
-												action="?/revokeInvite"
-												use:enhance={() =>
-													async ({ update }) =>
-														update()}
-											>
-												<input type="hidden" name="invitationId" value={inv.id} />
-												<Button
-													type="submit"
-													variant="ghost"
-													size="icon"
-													class="size-8 text-muted-foreground hover:text-destructive"
-													title="Revoke invitation"
-												>
-													<Ban class="size-4" />
-												</Button>
-											</form>
+											<AlertDialog.Root>
+												<AlertDialog.Trigger>
+													{#snippet child({ props })}
+														<Button
+															{...props}
+															variant="ghost"
+															size="icon"
+															class="size-8 text-muted-foreground hover:text-destructive"
+															title="Revoke invitation"
+														>
+															<Ban class="size-4" />
+														</Button>
+													{/snippet}
+												</AlertDialog.Trigger>
+												<AlertDialog.Content>
+													<AlertDialog.Header>
+														<AlertDialog.Title>Revoke invitation?</AlertDialog.Title>
+														<AlertDialog.Description>
+															The invite link for {inv.email} stops working. You can send a new one
+															anytime.
+														</AlertDialog.Description>
+													</AlertDialog.Header>
+													<AlertDialog.Footer>
+														<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+														<form
+															method="post"
+															action="?/revokeInvite"
+															use:enhance={() =>
+																async ({ update }) =>
+																	update()}
+														>
+															<input type="hidden" name="invitationId" value={inv.id} />
+															<AlertDialog.Action type="submit" variant="destructive">
+																Revoke invite
+															</AlertDialog.Action>
+														</form>
+													</AlertDialog.Footer>
+												</AlertDialog.Content>
+											</AlertDialog.Root>
 										{/if}
 									</div>
 								</Table.Cell>

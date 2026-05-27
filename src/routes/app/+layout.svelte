@@ -22,6 +22,9 @@
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import ShieldHalf from '@lucide/svelte/icons/shield-half';
 	import Users from '@lucide/svelte/icons/users';
+	import Sun from '@lucide/svelte/icons/sun';
+	import Moon from '@lucide/svelte/icons/moon';
+	import { toggleMode } from 'mode-watcher';
 
 	let { data, children } = $props();
 
@@ -173,6 +176,17 @@
 					<span class="truncate text-sm font-medium">{data.user.name}</span>
 					<span class="truncate text-xs text-muted-foreground">{data.user.email}</span>
 				</div>
+				<Button
+					onclick={toggleMode}
+					variant="ghost"
+					size="icon"
+					class="size-8 group-data-[collapsible=icon]:hidden"
+					title="Toggle theme"
+				>
+					<Sun class="size-4 dark:hidden" />
+					<Moon class="hidden size-4 dark:block" />
+					<span class="sr-only">Toggle theme</span>
+				</Button>
 				<form method="post" action="/signout" class="group-data-[collapsible=icon]:hidden">
 					<Button type="submit" variant="ghost" size="icon" class="size-8" title="Sign out">
 						<LogOut class="size-4" />

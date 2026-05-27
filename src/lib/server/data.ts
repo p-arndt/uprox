@@ -392,6 +392,11 @@ export async function orgStats(orgId: string) {
 		.from(machineToken)
 		.where(eq(machineToken.organizationId, orgId));
 
+	const [providerCount] = await db
+		.select({ count: sql<number>`count(*)` })
+		.from(providerSecret)
+		.where(eq(providerSecret.organizationId, orgId));
+
 	const [reqs] = await db
 		.select({
 			total: sql<number>`count(*)`,
@@ -412,6 +417,7 @@ export async function orgStats(orgId: string) {
 
 	return {
 		services: Number(counts?.services ?? 0),
+		providers: Number(providerCount?.count ?? 0),
 		activeTokens: Number(tokenCount?.active ?? 0),
 		requests: total,
 		denied: Number(reqs?.denied ?? 0),

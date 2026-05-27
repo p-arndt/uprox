@@ -3,11 +3,12 @@
 	import { invalidateAll } from '$app/navigation';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as Table from '$lib/components/ui/table/index.js';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { NativeSelect } from '$lib/components/ui/native-select/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -17,6 +18,8 @@
 
 	let { data } = $props();
 	let open = $state(false);
+	let createType = $state('app');
+	let createPolicyId = $state('');
 	let editing = $state<{
 		id: string;
 		name: string;
@@ -26,6 +29,12 @@
 	} | null>(null);
 
 	const policyName = $derived(new Map(data.policies.map((p) => [p.id, p.name] as const)));
+	const typeOptions = [
+		{ value: 'app', label: 'App' },
+		{ value: 'agent', label: 'Agent' },
+		{ value: 'workload', label: 'Workload' }
+	];
+	const policyLabel = (id: string) => (id ? (policyName.get(id) ?? id) : 'No policy (allow all)');
 	const canManage = $derived(can(data.role, 'services:manage', data.memberPermissions));
 </script>
 
@@ -69,20 +78,28 @@
 					</div>
 					<div class="space-y-2">
 						<Label for="type">Type</Label>
-						<NativeSelect id="type" name="type" class="w-full">
-							<option value="app">App</option>
-							<option value="agent">Agent</option>
-							<option value="workload">Workload</option>
-						</NativeSelect>
+						<Select.Root type="single" name="type" bind:value={createType}>
+							<Select.Trigger id="type" class="w-full">
+								{typeOptions.find((o) => o.value === createType)?.label}
+							</Select.Trigger>
+							<Select.Content>
+								{#each typeOptions as o (o.value)}
+									<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
 					<div class="space-y-2">
 						<Label for="policyId">Policy</Label>
-						<NativeSelect id="policyId" name="policyId" class="w-full">
-							<option value="">No policy (allow all)</option>
-							{#each data.policies as p (p.id)}
-								<option value={p.id}>{p.name}</option>
-							{/each}
-						</NativeSelect>
+						<Select.Root type="single" name="policyId" bind:value={createPolicyId}>
+							<Select.Trigger id="policyId" class="w-full">{policyLabel(createPolicyId)}</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="" label="No policy (allow all)">No policy (allow all)</Select.Item>
+								{#each data.policies as p (p.id)}
+									<Select.Item value={p.id} label={p.name}>{p.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
 					<div class="space-y-2">
 						<Label for="description">Description</Label>
@@ -150,24 +167,45 @@
 									>
 										<Pencil class="size-4" />
 									</Button>
-									<form
-										method="post"
-										action="?/delete"
-										use:enhance={() =>
-											async ({ update }) =>
-												update()}
-									>
-										<input type="hidden" name="id" value={s.id} />
-										<Button
-											type="submit"
-											variant="ghost"
-											size="icon"
-											class="size-8 text-muted-foreground hover:text-destructive"
-											title="Delete service"
-										>
-											<Trash2 class="size-4" />
-										</Button>
-									</form>
+									<AlertDialog.Root>
+										<AlertDialog.Trigger>
+											{#snippet child({ props })}
+												<Button
+													{...props}
+													variant="ghost"
+													size="icon"
+													class="size-8 text-muted-foreground hover:text-destructive"
+													title="Delete service"
+												>
+													<Trash2 class="size-4" />
+												</Button>
+											{/snippet}
+										</AlertDialog.Trigger>
+										<AlertDialog.Content>
+											<AlertDialog.Header>
+												<AlertDialog.Title>Delete “{s.name}”?</AlertDialog.Title>
+												<AlertDialog.Description>
+													Any tokens issued to this service stop working immediately. This can't be
+													undone.
+												</AlertDialog.Description>
+											</AlertDialog.Header>
+											<AlertDialog.Footer>
+												<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+												<form
+													method="post"
+													action="?/delete"
+													use:enhance={() =>
+														async ({ update }) =>
+															update()}
+												>
+													<input type="hidden" name="id" value={s.id} />
+													<AlertDialog.Action type="submit" variant="destructive">
+														Delete service
+													</AlertDialog.Action>
+												</form>
+											</AlertDialog.Footer>
+										</AlertDialog.Content>
+									</AlertDialog.Root>
 									</div>
 								{/if}
 							</Table.Cell>
@@ -218,25 +256,30 @@
 				</div>
 				<div class="space-y-2">
 					<Label for="edit-type">Type</Label>
-					<NativeSelect id="edit-type" name="type" class="w-full" bind:value={editing.type}>
-						<option value="app">App</option>
-						<option value="agent">Agent</option>
-						<option value="workload">Workload</option>
-					</NativeSelect>
+					<Select.Root type="single" name="type" bind:value={editing.type}>
+						<Select.Trigger id="edit-type" class="w-full">
+							{typeOptions.find((o) => o.value === editing?.type)?.label}
+						</Select.Trigger>
+						<Select.Content>
+							{#each typeOptions as o (o.value)}
+								<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 				<div class="space-y-2">
 					<Label for="edit-policyId">Policy</Label>
-					<NativeSelect
-						id="edit-policyId"
-						name="policyId"
-						class="w-full"
-						bind:value={editing.policyId}
-					>
-						<option value="">No policy (allow all)</option>
-						{#each data.policies as p (p.id)}
-							<option value={p.id}>{p.name}</option>
-						{/each}
-					</NativeSelect>
+					<Select.Root type="single" name="policyId" bind:value={editing.policyId}>
+						<Select.Trigger id="edit-policyId" class="w-full"
+							>{policyLabel(editing?.policyId ?? '')}</Select.Trigger
+						>
+						<Select.Content>
+							<Select.Item value="" label="No policy (allow all)">No policy (allow all)</Select.Item>
+							{#each data.policies as p (p.id)}
+								<Select.Item value={p.id} label={p.name}>{p.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
 				</div>
 				<div class="space-y-2">
 					<Label for="edit-description">Description</Label>

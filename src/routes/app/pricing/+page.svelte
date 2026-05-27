@@ -4,11 +4,12 @@
 	import * as Table from '$lib/components/ui/table/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { NativeSelect } from '$lib/components/ui/native-select/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
 	import { formatUsd } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import Coins from '@lucide/svelte/icons/coins';
@@ -122,6 +123,7 @@
 		outputPerMtok: string;
 	};
 	let adding = $state<Editing | null>(null);
+	let addProvider = $state('');
 
 	function openAdd() {
 		editRow = null;
@@ -130,6 +132,7 @@
 			inputPerMtok: '',
 			outputPerMtok: ''
 		};
+		addProvider = adding.provider;
 	}
 
 	$effect(() => {
@@ -335,27 +338,53 @@
 											<Pencil class="size-4" />
 										</Button>
 										{#if p.source === 'custom'}
-											<form
-												method="post"
-												action="?/delete"
-												class="inline"
-												use:enhance={() =>
-													async ({ update }) =>
-														update()}
-											>
-												<input type="hidden" name="id" value={p.id} />
-												<Button
-													type="submit"
-													variant="ghost"
-													size="icon"
-													class="size-8 text-muted-foreground hover:text-destructive"
-													title={p.defaultInputPerMtok !== null
-														? 'Reset to platform default'
-														: 'Remove price'}
-												>
-													<RotateCcw class="size-4" />
-												</Button>
-											</form>
+											<AlertDialog.Root>
+												<AlertDialog.Trigger>
+													{#snippet child({ props })}
+														<Button
+															{...props}
+															variant="ghost"
+															size="icon"
+															class="size-8 text-muted-foreground hover:text-destructive"
+															title={p.defaultInputPerMtok !== null
+																? 'Reset to platform default'
+																: 'Remove price'}
+														>
+															<RotateCcw class="size-4" />
+														</Button>
+													{/snippet}
+												</AlertDialog.Trigger>
+												<AlertDialog.Content>
+													<AlertDialog.Header>
+														<AlertDialog.Title>
+															{p.defaultInputPerMtok !== null
+																? 'Reset to platform default?'
+																: 'Remove this price?'}
+														</AlertDialog.Title>
+														<AlertDialog.Description>
+															{p.defaultInputPerMtok !== null
+																? 'Your custom price is discarded and the platform default is restored.'
+																: 'The custom price is deleted. Requests for this model may be rejected until a price exists.'}
+														</AlertDialog.Description>
+													</AlertDialog.Header>
+													<AlertDialog.Footer>
+														<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+														<form
+															method="post"
+															action="?/delete"
+															class="inline"
+															use:enhance={() =>
+																async ({ update }) =>
+																	update()}
+														>
+															<input type="hidden" name="id" value={p.id} />
+															<AlertDialog.Action type="submit" variant="destructive">
+																{p.defaultInputPerMtok !== null ? 'Reset' : 'Remove'}
+															</AlertDialog.Action>
+														</form>
+													</AlertDialog.Footer>
+												</AlertDialog.Content>
+											</AlertDialog.Root>
 										{/if}
 									</div>
 									{/if}
@@ -413,12 +442,17 @@
 			</div>
 			<div class="space-y-2">
 				<Label for="provider">Provider (optional)</Label>
-				<NativeSelect id="provider" name="provider" value={adding?.provider ?? ''} class="w-full">
-					<option value="">—</option>
-					{#each data.providers as prov (prov.id)}
-						<option value={prov.id}>{prov.label}</option>
-					{/each}
-				</NativeSelect>
+				<Select.Root type="single" name="provider" bind:value={addProvider}>
+					<Select.Trigger id="provider" class="w-full">
+						{data.providers.find((p) => p.id === addProvider)?.label ?? '—'}
+					</Select.Trigger>
+					<Select.Content>
+						<Select.Item value="" label="—">—</Select.Item>
+						{#each data.providers as prov (prov.id)}
+							<Select.Item value={prov.id} label={prov.label}>{prov.label}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
 			</div>
 			<div class="grid grid-cols-2 gap-4">
 				<div class="space-y-2">

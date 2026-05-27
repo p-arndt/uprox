@@ -1,14 +1,16 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { NativeSelect } from '$lib/components/ui/native-select/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import { GATEWAY_SCOPES } from '$lib/scopes';
@@ -20,6 +22,14 @@
 
 	let { data, form } = $props();
 	let createOpen = $state(false);
+	let serviceId = $state('');
+	let expiresInDays = $state('0');
+	const expiryOptions = [
+		{ value: '0', label: 'Never' },
+		{ value: '30', label: 'In 30 days' },
+		{ value: '90', label: 'In 90 days' },
+		{ value: '365', label: 'In 1 year' }
+	];
 	let secret = $state<{ name: string; plaintext: string } | null>(null);
 
 	const allScopes = GATEWAY_SCOPES;
@@ -33,9 +43,17 @@
 		}
 	});
 
-	async function copy(text: string) {
+	async function copy(text: string, msg = 'Copied to clipboard') {
 		await navigator.clipboard.writeText(text);
-		toast.success('Token copied to clipboard');
+		toast.success(msg);
+	}
+
+	const apiBase = $derived(`${page.url.origin}/v1`);
+	function curlFor(token: string) {
+		return `curl ${apiBase}/chat/completions \\
+  -H "Authorization: Bearer ${token}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'`;
 	}
 
 	function status(t: (typeof data.tokens)[number]): {
@@ -98,11 +116,16 @@
 				>
 					<div class="space-y-2">
 						<Label for="serviceId">Service</Label>
-						<NativeSelect id="serviceId" name="serviceId" class="w-full" required>
-							{#each data.services as s (s.id)}
-								<option value={s.id}>{s.name}</option>
-							{/each}
-						</NativeSelect>
+						<Select.Root type="single" name="serviceId" required bind:value={serviceId}>
+							<Select.Trigger id="serviceId" class="w-full">
+								{data.services.find((s) => s.id === serviceId)?.name ?? 'Select a service'}
+							</Select.Trigger>
+							<Select.Content>
+								{#each data.services as s (s.id)}
+									<Select.Item value={s.id} label={s.name}>{s.name}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
 					<div class="space-y-2">
 						<Label for="name">Token name</Label>
@@ -127,12 +150,16 @@
 					</div>
 					<div class="space-y-2">
 						<Label for="expiresInDays">Expires</Label>
-						<NativeSelect id="expiresInDays" name="expiresInDays" class="w-full">
-							<option value="0">Never</option>
-							<option value="30">In 30 days</option>
-							<option value="90">In 90 days</option>
-							<option value="365">In 1 year</option>
-						</NativeSelect>
+						<Select.Root type="single" name="expiresInDays" bind:value={expiresInDays}>
+							<Select.Trigger id="expiresInDays" class="w-full">
+								{expiryOptions.find((o) => o.value === expiresInDays)?.label}
+							</Select.Trigger>
+							<Select.Content>
+								{#each expiryOptions as o (o.value)}
+									<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
 					</div>
 					{#if form?.message}
 						<p class="text-sm text-destructive">{form.message}</p>
@@ -232,24 +259,45 @@
 							</Table.Cell>
 							<Table.Cell>
 								{#if !t.revokedAt && canManage}
-									<form
-										method="post"
-										action="?/revoke"
-										use:enhance={() =>
-											async ({ update }) =>
-												update()}
-									>
-										<input type="hidden" name="id" value={t.id} />
-										<Button
-											type="submit"
-											variant="ghost"
-											size="icon"
-											class="size-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 hover:text-destructive"
-											title="Revoke token"
-										>
-											<Ban class="size-4" />
-										</Button>
-									</form>
+									<AlertDialog.Root>
+										<AlertDialog.Trigger>
+											{#snippet child({ props })}
+												<Button
+													{...props}
+													variant="ghost"
+													size="icon"
+													class="size-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 hover:text-destructive"
+													title="Revoke token"
+												>
+													<Ban class="size-4" />
+												</Button>
+											{/snippet}
+										</AlertDialog.Trigger>
+										<AlertDialog.Content>
+											<AlertDialog.Header>
+												<AlertDialog.Title>Revoke “{t.name}”?</AlertDialog.Title>
+												<AlertDialog.Description>
+													Any service still using this token will immediately fail to authenticate.
+													This can't be undone.
+												</AlertDialog.Description>
+											</AlertDialog.Header>
+											<AlertDialog.Footer>
+												<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+												<form
+													method="post"
+													action="?/revoke"
+													use:enhance={() =>
+														async ({ update }) =>
+															update()}
+												>
+													<input type="hidden" name="id" value={t.id} />
+													<AlertDialog.Action type="submit" variant="destructive">
+														Revoke token
+													</AlertDialog.Action>
+												</form>
+											</AlertDialog.Footer>
+										</AlertDialog.Content>
+									</AlertDialog.Root>
 								{/if}
 							</Table.Cell>
 						</Table.Row>
@@ -270,7 +318,7 @@
 		}
 	}}
 >
-	<Dialog.Content>
+	<Dialog.Content class="sm:max-w-lg">
 		<Dialog.Header>
 			<Dialog.Title>Token created</Dialog.Title>
 			<Dialog.Description>
@@ -284,18 +332,37 @@
 			<TriangleAlert class="mt-0.5 size-4 shrink-0 text-amber-600" />
 			<span>This secret is stored only as a hash. There is no way to recover it later.</span>
 		</div>
-		<div class="flex items-center gap-2">
-			<code class="flex-1 overflow-x-auto rounded-lg bg-muted px-3 py-2 text-xs"
+		<div class="relative min-w-0">
+			<code class="block overflow-x-auto rounded-lg bg-muted py-2.5 pr-11 pl-3 text-xs"
 				>{secret?.plaintext}</code
 			>
 			<Button
 				size="icon"
-				variant="outline"
-				onclick={() => secret && copy(secret.plaintext)}
-				title="Copy"
+				variant="ghost"
+				class="absolute top-1/2 right-1.5 size-7 -translate-y-1/2"
+				onclick={() => secret && copy(secret.plaintext, 'Token copied')}
+				title="Copy token"
 			>
-				<Copy class="size-4" />
+				<Copy class="size-3.5" />
 			</Button>
+		</div>
+
+		<div class="min-w-0 space-y-1.5">
+			<p class="text-xs font-medium text-muted-foreground">Drop it straight into a request</p>
+			<div class="relative min-w-0">
+				<pre class="overflow-x-auto rounded-lg bg-muted p-3 pr-10 text-xs leading-relaxed"><code
+						>{secret ? curlFor(secret.plaintext) : ''}</code
+					></pre>
+				<Button
+					size="icon"
+					variant="ghost"
+					class="absolute top-1.5 right-1.5 size-7"
+					onclick={() => secret && copy(curlFor(secret.plaintext), 'Command copied')}
+					title="Copy command"
+				>
+					<Copy class="size-3.5" />
+				</Button>
+			</div>
 		</div>
 		<Dialog.Footer>
 			<Button

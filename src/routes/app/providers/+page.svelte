@@ -3,6 +3,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -84,24 +85,45 @@
 							<span class="text-xs">· updated {relativeTime(secret.updatedAt)}</span>
 						</div>
 						{#if canManage}
-							<form
-								method="post"
-								action="?/delete"
-								use:enhance={() =>
-									async ({ update }) =>
-										update()}
-							>
-								<input type="hidden" name="id" value={secret.id} />
-								<Button
-									type="submit"
-									variant="ghost"
-									size="icon"
-									class="size-8 text-muted-foreground hover:text-destructive"
-									title="Remove key"
-								>
-									<Trash2 class="size-4" />
-								</Button>
-							</form>
+							<AlertDialog.Root>
+								<AlertDialog.Trigger>
+									{#snippet child({ props })}
+										<Button
+											{...props}
+											variant="ghost"
+											size="icon"
+											class="size-8 text-muted-foreground hover:text-destructive"
+											title="Remove key"
+										>
+											<Trash2 class="size-4" />
+										</Button>
+									{/snippet}
+								</AlertDialog.Trigger>
+								<AlertDialog.Content>
+									<AlertDialog.Header>
+										<AlertDialog.Title>Remove {p.label} key?</AlertDialog.Title>
+										<AlertDialog.Description>
+											The gateway will stop proxying requests to {p.label} until you add a new key.
+											The encrypted key is deleted permanently.
+										</AlertDialog.Description>
+									</AlertDialog.Header>
+									<AlertDialog.Footer>
+										<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+										<form
+											method="post"
+											action="?/delete"
+											use:enhance={() =>
+												async ({ update }) =>
+													update()}
+										>
+											<input type="hidden" name="id" value={secret.id} />
+											<AlertDialog.Action type="submit" variant="destructive">
+												Remove key
+											</AlertDialog.Action>
+										</form>
+									</AlertDialog.Footer>
+								</AlertDialog.Content>
+							</AlertDialog.Root>
 						{/if}
 					{:else}
 						<span class="text-sm text-muted-foreground">No key configured</span>
