@@ -91,7 +91,7 @@ pnpm install
 pnpm db:start            # or: docker compose up -d
 
 # 2. configure env (see .env.example)
-#    DATABASE_URL, BETTER_AUTH_SECRET, ENCRYPTION_KEY
+#    POSTGRES_HOST/PORT/USER/PASSWORD/DB, BETTER_AUTH_SECRET, ENCRYPTION_KEY
 #    generate a key: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 
 # 3. apply the schema
