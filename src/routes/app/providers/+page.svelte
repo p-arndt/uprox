@@ -6,7 +6,6 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import Plug from '@lucide/svelte/icons/plug';
@@ -66,9 +65,15 @@
 						</div>
 					</div>
 					{#if secret}
-						<Badge variant="secondary">configured</Badge>
+						<span class="inline-flex items-center gap-1.5 text-xs font-medium">
+							<span class="size-1.5 rounded-full bg-emerald-500"></span>
+							configured
+						</span>
 					{:else}
-						<Badge variant="outline">not set</Badge>
+						<span class="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+							<span class="size-1.5 rounded-full bg-muted-foreground/40"></span>
+							not set
+						</span>
 					{/if}
 				</Card.Header>
 				<Card.Content class="flex items-center justify-between">
