@@ -13,6 +13,17 @@ RUN pnpm install --frozen-lockfile
 FROM dependencies AS builder
 WORKDIR /app
 COPY . .
+# SvelteKit's build executes server modules to analyse routes, so anything that
+# validates env / opens a connection at import time (the DB client, better-auth)
+# needs *some* value present. These are throwaway build-time placeholders — this
+# stage is discarded, so they never reach the runtime image, which supplies its
+# own real env at startup.
+ENV POSTGRES_HOST=build \
+    POSTGRES_USER=build \
+    POSTGRES_PASSWORD=build \
+    POSTGRES_DB=build \
+    BETTER_AUTH_SECRET=build-time-placeholder-not-used-at-runtime \
+    ORIGIN=http://localhost
 RUN pnpm run build
 
 # Stage 3: Prepare production dependencies
