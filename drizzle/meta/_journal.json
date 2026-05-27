@@ -15,6 +15,13 @@
       "when": 1779910725643,
       "tag": "0001_calm_famine",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779926075415,
+      "tag": "0002_cloudy_the_renegades",
+      "breakpoints": true
     }
   ]
 }

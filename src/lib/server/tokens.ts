@@ -60,7 +60,15 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 		.innerJoin(service, eq(service.id, machineToken.serviceId))
 		.leftJoin(policy, eq(policy.id, service.policyId))
 		.leftJoin(orgSettings, eq(orgSettings.organizationId, machineToken.organizationId))
-		.where(and(eq(machineToken.hashedToken, hashed), isNull(machineToken.revokedAt)))
+		// reject tokens of a retired (soft-deleted) service, even if a token row
+		// somehow outlived deleteService's revoke step
+		.where(
+			and(
+				eq(machineToken.hashedToken, hashed),
+				isNull(machineToken.revokedAt),
+				isNull(service.deletedAt)
+			)
+		)
 		.limit(1);
 
 	const row = rows[0];

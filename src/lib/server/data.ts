@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
 	service,
@@ -19,7 +19,7 @@ export function listServices(orgId: string) {
 	return db
 		.select()
 		.from(service)
-		.where(eq(service.organizationId, orgId))
+		.where(and(eq(service.organizationId, orgId), isNull(service.deletedAt)))
 		.orderBy(desc(service.createdAt));
 }
 
@@ -48,35 +48,56 @@ export async function updateService(
 	const [row] = await db
 		.update(service)
 		.set(patch)
-		.where(and(eq(service.id, id), eq(service.organizationId, orgId)))
+		.where(and(eq(service.id, id), eq(service.organizationId, orgId), isNull(service.deletedAt)))
 		.returning();
 	return row ?? null;
 }
 
+/**
+ * Retire a service (soft delete). We stamp `deletedAt` rather than removing the
+ * row so historical audit-log / usage rows keep resolving its name, and revoke
+ * its still-active tokens in the same transaction so the retired service can no
+ * longer authenticate — matching the old hard-delete-cascade behaviour where the
+ * tokens disappeared. Already-deleted services are left untouched.
+ */
 export async function deleteService(orgId: string, id: string) {
-	await db.delete(service).where(and(eq(service.id, id), eq(service.organizationId, orgId)));
+	await db.transaction(async (tx) => {
+		const [row] = await tx
+			.update(service)
+			.set({ deletedAt: new Date() })
+			.where(and(eq(service.id, id), eq(service.organizationId, orgId), isNull(service.deletedAt)))
+			.returning({ id: service.id });
+		if (!row) return;
+		await tx
+			.update(machineToken)
+			.set({ revokedAt: new Date() })
+			.where(and(eq(machineToken.serviceId, id), isNull(machineToken.revokedAt)));
+	});
 }
 
 /* ------------------------------------ tokens ------------------------------------ */
 
 export function listTokens(orgId: string) {
-	return db
-		.select({
-			id: machineToken.id,
-			name: machineToken.name,
-			display: machineToken.display,
-			scopes: machineToken.scopes,
-			serviceId: machineToken.serviceId,
-			serviceName: service.name,
-			lastUsedAt: machineToken.lastUsedAt,
-			expiresAt: machineToken.expiresAt,
-			revokedAt: machineToken.revokedAt,
-			createdAt: machineToken.createdAt
-		})
-		.from(machineToken)
-		.innerJoin(service, eq(service.id, machineToken.serviceId))
-		.where(eq(machineToken.organizationId, orgId))
-		.orderBy(desc(machineToken.createdAt));
+	return (
+		db
+			.select({
+				id: machineToken.id,
+				name: machineToken.name,
+				display: machineToken.display,
+				scopes: machineToken.scopes,
+				serviceId: machineToken.serviceId,
+				serviceName: service.name,
+				lastUsedAt: machineToken.lastUsedAt,
+				expiresAt: machineToken.expiresAt,
+				revokedAt: machineToken.revokedAt,
+				createdAt: machineToken.createdAt
+			})
+			.from(machineToken)
+			.innerJoin(service, eq(service.id, machineToken.serviceId))
+			// hide tokens belonging to retired (soft-deleted) services
+			.where(and(eq(machineToken.organizationId, orgId), isNull(service.deletedAt)))
+			.orderBy(desc(machineToken.createdAt))
+	);
 }
 
 /**
@@ -88,11 +109,17 @@ export async function createToken(
 	userId: string,
 	input: { serviceId: string; name: string; scopes?: string[]; expiresAt?: Date | null }
 ) {
-	// ensure the service belongs to this org
+	// ensure the service belongs to this org and isn't retired
 	const [svc] = await db
 		.select()
 		.from(service)
-		.where(and(eq(service.id, input.serviceId), eq(service.organizationId, orgId)))
+		.where(
+			and(
+				eq(service.id, input.serviceId),
+				eq(service.organizationId, orgId),
+				isNull(service.deletedAt)
+			)
+		)
 		.limit(1);
 	if (!svc) throw new Error('Service not found');
 
@@ -386,7 +413,7 @@ export async function orgStats(orgId: string) {
 			services: sql<number>`count(distinct ${service.id})`
 		})
 		.from(service)
-		.where(eq(service.organizationId, orgId));
+		.where(and(eq(service.organizationId, orgId), isNull(service.deletedAt)));
 
 	const [tokenCount] = await db
 		.select({ active: sql<number>`count(*) filter (where ${machineToken.revokedAt} is null)` })
@@ -613,6 +640,7 @@ export async function orgBudgetStatus(orgId: string): Promise<BudgetStatus[]> {
 		.where(
 			and(
 				eq(service.organizationId, orgId),
+				isNull(service.deletedAt),
 				sql`(${policy.dailyBudgetUsd} > 0 or ${policy.monthlyBudgetUsd} > 0)`
 			)
 		)

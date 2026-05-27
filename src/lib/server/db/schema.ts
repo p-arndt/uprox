@@ -28,7 +28,12 @@ export const service = pgTable(
 		type: text('type').notNull().default('app'),
 		description: text('description'),
 		policyId: uuid('policy_id').references(() => policy.id, { onDelete: 'set null' }),
-		createdAt: timestamp('created_at').defaultNow().notNull()
+		createdAt: timestamp('created_at').defaultNow().notNull(),
+		// Soft delete: services are retired, not removed, so historical audit-log
+		// and usage rows keep resolving the service name (a hard delete would null
+		// out auditLog.serviceId and surface "Deleted service"). A retired service
+		// is hidden from listings and its tokens are revoked; see deleteService.
+		deletedAt: timestamp('deleted_at')
 	},
 	(t) => [index('service_org_idx').on(t.organizationId)]
 );
