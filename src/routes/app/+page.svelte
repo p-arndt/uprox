@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import BudgetAlert from '$lib/components/budget-alert.svelte';
 	import { resolve } from '$app/paths';
 	import type { Pathname, ResolvedPathname } from '$app/types';
 	import { relativeTime, formatDateTime, formatUsd } from '$lib/format';
@@ -88,6 +89,8 @@
 </script>
 
 <div class="mx-auto max-w-6xl space-y-6">
+	<BudgetAlert statuses={data.budgets} />
+
 	{#if showOnboarding}
 		<Card.Root>
 			<Card.Header>

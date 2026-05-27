@@ -1,4 +1,4 @@
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
 	service,
@@ -11,6 +11,7 @@ import {
 import { encrypt } from '$lib/server/crypto';
 import { issueToken } from '$lib/server/tokens';
 import { audit } from '$lib/server/audit';
+import type { BudgetStatus } from '$lib/budget';
 
 /* ----------------------------------- services ----------------------------------- */
 
@@ -474,4 +475,162 @@ export async function orgDailyStats(orgId: string, days = 14): Promise<DailyStat
 		denied: Number(r.denied ?? 0),
 		costUsd: Number(r.cost ?? 0)
 	}));
+}
+
+/* ----------------------------------- usage -------------------------------------- */
+
+/** Start of `days`-day rolling window for the usage breakdowns. */
+function windowStart(days: number): Date {
+	return new Date(Date.now() - Math.max(1, days) * 86_400_000);
+}
+
+export interface ModelUsage {
+	model: string;
+	provider: string | null;
+	requests: number;
+	costUsd: number;
+	denied: number;
+}
+
+/**
+ * Gateway traffic grouped by model over the last `days` days, busiest first.
+ * Powers the "usage by model" breakdown on the usage page.
+ */
+export async function orgUsageByModel(orgId: string, days = 30, limit = 50): Promise<ModelUsage[]> {
+	const rows = await db
+		.select({
+			model: auditLog.model,
+			// a model is served by a single provider; max() picks a stable non-null id
+			provider: sql<string | null>`max(${auditLog.provider})`,
+			requests: sql<number>`count(*)::int`,
+			cost: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)::text`,
+			denied: sql<number>`(count(*) filter (where ${auditLog.status} = 'deny'))::int`
+		})
+		.from(auditLog)
+		.where(
+			and(
+				eq(auditLog.organizationId, orgId),
+				sql`${auditLog.action} like 'gateway.%'`,
+				sql`${auditLog.model} is not null`,
+				gte(auditLog.createdAt, windowStart(days))
+			)
+		)
+		.groupBy(auditLog.model)
+		.orderBy(desc(sql`count(*)`))
+		.limit(limit);
+
+	return rows.map((r) => ({
+		model: r.model as string,
+		provider: r.provider,
+		requests: Number(r.requests ?? 0),
+		costUsd: Number(r.cost ?? 0),
+		denied: Number(r.denied ?? 0)
+	}));
+}
+
+export interface ServiceUsage {
+	serviceId: string | null;
+	serviceName: string | null;
+	requests: number;
+	costUsd: number;
+	denied: number;
+}
+
+/**
+ * Gateway traffic grouped by the calling service over the last `days` days,
+ * busiest first. Requests whose service was since deleted group under a null id.
+ */
+export async function orgUsageByService(orgId: string, days = 30): Promise<ServiceUsage[]> {
+	const rows = await db
+		.select({
+			serviceId: auditLog.serviceId,
+			serviceName: sql<string | null>`max(${service.name})`,
+			requests: sql<number>`count(*)::int`,
+			cost: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)::text`,
+			denied: sql<number>`(count(*) filter (where ${auditLog.status} = 'deny'))::int`
+		})
+		.from(auditLog)
+		.leftJoin(service, eq(service.id, auditLog.serviceId))
+		.where(
+			and(
+				eq(auditLog.organizationId, orgId),
+				sql`${auditLog.action} like 'gateway.%'`,
+				gte(auditLog.createdAt, windowStart(days))
+			)
+		)
+		.groupBy(auditLog.serviceId)
+		.orderBy(desc(sql`count(*)`));
+
+	return rows.map((r) => ({
+		serviceId: r.serviceId,
+		serviceName: r.serviceName,
+		requests: Number(r.requests ?? 0),
+		costUsd: Number(r.cost ?? 0),
+		denied: Number(r.denied ?? 0)
+	}));
+}
+
+/**
+ * Current spend standing for every service whose policy sets a daily or monthly
+ * ceiling — the input to the budget soft-warnings on the overview and usage
+ * pages. Windows are the same fixed UTC calendar buckets the gateway enforces
+ * against (see budget.ts): "daily" since 00:00 UTC, "monthly" since the 1st. The
+ * day/month boundaries are computed here and passed as parameters so this read
+ * matches enforcement exactly. Only services actually carrying a ceiling are
+ * returned; classifying warn/over from these numbers is left to `budgetWarnings`.
+ */
+export async function orgBudgetStatus(orgId: string): Promise<BudgetStatus[]> {
+	const now = new Date();
+	const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+	const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+	// Built with the query builder rather than a raw `db.execute`: that's the only
+	// path that binds a Date parameter through the column's type mapping (the same
+	// `gte(createdAt, …)` the gateway enforces with — see budget.ts). A raw `sql`
+	// template can't serialize a Date on its own and throws at execution. The left
+	// join is scoped to the month window (the wider of the two); the daily figure
+	// is a narrower filtered aggregate within those rows.
+	const rows = await db
+		.select({
+			serviceId: service.id,
+			serviceName: service.name,
+			policyName: policy.name,
+			dailyBudget: policy.dailyBudgetUsd,
+			monthlyBudget: policy.monthlyBudgetUsd,
+			dailySpent: sql<string>`coalesce(sum(${auditLog.costUsd}) filter (where ${gte(auditLog.createdAt, dayStart)}), 0)`,
+			monthlySpent: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)`
+		})
+		.from(service)
+		.innerJoin(policy, eq(policy.id, service.policyId))
+		.leftJoin(
+			auditLog,
+			and(
+				eq(auditLog.serviceId, service.id),
+				sql`${auditLog.action} like 'gateway.%'`,
+				gte(auditLog.createdAt, monthStart)
+			)
+		)
+		.where(
+			and(
+				eq(service.organizationId, orgId),
+				sql`(${policy.dailyBudgetUsd} > 0 or ${policy.monthlyBudgetUsd} > 0)`
+			)
+		)
+		.groupBy(service.id, service.name, policy.name, policy.dailyBudgetUsd, policy.monthlyBudgetUsd);
+
+	return rows.map((r) => {
+		const dailyBudget = Number(r.dailyBudget ?? 0);
+		const monthlyBudget = Number(r.monthlyBudget ?? 0);
+		return {
+			serviceId: r.serviceId,
+			serviceName: r.serviceName,
+			policyName: r.policyName,
+			daily:
+				dailyBudget > 0 ? { budgetUsd: dailyBudget, spentUsd: Number(r.dailySpent ?? 0) } : null,
+			monthly:
+				monthlyBudget > 0
+					? { budgetUsd: monthlyBudget, spentUsd: Number(r.monthlySpent ?? 0) }
+					: null
+		};
+	});
 }

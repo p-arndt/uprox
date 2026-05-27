@@ -9,6 +9,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
 	import Boxes from '@lucide/svelte/icons/boxes';
+	import ChartColumn from '@lucide/svelte/icons/chart-column';
 	import Check from '@lucide/svelte/icons/check';
 	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
 	import Coins from '@lucide/svelte/icons/coins';
@@ -43,6 +44,7 @@
 
 	const nav: { href: ResolvedPathname; label: string; icon: typeof Boxes; exact?: boolean }[] = [
 		{ href: '/app', label: 'Overview', icon: LayoutDashboard, exact: true },
+		{ href: '/app/usage', label: 'Usage', icon: ChartColumn },
 		{ href: '/app/services', label: 'Services', icon: Boxes },
 		{ href: '/app/tokens', label: 'Machine Tokens', icon: KeyRound },
 		{ href: '/app/providers', label: 'Providers', icon: Plug },
@@ -94,7 +96,9 @@
 				<DropdownMenu.Trigger
 					class="flex w-full items-center gap-2 rounded-lg py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-sidebar-accent"
 				>
-					<div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-white p-1">
+					<div
+						class="flex aspect-square size-8 items-center justify-center rounded-lg bg-white p-1"
+					>
 						<img src="/uprox-logo.png" alt="uprox" class="size-full object-contain" />
 					</div>
 					<div class="grid flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
