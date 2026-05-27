@@ -22,7 +22,8 @@
 		"db:studio": "drizzle-kit studio",
 		"auth:schema": "better-auth generate --config src/lib/server/auth.ts --output src/lib/server/db/auth.schema.ts --yes",
 		"example": "tsx --env-file-if-exists=.env examples/use-gateway.ts",
-		"example:provision": "tsx --env-file-if-exists=.env examples/provision.mjs"
+		"example:provision": "tsx --env-file-if-exists=.env examples/provision.mjs",
+		"changelog": "git-cliff -o CHANGELOG.md"
 	},
 	"devDependencies": {
 		"@better-auth/cli": "latest",
@@ -52,6 +53,7 @@
 		"eslint-config-prettier": "^10.1.8",
 		"eslint-plugin-svelte": "^3.17.0",
 		"formsnap": "^2.0.1",
+		"git-cliff": "^2.13.1",
 		"globals": "^17.4.0",
 		"layerchart": "2.0.0-next.48",
 		"mode-watcher": "^1.1.0",
