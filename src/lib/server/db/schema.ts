@@ -127,6 +127,12 @@ export const policy = pgTable(
 			.array()
 			.notNull()
 			.default(sql`'{}'::text[]`),
+		// Which OpenAI-compatible backend to use when the org has both OpenAI and
+		// Azure configured: a provider id ("openai" | "azure") that wins for models
+		// in the shared "gpt-*"/o-series namespace. NULL = no preference (defaults
+		// to provider declaration order, i.e. OpenAI). Only matters when both are
+		// configured; with one, that one is used. See resolveProvider.
+		preferredProvider: text('preferred_provider'),
 		// requests per minute, 0 = unlimited
 		rateLimitPerMinute: integer('rate_limit_per_minute').notNull().default(0),
 		// spend ceilings in USD over a rolling window, summed per service. 0 = unlimited.

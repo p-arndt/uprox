@@ -7,6 +7,7 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { NativeSelect } from '$lib/components/ui/native-select/index.js';
 	import ShieldHalf from '@lucide/svelte/icons/shield-half';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Pencil from '@lucide/svelte/icons/pencil';
@@ -31,11 +32,18 @@
 		name: string;
 		allowedProviders: string[];
 		allowedModels: string;
+		preferredProvider: string;
 		rateLimitPerMinute: number;
 		dailyBudgetUsd: string;
 		monthlyBudgetUsd: string;
 		cacheTtlSeconds: string;
 	} | null>(null);
+
+	// OpenAI and Azure share the "gpt-*"/o-series namespace; a policy can pin which
+	// one serves it. Other providers (e.g. Anthropic) route unambiguously by name.
+	const sharedNamespaceProviders = $derived(
+		data.providers.filter((p) => p.id === 'openai' || p.id === 'azure')
+	);
 
 	$effect(() => {
 		if (form?.success) {
@@ -103,6 +111,20 @@
 						/>
 						<p class="text-xs text-muted-foreground">
 							Comma-separated. Trailing <code>*</code> matches a prefix. Blank = all models.
+						</p>
+					</div>
+					<div class="space-y-2">
+						<Label for="preferredProvider">Preferred OpenAI backend</Label>
+						<NativeSelect id="preferredProvider" name="preferredProvider" class="w-full">
+							<option value="">No preference</option>
+							{#each sharedNamespaceProviders as p (p.id)}
+								<option value={p.id}>{p.label}</option>
+							{/each}
+						</NativeSelect>
+						<p class="text-xs text-muted-foreground">
+							When both OpenAI and Azure are configured, which one serves shared models (<code
+								>gpt-*</code
+							>, o-series). With only one configured, that one is used.
 						</p>
 					</div>
 					<div class="space-y-2">
@@ -195,6 +217,7 @@
 										name: p.name,
 										allowedProviders: [...p.allowedProviders],
 										allowedModels: p.allowedModels.join(', '),
+										preferredProvider: p.preferredProvider ?? '',
 										rateLimitPerMinute: p.rateLimitPerMinute,
 										dailyBudgetUsd: String(Number(p.dailyBudgetUsd)),
 										monthlyBudgetUsd: String(Number(p.monthlyBudgetUsd)),
@@ -332,6 +355,25 @@
 					/>
 					<p class="text-xs text-muted-foreground">
 						Comma-separated. Trailing <code>*</code> matches a prefix. Blank = all models.
+					</p>
+				</div>
+				<div class="space-y-2">
+					<Label for="edit-preferredProvider">Preferred OpenAI backend</Label>
+					<NativeSelect
+						id="edit-preferredProvider"
+						name="preferredProvider"
+						class="w-full"
+						bind:value={editing.preferredProvider}
+					>
+						<option value="">No preference</option>
+						{#each sharedNamespaceProviders as p (p.id)}
+							<option value={p.id}>{p.label}</option>
+						{/each}
+					</NativeSelect>
+					<p class="text-xs text-muted-foreground">
+						When both OpenAI and Azure are configured, which one serves shared models (<code
+							>gpt-*</code
+						>, o-series). With only one configured, that one is used.
 					</p>
 				</div>
 				<div class="space-y-2">

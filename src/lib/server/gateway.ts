@@ -7,8 +7,8 @@ import { resolveToken, type ResolvedToken } from '$lib/server/tokens';
 import { evaluatePolicy } from '$lib/server/policy';
 import {
 	providerForModel,
+	resolveProvider,
 	providerSupports,
-	upstreamModel,
 	resolveBaseUrl,
 	authHeaders,
 	PROVIDERS,
@@ -165,6 +165,15 @@ async function loadProviderCreds(orgId: string, provider: string): Promise<Provi
 	return { apiKey: decrypt(row.encryptedSecret), baseUrl: row.baseUrl };
 }
 
+/** Provider ids the organization has credentials configured for. */
+async function loadConfiguredProviders(orgId: string): Promise<string[]> {
+	const rows = await db
+		.select({ provider: providerSecret.provider })
+		.from(providerSecret)
+		.where(eq(providerSecret.organizationId, orgId));
+	return rows.map((r) => r.provider);
+}
+
 export interface ProxyOptions {
 	auth: GatewayAuth;
 	/** the gateway capability this request exercises (also the policy scope) */
@@ -185,23 +194,41 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	const started = Date.now();
 	const { token, ip } = auth;
 
-	const provider: ProviderDef | null = providerForModel(model);
-	// The bare model/deployment name to send upstream and price by. For Azure
-	// this strips the `azure/` routing alias; for other providers it's `model`.
-	const sendModel = provider ? upstreamModel(provider, model) : model;
+	// Route by model, choosing among the providers this org has configured.
+	// OpenAI and Azure share the model namespace; the policy's preferredProvider
+	// breaks the tie when both are configured (see resolveProvider).
+	const configuredProviders = await loadConfiguredProviders(token.organizationId);
+	const provider: ProviderDef | null = resolveProvider(
+		model,
+		configuredProviders,
+		token.policy?.preferredProvider
+	);
+	// The model/deployment name to send upstream and price by — passed through
+	// unchanged (no provider alias to strip).
+	const sendModel = model;
 	if (!provider) {
+		// Distinguish "we don't recognize this model" from "we recognize it but
+		// the org hasn't configured the provider that would serve it".
+		const known = providerForModel(model);
 		await audit({
 			organizationId: token.organizationId,
 			action: `gateway.${scope}`,
 			status: 'error',
 			serviceId: token.serviceId,
 			tokenId: token.tokenId,
+			provider: known?.id,
 			model,
-			statusCode: 400,
+			statusCode: known ? 502 : 400,
 			ip,
-			detail: `unknown model "${model}"`
+			detail: known ? `no ${known.id} secret configured` : `unknown model "${model}"`
 		});
-		return gatewayError(400, `Unknown or unsupported model: ${model}`, 'model_not_found');
+		return known
+			? gatewayError(
+					502,
+					`No ${PROVIDERS[known.id].label} credentials configured for this organization`,
+					'api_error'
+				)
+			: gatewayError(400, `Unknown or unsupported model: ${model}`, 'model_not_found');
 	}
 
 	// capability check: not every provider implements every endpoint
@@ -403,11 +430,6 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	}
 
 	let outboundBody = body;
-	// Prefix-routed providers (Azure) want the bare deployment name in the body,
-	// not the `azure/…` routing alias the client sent.
-	if (provider.routePrefix && isRecord(outboundBody) && typeof outboundBody.model === 'string') {
-		outboundBody = { ...outboundBody, model: sendModel };
-	}
 	// For streamed chat completions, ask the upstream to emit a final usage
 	// chunk; otherwise streaming responses carry no token counts and we can't
 	// compute cost. Don't clobber a caller-supplied stream_options.

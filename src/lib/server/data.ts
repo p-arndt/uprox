@@ -247,6 +247,8 @@ export async function createPolicy(
 		name: string;
 		allowedProviders?: string[];
 		allowedModels?: string[];
+		// "openai" | "azure" | null — preferred backend for the shared model namespace
+		preferredProvider?: string | null;
 		rateLimitPerMinute?: number;
 		dailyBudgetUsd?: number;
 		monthlyBudgetUsd?: number;
@@ -261,6 +263,7 @@ export async function createPolicy(
 			name: input.name,
 			allowedProviders: input.allowedProviders ?? [],
 			allowedModels: input.allowedModels ?? [],
+			preferredProvider: input.preferredProvider ?? null,
 			rateLimitPerMinute: input.rateLimitPerMinute ?? 0,
 			dailyBudgetUsd: String(input.dailyBudgetUsd ?? 0),
 			monthlyBudgetUsd: String(input.monthlyBudgetUsd ?? 0),
@@ -277,6 +280,7 @@ export async function updatePolicy(
 		name?: string;
 		allowedProviders?: string[];
 		allowedModels?: string[];
+		preferredProvider?: string | null;
 		rateLimitPerMinute?: number;
 		dailyBudgetUsd?: number;
 		monthlyBudgetUsd?: number;

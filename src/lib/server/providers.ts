@@ -32,19 +32,36 @@ export interface ProviderDef {
 	 */
 	requiresEndpoint?: boolean;
 	/**
-	 * Model-name prefix that selects this provider and is stripped to form the
-	 * upstream model/deployment name. A client calls `azure/<deployment>`; we
-	 * route to Azure and send the bare `<deployment>` upstream. See `upstreamModel`.
+	 * When true the provider serves arbitrary model names, not just those matching
+	 * `modelPrefixes`. Azure deployment names are operator-chosen (e.g. "my-gpt4"),
+	 * so once an org points OpenAI-compatible traffic at Azure, any model name that
+	 * no other provider claims by prefix routes here. See `resolveProvider`.
 	 */
-	routePrefix?: string;
+	acceptsAnyModel?: boolean;
 }
+
+/**
+ * The OpenAI-compatible model namespace. Shared by OpenAI and Azure OpenAI:
+ * both speak the same API and the same model names, so an org can serve these
+ * from either backend (see `resolveProvider` for how the two are disambiguated).
+ */
+const OPENAI_MODEL_PREFIXES = [
+	'gpt-',
+	'o1',
+	'o3',
+	'o4',
+	'chatgpt',
+	'text-embedding-',
+	'dall-e',
+	'whisper'
+];
 
 export const PROVIDERS: Record<string, ProviderDef> = {
 	openai: {
 		id: 'openai',
 		label: 'OpenAI',
 		baseUrl: 'https://api.openai.com/v1',
-		modelPrefixes: ['gpt-', 'o1', 'o3', 'o4', 'chatgpt', 'text-embedding-', 'dall-e', 'whisper'],
+		modelPrefixes: OPENAI_MODEL_PREFIXES,
 		capabilities: ['chat', 'responses', 'embeddings', 'models']
 	},
 	anthropic: {
@@ -65,31 +82,21 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 		// OpenAI-compatible `/openai/v1` API, so the same request shapes proxy
 		// through unchanged.
 		baseUrl: '',
-		// Deployment names are arbitrary, so we route on an explicit alias rather
-		// than model prefixes: a client calls `azure/<deployment>`.
-		modelPrefixes: ['azure/'],
+		// Azure is an OpenAI-compatible drop-in: clients call the same model names
+		// (no `azure/` alias). It shares OpenAI's prefixes so a policy can pick it
+		// as the preferred backend for them, and accepts arbitrary names too, since
+		// Azure deployment names are operator-chosen. See `resolveProvider`.
+		modelPrefixes: OPENAI_MODEL_PREFIXES,
 		capabilities: ['chat', 'responses', 'embeddings', 'models'],
 		authScheme: 'api-key',
 		requiresEndpoint: true,
-		routePrefix: 'azure/'
+		acceptsAnyModel: true
 	}
 };
 
 /** Whether a provider implements a given gateway capability. */
 export function providerSupports(provider: ProviderDef, capability: Capability): boolean {
 	return provider.capabilities.includes(capability);
-}
-
-/**
- * Strip a provider's `routePrefix` to get the bare upstream model/deployment
- * name. For Azure, `azure/gpt-4o` → `gpt-4o`. A no-op for providers (OpenAI,
- * Anthropic) that route by model prefix and pass the model through unchanged.
- */
-export function upstreamModel(provider: ProviderDef, model: string): string {
-	if (provider.routePrefix && model.startsWith(provider.routePrefix)) {
-		return model.slice(provider.routePrefix.length);
-	}
-	return model;
 }
 
 /**
@@ -116,14 +123,58 @@ export function authHeaders(provider: ProviderDef, apiKey: string): Record<strin
 
 export const PROVIDER_IDS = Object.keys(PROVIDERS);
 
-/** Infer which provider should serve a given model name. */
+/** Whether a provider claims a model name by one of its `modelPrefixes`. */
+function matchesByPrefix(def: ProviderDef, model: string): boolean {
+	return def.modelPrefixes.some((p) => model.startsWith(p));
+}
+
+/**
+ * The canonical provider for a model name, by prefix alone and ignoring org
+ * config. Used only for error messages (e.g. "no credentials configured for
+ * OpenAI") — actual routing goes through `resolveProvider`, which is org-aware.
+ * Since OpenAI and Azure share the same prefixes, this returns OpenAI for the
+ * shared namespace (declaration order in `PROVIDERS`).
+ */
 export function providerForModel(model: string | undefined): ProviderDef | null {
 	if (!model) return null;
 	const m = model.toLowerCase();
-	for (const def of Object.values(PROVIDERS)) {
-		if (def.modelPrefixes.some((p) => m.startsWith(p))) return def;
-	}
-	return null;
+	return Object.values(PROVIDERS).find((def) => matchesByPrefix(def, m)) ?? null;
+}
+
+/**
+ * Pick the provider that should serve a model for a specific organization,
+ * choosing only among the providers the org has actually configured.
+ *
+ * OpenAI and Azure share the OpenAI-compatible namespace, so a model like
+ * `gpt-4o` can match both. When only one of them is configured, that one is
+ * used. When both are, the policy's `preferredProvider` decides; with no
+ * preference we fall back to `PROVIDERS` declaration order (OpenAI first), so
+ * existing OpenAI orgs are unaffected by adding Azure. A model that no
+ * configured provider claims by prefix falls back to a configured
+ * `acceptsAnyModel` provider (Azure), supporting arbitrary Azure deployment
+ * names. Returns null when nothing matches.
+ */
+export function resolveProvider(
+	model: string | undefined,
+	configuredProviderIds: string[],
+	preferredProvider?: string | null
+): ProviderDef | null {
+	if (!model) return null;
+	const m = model.toLowerCase();
+	// configured providers, the preferred one first, then declaration order
+	const defs = configuredProviderIds
+		.map((id) => PROVIDERS[id])
+		.filter((def): def is ProviderDef => Boolean(def))
+		.sort(
+			(a, b) =>
+				(a.id === preferredProvider ? 0 : 1) - (b.id === preferredProvider ? 0 : 1) ||
+				PROVIDER_IDS.indexOf(a.id) - PROVIDER_IDS.indexOf(b.id)
+		);
+	// prefer a provider that claims the model by prefix; otherwise fall back to a
+	// catch-all (Azure) for arbitrary deployment names.
+	return (
+		defs.find((def) => matchesByPrefix(def, m)) ?? defs.find((def) => def.acceptsAnyModel) ?? null
+	);
 }
 
 /**

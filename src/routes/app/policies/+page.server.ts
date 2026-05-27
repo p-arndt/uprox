@@ -27,11 +27,14 @@ export const actions: Actions = {
 
 		// blank cache field = inherit the org default (null); a number overrides it
 		const rawCache = data.get('cacheTtlSeconds')?.toString().trim() ?? '';
+		// blank = no preference (defaults to OpenAI when both backends are configured)
+		const preferredProvider = data.get('preferredProvider')?.toString() || null;
 
 		await createPolicy(organizationId, {
 			name,
 			allowedProviders,
 			allowedModels,
+			preferredProvider,
 			rateLimitPerMinute: Number(data.get('rateLimitPerMinute')) || 0,
 			dailyBudgetUsd: Number(data.get('dailyBudgetUsd')) || 0,
 			monthlyBudgetUsd: Number(data.get('monthlyBudgetUsd')) || 0,
@@ -54,11 +57,14 @@ export const actions: Actions = {
 
 		// blank cache field = inherit the org default (null); a number overrides it
 		const rawCache = data.get('cacheTtlSeconds')?.toString().trim() ?? '';
+		// blank = no preference (defaults to OpenAI when both backends are configured)
+		const preferredProvider = data.get('preferredProvider')?.toString() || null;
 
 		await updatePolicy(organizationId, id!, {
 			name,
 			allowedProviders,
 			allowedModels,
+			preferredProvider,
 			rateLimitPerMinute: Number(data.get('rateLimitPerMinute')) || 0,
 			dailyBudgetUsd: Number(data.get('dailyBudgetUsd')) || 0,
 			monthlyBudgetUsd: Number(data.get('monthlyBudgetUsd')) || 0,

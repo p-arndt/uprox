@@ -182,7 +182,9 @@
 						required
 					/>
 					<p class="text-xs text-muted-foreground">
-						Your Azure resource endpoint. Call models as <code>azure/&lt;deployment&gt;</code>.
+						Your Azure resource endpoint. Call models by their deployment name (e.g.
+						<code>gpt-4o</code>) — no prefix. Set the preferred backend on a policy when OpenAI is
+						also configured.
 					</p>
 				</div>
 			{/if}
@@ -247,7 +249,9 @@
 						required
 					/>
 					<p class="text-xs text-muted-foreground">
-						Your Azure resource endpoint. Call models as <code>azure/&lt;deployment&gt;</code>.
+						Your Azure resource endpoint. Call models by their deployment name (e.g.
+						<code>gpt-4o</code>) — no prefix. Set the preferred backend on a policy when OpenAI is
+						also configured.
 					</p>
 				</div>
 			{/if}

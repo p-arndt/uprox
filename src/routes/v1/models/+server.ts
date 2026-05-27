@@ -30,6 +30,7 @@ export const GET: RequestHandler = async (event) => {
 		.where(eq(providerSecret.organizationId, token.organizationId));
 
 	const models: ModelEntry[] = [];
+	const seen = new Set<string>();
 	for (const secret of secrets) {
 		const def = PROVIDERS[secret.provider];
 		if (!def) continue;
@@ -44,10 +45,11 @@ export const GET: RequestHandler = async (event) => {
 			if (!res.ok) continue;
 			const data = (await res.json()) as { data?: { id: string }[] };
 			for (const m of data.data ?? []) {
-				// re-attach the routing alias (e.g. "azure/") so the listed id is
-				// callable as-is through the gateway.
-				const id = def.routePrefix ? `${def.routePrefix}${m.id}` : m.id;
-				models.push({ id, object: 'model', owned_by: def.id });
+				// Model ids are callable as-is (no provider alias). OpenAI and Azure
+				// share the namespace, so dedupe ids when both are configured.
+				if (seen.has(m.id)) continue;
+				seen.add(m.id);
+				models.push({ id: m.id, object: 'model', owned_by: def.id });
 			}
 		} catch {
 			// skip providers that fail to list
