@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { auth } from '$lib/server/auth';
 import { APIError } from 'better-auth/api';
+import { getEnabledProviders, getOidcConfig, isEmailAuthEnabled } from '$lib/server/auth-config';
 
 /** Only allow internal, single-slash paths to prevent open redirects. */
 function safeRedirect(target: string | null | undefined): string {
@@ -12,11 +13,18 @@ function safeRedirect(target: string | null | undefined): string {
 export const load: PageServerLoad = (event) => {
 	const redirectTo = safeRedirect(event.url.searchParams.get('redirectTo'));
 	if (event.locals.user) redirect(302, redirectTo);
-	return { redirectTo };
+	return {
+		redirectTo,
+		enabledProviders: getEnabledProviders(),
+		oidcLabel: getOidcConfig()?.providerName ?? null
+	};
 };
 
 export const actions: Actions = {
 	signIn: async (event) => {
+		if (!isEmailAuthEnabled()) {
+			return fail(403, { mode: 'signIn', message: 'Email sign-in is disabled.' });
+		}
 		const data = await event.request.formData();
 		const email = data.get('email')?.toString() ?? '';
 		const password = data.get('password')?.toString() ?? '';
@@ -31,28 +39,21 @@ export const actions: Actions = {
 		}
 		redirect(302, redirectTo);
 	},
-	signUp: async (event) => {
+	oidc: async (event) => {
+		if (!getEnabledProviders().oidc) {
+			return fail(400, { message: 'SSO is not configured.' });
+		}
 		const data = await event.request.formData();
-		const email = data.get('email')?.toString() ?? '';
-		const password = data.get('password')?.toString() ?? '';
-		const name = data.get('name')?.toString() ?? '';
 		const redirectTo = safeRedirect(data.get('redirectTo')?.toString());
+		let res;
 		try {
-			await auth.api.signUpEmail({
-				body: { email, password, name },
+			res = await auth.api.signInWithOAuth2({
+				body: { providerId: 'oidc', callbackURL: redirectTo, errorCallbackURL: '/login' },
 				headers: event.request.headers
 			});
-		} catch (error) {
-			if (error instanceof APIError) {
-				return fail(400, {
-					mode: 'signUp',
-					email,
-					name,
-					message: error.message || 'Registration failed'
-				});
-			}
-			return fail(500, { mode: 'signUp', email, name, message: 'Unexpected error' });
+		} catch {
+			return fail(500, { message: 'Could not start SSO sign-in.' });
 		}
-		redirect(302, redirectTo);
+		redirect(302, res.url);
 	}
 };

@@ -8,24 +8,19 @@
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
-	import LogIn from '@lucide/svelte/icons/log-in';
 	import Loader2 from '@lucide/svelte/icons/loader-circle';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	let loading = $state(false);
-	let oidcLoading = $state(false);
 
 	const features = [
 		{ icon: KeyRound, text: 'Issue scoped, revocable machine tokens' },
 		{ icon: Boxes, text: 'One OpenAI-compatible gateway for every provider' },
 		{ icon: ScrollText, text: 'Policy enforcement and full audit trail' }
 	];
-
-	const providers = $derived(data.enabledProviders);
-	const oidcLabel = $derived(data.oidcLabel ?? 'SSO');
 </script>
 
-<svelte:head><title>Sign in · uprox</title></svelte:head>
+<svelte:head><title>Set up uprox</title></svelte:head>
 
 <div class="grid min-h-svh lg:grid-cols-2">
 	<!-- brand panel -->
@@ -70,44 +65,20 @@
 			</div>
 
 			<div class="space-y-2">
-				<h2 class="text-2xl font-semibold tracking-tight">Welcome back</h2>
-				<p class="text-sm text-muted-foreground">Sign in to manage your services and tokens.</p>
+				<h2 class="text-2xl font-semibold tracking-tight">Welcome to uprox</h2>
+				<p class="text-sm text-muted-foreground">
+					{#if data.emailAuthEnabled}
+						Create the administrator account. This is a one-time step — this account will own the
+						first organization.
+					{:else}
+						First-run setup.
+					{/if}
+				</p>
 			</div>
 
-			{#if providers.oidc}
+			{#if data.emailAuthEnabled}
 				<form
 					method="post"
-					action="?/oidc"
-					use:enhance={() => {
-						oidcLoading = true;
-						return async ({ update }) => {
-							await update();
-							oidcLoading = false;
-						};
-					}}
-				>
-					<input type="hidden" name="redirectTo" value={data.redirectTo} />
-					<Button type="submit" variant="outline" class="w-full" disabled={oidcLoading}>
-						{#if oidcLoading}<Loader2 class="size-4 animate-spin" />{:else}<LogIn
-								class="size-4"
-							/>{/if}
-						Sign in with {oidcLabel}
-					</Button>
-				</form>
-			{/if}
-
-			{#if providers.oidc && providers.email}
-				<div class="flex items-center gap-3">
-					<span class="h-px flex-1 bg-border"></span>
-					<span class="text-xs text-muted-foreground uppercase">or</span>
-					<span class="h-px flex-1 bg-border"></span>
-				</div>
-			{/if}
-
-			{#if providers.email}
-				<form
-					method="post"
-					action="?/signIn"
 					use:enhance={() => {
 						loading = true;
 						return async ({ update }) => {
@@ -117,7 +88,16 @@
 					}}
 					class="space-y-4"
 				>
-					<input type="hidden" name="redirectTo" value={data.redirectTo} />
+					<div class="space-y-2">
+						<Label for="name">Name</Label>
+						<Input
+							id="name"
+							name="name"
+							placeholder="Ada Lovelace"
+							value={form && 'name' in form ? form.name : ''}
+							required
+						/>
+					</div>
 					<div class="space-y-2">
 						<Label for="email">Email</Label>
 						<Input
@@ -133,6 +113,16 @@
 						<Label for="password">Password</Label>
 						<Input id="password" name="password" type="password" placeholder="••••••••" required />
 					</div>
+					<div class="space-y-2">
+						<Label for="confirmPassword">Confirm password</Label>
+						<Input
+							id="confirmPassword"
+							name="confirmPassword"
+							type="password"
+							placeholder="••••••••"
+							required
+						/>
+					</div>
 
 					{#if form?.message}
 						<p class="text-sm text-destructive">{form.message}</p>
@@ -140,11 +130,18 @@
 
 					<Button type="submit" class="w-full" disabled={loading}>
 						{#if loading}<Loader2 class="size-4 animate-spin" />{/if}
-						Sign in
+						Create admin account
 					</Button>
 				</form>
-			{:else if form?.message}
-				<p class="text-sm text-destructive">{form.message}</p>
+			{:else}
+				<div class="space-y-3 rounded-lg border border-border bg-muted/40 p-4">
+					<p class="text-sm font-medium">Email &amp; password sign-up is disabled</p>
+					<p class="text-sm text-muted-foreground">
+						The administrator account cannot be created here. Provision the first admin another way
+						(for example, by enabling email/password sign-up or configuring your identity provider),
+						then reload this page.
+					</p>
+				</div>
 			{/if}
 		</div>
 	</div>

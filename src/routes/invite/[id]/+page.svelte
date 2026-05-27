@@ -1,16 +1,22 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
 	import type { ActionData, PageData } from './$types';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import MailWarning from '@lucide/svelte/icons/mail-warning';
+	import LogIn from '@lucide/svelte/icons/log-in';
 	import Loader2 from '@lucide/svelte/icons/loader-circle';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	let loading = $state(false);
+	let registerLoading = $state(false);
+	let oidcLoading = $state(false);
 
-	const loginHref = $derived(`/login?redirectTo=${encodeURIComponent(page.url.pathname)}`);
+	const providers = $derived(data.enabledProviders ?? { email: false, oidc: false });
+	const oidcLabel = $derived(data.oidcLabel ?? 'SSO');
 </script>
 
 <svelte:head><title>Invitation · uprox</title></svelte:head>
@@ -34,9 +40,9 @@
 						<p class="text-sm text-muted-foreground">{data.reason}</p>
 					</div>
 					<div class="flex flex-col gap-2">
-						<Button href="/app">Go to dashboard</Button>
+						<Button href={resolve('/app')}>Go to dashboard</Button>
 						<a
-							href="/login"
+							href={resolve('/login')}
 							class="text-sm text-muted-foreground underline-offset-4 hover:underline"
 						>
 							Back to sign in
@@ -48,7 +54,9 @@
 					<div class="space-y-2 text-center">
 						<h1 class="text-xl font-semibold tracking-tight">You've been invited</h1>
 						<p class="text-sm text-muted-foreground">
-							Join <span class="font-medium text-foreground">{data.invitation.organizationName}</span>
+							Join <span class="font-medium text-foreground"
+								>{data.invitation.organizationName}</span
+							>
 							as <span class="font-medium text-foreground">{data.invitation.role}</span>.
 						</p>
 					</div>
@@ -84,17 +92,122 @@
 						<p class="text-center text-sm text-muted-foreground">
 							Not your account?
 							<a
-								href={loginHref}
+								href={resolve('/login')}
 								class="font-medium text-foreground underline-offset-4 hover:underline"
 							>
 								Use a different account
 							</a>
 						</p>
 					{:else}
+						{#if providers.email}
+							<div class="space-y-2 text-center">
+								<p class="text-sm text-muted-foreground">
+									Create your account to join
+									<span class="font-medium text-foreground">{data.invitation.organizationName}</span
+									>.
+								</p>
+							</div>
+
+							<form
+								method="post"
+								action="?/register"
+								use:enhance={() => {
+									registerLoading = true;
+									return async ({ update }) => {
+										await update();
+										registerLoading = false;
+									};
+								}}
+								class="space-y-4"
+							>
+								<div class="space-y-2">
+									<Label for="email">Email</Label>
+									<Input id="email" type="email" value={data.invitation.email} disabled />
+								</div>
+								<div class="space-y-2">
+									<Label for="name">Name</Label>
+									<Input
+										id="name"
+										name="name"
+										placeholder="Ada Lovelace"
+										value={form && 'name' in form ? form.name : ''}
+										required
+									/>
+								</div>
+								<div class="space-y-2">
+									<Label for="password">Password</Label>
+									<Input
+										id="password"
+										name="password"
+										type="password"
+										placeholder="••••••••"
+										required
+									/>
+								</div>
+								<div class="space-y-2">
+									<Label for="confirmPassword">Confirm password</Label>
+									<Input
+										id="confirmPassword"
+										name="confirmPassword"
+										type="password"
+										placeholder="••••••••"
+										required
+									/>
+								</div>
+
+								{#if form?.message}
+									<p class="text-sm text-destructive">{form.message}</p>
+								{/if}
+
+								<Button type="submit" class="w-full" disabled={registerLoading}>
+									{#if registerLoading}<Loader2 class="size-4 animate-spin" />{/if}
+									Create account &amp; join
+								</Button>
+							</form>
+						{/if}
+
+						{#if providers.email && providers.oidc}
+							<div class="flex items-center gap-3">
+								<span class="h-px flex-1 bg-border"></span>
+								<span class="text-xs text-muted-foreground uppercase">or</span>
+								<span class="h-px flex-1 bg-border"></span>
+							</div>
+						{/if}
+
+						{#if providers.oidc}
+							<form
+								method="post"
+								action="?/oidc"
+								use:enhance={() => {
+									oidcLoading = true;
+									return async ({ update }) => {
+										await update();
+										oidcLoading = false;
+									};
+								}}
+							>
+								<Button type="submit" variant="outline" class="w-full" disabled={oidcLoading}>
+									{#if oidcLoading}<Loader2 class="size-4 animate-spin" />{:else}<LogIn
+											class="size-4"
+										/>{/if}
+									Sign in with {oidcLabel}
+								</Button>
+							</form>
+						{/if}
+
+						{#if !providers.email && providers.oidc && form?.message}
+							<p class="text-sm text-destructive">{form.message}</p>
+						{/if}
+
 						<p class="text-center text-sm text-muted-foreground">
-							Sign in or create an account to accept this invitation.
+							Already have an account?
+							<a
+								href={resolve('/login')}
+								class="font-medium text-foreground underline-offset-4 hover:underline"
+							>
+								Sign in
+							</a>
 						</p>
-						<Button href={loginHref} class="w-full">Sign in to continue</Button>
 					{/if}
 				</div>
 			{/if}

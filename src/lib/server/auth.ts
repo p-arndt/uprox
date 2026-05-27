@@ -1,12 +1,13 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { sveltekitCookies } from 'better-auth/svelte-kit';
-import { organization } from 'better-auth/plugins';
+import { organization, genericOAuth } from 'better-auth/plugins';
 import { env } from '$env/dynamic/private';
 import { getRequestEvent } from '$app/server';
 import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { sendInvitationEmail } from '$lib/server/email';
+import { getOidcConfig, isEmailAuthEnabled } from '$lib/server/auth-config';
 import {
 	user as authUser,
 	session as authSession,
@@ -26,6 +27,9 @@ function slugify(seed: string): string {
 		.slice(0, 24);
 	return `${base || 'org'}-${crypto.randomUUID().slice(0, 8)}`;
 }
+
+// Optional single OIDC provider, configured via env (see auth-config.ts).
+const oidcConfig = getOidcConfig();
 
 export const auth = betterAuth({
 	baseURL: env.ORIGIN,
@@ -49,7 +53,7 @@ export const auth = betterAuth({
 			invitation: authInvitation
 		}
 	}),
-	emailAndPassword: { enabled: true, autoSignIn: true },
+	emailAndPassword: { enabled: isEmailAuthEnabled(), autoSignIn: true },
 	databaseHooks: {
 		user: {
 			create: {
@@ -103,6 +107,25 @@ export const auth = betterAuth({
 				});
 			}
 		}),
+		// A single OIDC provider, only registered when fully configured. Users
+		// signing in this way are auto-provisioned (and get a personal org via the
+		// user.create hook above), which is the expected behaviour for org SSO.
+		...(oidcConfig
+			? [
+					genericOAuth({
+						config: [
+							{
+								providerId: oidcConfig.providerId,
+								clientId: oidcConfig.clientId,
+								clientSecret: oidcConfig.clientSecret,
+								discoveryUrl: oidcConfig.discoveryUrl,
+								scopes: oidcConfig.scopes,
+								pkce: true
+							}
+						]
+					})
+				]
+			: []),
 		sveltekitCookies(getRequestEvent) // make sure this is the last plugin in the array
 	]
 });

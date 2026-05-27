@@ -26,8 +26,8 @@
 		"changelog": "git-cliff -o CHANGELOG.md"
 	},
 	"devDependencies": {
-		"@better-auth/cli": "latest",
-		"@eslint/compat": "latest",
+		"@better-auth/cli": "^1.4.21",
+		"@eslint/compat": "^2.1.0",
 		"@eslint/js": "^10.0.1",
 		"@fontsource-variable/inter": "^5.2.8",
 		"@internationalized/date": "^3.12.1",
