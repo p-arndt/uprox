@@ -40,13 +40,30 @@
 
 	function status(t: (typeof data.tokens)[number]): {
 		label: string;
-		variant: 'secondary' | 'destructive' | 'outline';
+		dot: string;
+		pulse?: boolean;
 	} {
-		if (t.revokedAt) return { label: 'revoked', variant: 'destructive' };
+		if (t.revokedAt) return { label: 'revoked', dot: 'bg-red-500' };
 		if (t.expiresAt && new Date(t.expiresAt).getTime() < Date.now())
-			return { label: 'expired', variant: 'outline' };
-		return { label: 'active', variant: 'secondary' };
+			return { label: 'expired', dot: 'bg-amber-500' };
+		return { label: 'active', dot: 'bg-emerald-500', pulse: true };
 	}
+
+	const stats = $derived.by(() => {
+		const now = Date.now();
+		let active = 0;
+		let inactive = 0;
+		let lastUsed: number | null = null;
+		for (const t of data.tokens) {
+			if (t.revokedAt || (t.expiresAt && new Date(t.expiresAt).getTime() < now)) inactive++;
+			else active++;
+			if (t.lastUsedAt) {
+				const ts = new Date(t.lastUsedAt).getTime();
+				if (lastUsed === null || ts > lastUsed) lastUsed = ts;
+			}
+		}
+		return { total: data.tokens.length, active, inactive, lastUsed };
+	});
 </script>
 
 <div class="mx-auto max-w-5xl space-y-6">
@@ -143,6 +160,30 @@
 			<p class="text-sm text-muted-foreground">Issue a token to authenticate a service.</p>
 		</div>
 	{:else}
+		<div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+			<div class="rounded-xl border bg-card p-4">
+				<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Total</p>
+				<p class="mt-1 text-2xl font-semibold tabular-nums">{stats.total}</p>
+			</div>
+			<div class="rounded-xl border bg-card p-4">
+				<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Active</p>
+				<p class="mt-1 flex items-center gap-2 text-2xl font-semibold tabular-nums">
+					<span class="dot-pulse size-2 rounded-full bg-emerald-500"></span>
+					{stats.active}
+				</p>
+			</div>
+			<div class="rounded-xl border bg-card p-4">
+				<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Inactive</p>
+				<p class="mt-1 text-2xl font-semibold text-muted-foreground tabular-nums">{stats.inactive}</p>
+			</div>
+			<div class="rounded-xl border bg-card p-4">
+				<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Last used</p>
+				<p class="mt-1.5 truncate text-lg font-semibold">
+					{relativeTime(stats.lastUsed ? new Date(stats.lastUsed) : null)}
+				</p>
+			</div>
+		</div>
+
 		<div class="rounded-xl border">
 			<Table.Root>
 				<Table.Header>
@@ -159,10 +200,19 @@
 				<Table.Body>
 					{#each data.tokens as t (t.id)}
 						{@const st = status(t)}
-						<Table.Row>
+						<Table.Row class="group transition-colors hover:bg-accent/40">
 							<Table.Cell class="font-medium">{t.name}</Table.Cell>
-							<Table.Cell><code class="text-xs text-muted-foreground">{t.display}</code></Table.Cell
-							>
+							<Table.Cell>
+								<button
+									type="button"
+									onclick={() => copy(t.display)}
+									title="Copy token prefix"
+									class="inline-flex items-center gap-1.5 rounded-md bg-muted/60 px-2 py-1 font-mono text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+								>
+									{t.display}
+									<Copy class="size-3 opacity-0 transition-opacity group-hover:opacity-100" />
+								</button>
+							</Table.Cell>
 							<Table.Cell class="text-muted-foreground">{t.serviceName}</Table.Cell>
 							<Table.Cell>
 								{#if t.scopes.length === 0}
@@ -174,7 +224,12 @@
 								{/if}
 							</Table.Cell>
 							<Table.Cell class="text-muted-foreground">{relativeTime(t.lastUsedAt)}</Table.Cell>
-							<Table.Cell><Badge variant={st.variant}>{st.label}</Badge></Table.Cell>
+							<Table.Cell>
+								<span class="inline-flex items-center gap-1.5 text-sm capitalize">
+									<span class="size-1.5 rounded-full {st.dot} {st.pulse ? 'dot-pulse' : ''}"></span>
+									{st.label}
+								</span>
+							</Table.Cell>
 							<Table.Cell>
 								{#if !t.revokedAt && canManage}
 									<form
@@ -189,7 +244,7 @@
 											type="submit"
 											variant="ghost"
 											size="icon"
-											class="size-8 text-muted-foreground hover:text-destructive"
+											class="size-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 hover:text-destructive"
 											title="Revoke token"
 										>
 											<Ban class="size-4" />

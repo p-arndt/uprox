@@ -1,29 +1,45 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { base } from '$app/paths';
-	import type { Pathname } from '$app/types';
-	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
+	import type { ResolvedPathname } from '$app/types';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Command from '$lib/components/ui/command/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
+	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import ShieldCheck from '@lucide/svelte/icons/shield-check';
-	import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
 	import Boxes from '@lucide/svelte/icons/boxes';
+	import Check from '@lucide/svelte/icons/check';
+	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
+	import Coins from '@lucide/svelte/icons/coins';
 	import KeyRound from '@lucide/svelte/icons/key-round';
+	import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
+	import LogOut from '@lucide/svelte/icons/log-out';
 	import Plug from '@lucide/svelte/icons/plug';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
-	import ShieldHalf from '@lucide/svelte/icons/shield-half';
-	import Coins from '@lucide/svelte/icons/coins';
+	import Search from '@lucide/svelte/icons/search';
 	import Settings from '@lucide/svelte/icons/settings';
+	import ShieldCheck from '@lucide/svelte/icons/shield-check';
+	import ShieldHalf from '@lucide/svelte/icons/shield-half';
 	import Users from '@lucide/svelte/icons/users';
-	import LogOut from '@lucide/svelte/icons/log-out';
-	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
-	import Check from '@lucide/svelte/icons/check';
 
 	let { data, children } = $props();
 
-	const nav: { href: Pathname; label: string; icon: typeof Boxes; exact?: boolean }[] = [
+	let cmdOpen = $state(false);
+
+	function onKeydown(e: KeyboardEvent) {
+		if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+			e.preventDefault();
+			cmdOpen = !cmdOpen;
+		}
+	}
+
+	function go(href: ResolvedPathname) {
+		cmdOpen = false;
+		goto(href);
+	}
+
+	const nav: { href: ResolvedPathname; label: string; icon: typeof Boxes; exact?: boolean }[] = [
 		{ href: '/app', label: 'Overview', icon: LayoutDashboard, exact: true },
 		{ href: '/app/services', label: 'Services', icon: Boxes },
 		{ href: '/app/tokens', label: 'Machine Tokens', icon: KeyRound },
@@ -35,7 +51,7 @@
 		{ href: '/app/settings', label: 'Settings', icon: Settings }
 	];
 
-	function isActive(href: string, exact?: boolean) {
+	function isActive(href: ResolvedPathname, exact?: boolean) {
 		return exact ? page.url.pathname === href : page.url.pathname.startsWith(href);
 	}
 
@@ -50,7 +66,24 @@
 	);
 </script>
 
+<svelte:window onkeydown={onKeydown} />
+
 <Toaster richColors closeButton />
+
+<Command.Dialog bind:open={cmdOpen}>
+	<Command.Input placeholder="Jump to a page…" />
+	<Command.List>
+		<Command.Empty>No results found.</Command.Empty>
+		<Command.Group heading="Platform">
+			{#each nav as item (item.href)}
+				<Command.Item value={item.label} onSelect={() => go(item.href)}>
+					<item.icon class="size-4" />
+					<span>{item.label}</span>
+				</Command.Item>
+			{/each}
+		</Command.Group>
+	</Command.List>
+</Command.Dialog>
 
 <Sidebar.Provider>
 	<Sidebar.Root collapsible="icon">
@@ -70,10 +103,14 @@
 							>{data.org?.name ?? 'Organization'}</span
 						>
 					</div>
-					<ChevronsUpDown class="ml-auto size-4 text-muted-foreground group-data-[collapsible=icon]:hidden" />
+					<ChevronsUpDown
+						class="ml-auto size-4 text-muted-foreground group-data-[collapsible=icon]:hidden"
+					/>
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="start" class="min-w-56">
-					<DropdownMenu.Label class="text-xs text-muted-foreground">Organizations</DropdownMenu.Label>
+					<DropdownMenu.Label class="text-xs text-muted-foreground"
+						>Organizations</DropdownMenu.Label
+					>
 					{#each data.memberships as m (m.id)}
 						<DropdownMenu.Item closeOnSelect={false} class="p-0">
 							{#snippet child({ props })}
@@ -113,7 +150,7 @@
 									tooltipContent={item.label}
 								>
 									{#snippet child({ props })}
-										<a href={`${base}${item.href}`} {...props}>
+										<a href={item.href} {...props}>
 											<item.icon />
 											<span>{item.label}</span>
 										</a>
@@ -152,6 +189,18 @@
 			<Sidebar.Trigger class="-ml-1" />
 			<Separator orientation="vertical" class="mr-2 h-4" />
 			<h1 class="text-sm font-medium">{current}</h1>
+			<button
+				type="button"
+				onclick={() => (cmdOpen = true)}
+				class="ml-auto flex items-center gap-2 rounded-lg border bg-muted/40 py-1.5 pr-1.5 pl-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+			>
+				<Search class="size-4" />
+				<span class="hidden sm:inline">Search…</span>
+				<kbd
+					class="hidden rounded border bg-background px-1.5 font-mono text-[10px] leading-5 text-muted-foreground sm:inline"
+					>⌘K</kbd
+				>
+			</button>
 		</header>
 		<main class="flex-1 p-4 sm:p-6">
 			{@render children?.()}

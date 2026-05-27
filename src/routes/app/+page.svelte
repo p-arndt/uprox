@@ -34,10 +34,16 @@
 	<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 		{#each cards as c (c.label)}
 			<a href={`${base}${c.href}`} class="block">
-				<Card.Root class="transition-colors hover:border-foreground/20">
+				<Card.Root
+					class="transition-all hover:-translate-y-0.5 hover:border-accent-foreground/30 hover:shadow-md"
+				>
 					<Card.Header class="flex flex-row items-center justify-between space-y-0 pb-2">
 						<Card.Title class="text-sm font-medium text-muted-foreground">{c.label}</Card.Title>
-						<c.icon class="size-4 text-muted-foreground" />
+						<span
+							class="flex size-8 items-center justify-center rounded-lg bg-accent text-accent-foreground"
+						>
+							<c.icon class="size-4" />
+						</span>
 					</Card.Header>
 					<Card.Content>
 						<div class="text-3xl font-semibold tabular-nums">{c.value}</div>
@@ -52,7 +58,11 @@
 			<Card.Root>
 				<Card.Header class="flex flex-row items-center justify-between space-y-0 pb-2">
 					<Card.Title class="text-sm font-medium text-muted-foreground">Estimated spend</Card.Title>
-					<DollarSign class="size-4 text-muted-foreground" />
+					<span
+						class="flex size-8 items-center justify-center rounded-lg bg-accent text-accent-foreground"
+					>
+						<DollarSign class="size-4" />
+					</span>
 				</Card.Header>
 				<Card.Content>
 					<div class="text-3xl font-semibold tabular-nums">{formatUsd(data.stats.costUsd)}</div>
@@ -63,7 +73,11 @@
 			<Card.Root>
 				<Card.Header class="flex flex-row items-center justify-between space-y-0 pb-2">
 					<Card.Title class="text-sm font-medium text-muted-foreground">Cache hit rate</Card.Title>
-					<DatabaseZap class="size-4 text-muted-foreground" />
+					<span
+						class="flex size-8 items-center justify-center rounded-lg bg-accent text-accent-foreground"
+					>
+						<DatabaseZap class="size-4" />
+					</span>
 				</Card.Header>
 				<Card.Content>
 					<div class="text-3xl font-semibold tabular-nums">
