@@ -431,3 +431,47 @@ export async function orgStats(orgId: string) {
 		providerCachedTokens: Number(reqs?.providerCachedTokens ?? 0)
 	};
 }
+
+export interface DailyStat {
+	date: string;
+	requests: number;
+	denied: number;
+	costUsd: number;
+}
+
+/**
+ * Per-day gateway traffic for the last `days` days, including empty days so the
+ * overview sparkline keeps a steady width. Returned oldest-first.
+ */
+export async function orgDailyStats(orgId: string, days = 14): Promise<DailyStat[]> {
+	const rows = await db.execute<{
+		day: string;
+		requests: number;
+		denied: number;
+		cost: string;
+	}>(sql`
+		select
+			to_char(d.day, 'YYYY-MM-DD') as day,
+			count(${auditLog.id})::int as requests,
+			(count(${auditLog.id}) filter (where ${auditLog.status} = 'deny'))::int as denied,
+			coalesce(sum(${auditLog.costUsd}), 0)::text as cost
+		from generate_series(
+			current_date - make_interval(days => ${days - 1}),
+			current_date,
+			interval '1 day'
+		) as d(day)
+		left join ${auditLog}
+			on ${auditLog.createdAt}::date = d.day::date
+			and ${auditLog.organizationId} = ${orgId}
+			and ${auditLog.action} like 'gateway.%'
+		group by d.day
+		order by d.day asc
+	`);
+
+	return rows.map((r) => ({
+		date: r.day,
+		requests: Number(r.requests ?? 0),
+		denied: Number(r.denied ?? 0),
+		costUsd: Number(r.cost ?? 0)
+	}));
+}
