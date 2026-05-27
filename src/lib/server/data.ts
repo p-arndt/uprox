@@ -149,6 +149,7 @@ export function listProviderSecrets(orgId: string) {
 			id: providerSecret.id,
 			provider: providerSecret.provider,
 			label: providerSecret.label,
+			baseUrl: providerSecret.baseUrl,
 			hint: providerSecret.hint,
 			createdAt: providerSecret.createdAt,
 			updatedAt: providerSecret.updatedAt
@@ -161,15 +162,17 @@ export function listProviderSecrets(orgId: string) {
 export async function upsertProviderSecret(
 	orgId: string,
 	userId: string,
-	input: { provider: string; secret: string; label?: string }
+	input: { provider: string; secret: string; label?: string; baseUrl?: string }
 ) {
 	const hint = input.secret.slice(-4);
+	const baseUrl = input.baseUrl?.trim() || null;
 	const [row] = await db
 		.insert(providerSecret)
 		.values({
 			organizationId: orgId,
 			provider: input.provider,
 			label: input.label || null,
+			baseUrl,
 			encryptedSecret: encrypt(input.secret),
 			hint,
 			createdByUserId: userId
@@ -178,6 +181,7 @@ export async function upsertProviderSecret(
 			target: [providerSecret.organizationId, providerSecret.provider],
 			set: {
 				label: input.label || null,
+				baseUrl,
 				encryptedSecret: encrypt(input.secret),
 				hint,
 				updatedAt: new Date()

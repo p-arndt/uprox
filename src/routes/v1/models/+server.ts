@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { providerSecret } from '$lib/server/db/schema';
 import { decrypt } from '$lib/server/crypto';
-import { PROVIDERS } from '$lib/server/providers';
+import { PROVIDERS, resolveBaseUrl, authHeaders } from '$lib/server/providers';
 import { authenticateGateway } from '$lib/server/gateway';
 import { evaluatePolicy } from '$lib/server/policy';
 import { audit } from '$lib/server/audit';
@@ -35,14 +35,19 @@ export const GET: RequestHandler = async (event) => {
 		if (!def) continue;
 		// only list providers this token's policy allows
 		if (!evaluatePolicy(token, { provider: def.id, model: '', scope: 'models' }).allow) continue;
+		const base = resolveBaseUrl(def, secret.baseUrl);
+		if (!base) continue;
 		try {
-			const res = await fetch(`${def.baseUrl}/models`, {
-				headers: { authorization: `Bearer ${decrypt(secret.encryptedSecret)}` }
+			const res = await fetch(`${base}/models`, {
+				headers: authHeaders(def, decrypt(secret.encryptedSecret))
 			});
 			if (!res.ok) continue;
 			const data = (await res.json()) as { data?: { id: string }[] };
 			for (const m of data.data ?? []) {
-				models.push({ id: m.id, object: 'model', owned_by: def.id });
+				// re-attach the routing alias (e.g. "azure/") so the listed id is
+				// callable as-is through the gateway.
+				const id = def.routePrefix ? `${def.routePrefix}${m.id}` : m.id;
+				models.push({ id, object: 'model', owned_by: def.id });
 			}
 		} catch {
 			// skip providers that fail to list

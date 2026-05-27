@@ -35,7 +35,7 @@ SvelteKit app
 ```
 Agent/App  --(Bearer uprox_live_…)-->  /v1/chat/completions
    1. resolve token  (sha256 lookup, check revoked/expired)
-   2. route by model (gpt-* → openai, claude-* → anthropic)
+   2. route by model (gpt-* → openai, claude-* → anthropic, azure/* → azure)
    3. enforce policy (scopes, allowed providers, allowed models)
    4. rate limit     (per-token req/min ceiling → 429 + Retry-After)
    5. cache lookup   (exact-match hit replays the stored response for free)
@@ -103,7 +103,9 @@ pnpm dev
 Open http://localhost:5173, sign up (a personal organization is created
 automatically), then:
 
-1. **Providers** → add an OpenAI/Anthropic API key
+1. **Providers** → add an OpenAI/Anthropic API key (for **Azure OpenAI**, also
+   set your resource endpoint, e.g. `https://my-resource.openai.azure.com`, and
+   call deployments as `azure/<deployment>`)
 2. **Policies** (optional) → restrict providers/models
 3. **Services** → create a machine identity
 4. **Machine Tokens** → issue a token (copy it — shown once)

@@ -1,0 +1,1 @@
+ALTER TABLE "provider_secret" ADD COLUMN "base_url" text;

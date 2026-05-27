@@ -1,7 +1,23 @@
-import type { Handle } from '@sveltejs/kit';
 import { building } from '$app/environment';
 import { auth } from '$lib/server/auth';
+import { db } from '$lib/server/db';
+import type { Handle } from '@sveltejs/kit';
+import { type ServerInit } from '@sveltejs/kit';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
+import { migrate } from 'drizzle-orm/postgres-js/migrator';
+
+export const init: ServerInit = async () => {
+	try {
+		await db.execute(`SELECT NOW()`);
+		console.log('Database connected successfully');
+	} catch (error) {
+		console.error('Failed to connect to database:', error);
+		throw error;
+	}
+
+	await migrate(db, { migrationsFolder: 'drizzle' });
+	console.log('Migrations completed successfully');
+};
 
 const handleBetterAuth: Handle = async ({ event, resolve }) => {
 	const session = await auth.api.getSession({ headers: event.request.headers });

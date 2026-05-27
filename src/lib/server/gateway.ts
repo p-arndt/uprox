@@ -8,6 +8,9 @@ import { evaluatePolicy } from '$lib/server/policy';
 import {
 	providerForModel,
 	providerSupports,
+	upstreamModel,
+	resolveBaseUrl,
+	authHeaders,
 	PROVIDERS,
 	type Capability,
 	type ProviderDef
@@ -124,14 +127,20 @@ export async function authenticateGateway(
 	return { ok: true, auth: { token, ip: event.getClientAddress() } };
 }
 
-async function loadProviderKey(orgId: string, provider: string): Promise<string | null> {
+interface ProviderCreds {
+	apiKey: string;
+	/** per-org endpoint override (Azure), null when the static baseUrl applies */
+	baseUrl: string | null;
+}
+
+async function loadProviderCreds(orgId: string, provider: string): Promise<ProviderCreds | null> {
 	const [row] = await db
 		.select()
 		.from(providerSecret)
 		.where(and(eq(providerSecret.organizationId, orgId), eq(providerSecret.provider, provider)))
 		.limit(1);
 	if (!row) return null;
-	return decrypt(row.encryptedSecret);
+	return { apiKey: decrypt(row.encryptedSecret), baseUrl: row.baseUrl };
 }
 
 export interface ProxyOptions {
@@ -155,6 +164,9 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	const { token, ip } = auth;
 
 	const provider: ProviderDef | null = providerForModel(model);
+	// The bare model/deployment name to send upstream and price by. For Azure
+	// this strips the `azure/` routing alias; for other providers it's `model`.
+	const sendModel = provider ? upstreamModel(provider, model) : model;
 	if (!provider) {
 		await audit({
 			organizationId: token.organizationId,
@@ -266,10 +278,10 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		(scope === 'chat' || scope === 'embeddings' || scope === 'responses') &&
 		cacheTtl > 0 &&
 		!responsesStoreOff &&
-			// only cache reproducible requests: embeddings always, chat/responses
-			// only when sampling is pinned (temperature 0 or an explicit seed), so
-			// two identical-but-varied prompts each reach the model.
-			isDeterministicRequest(scope, body);
+		// only cache reproducible requests: embeddings always, chat/responses
+		// only when sampling is pinned (temperature 0 or an explicit seed), so
+		// two identical-but-varied prompts each reach the model.
+		isDeterministicRequest(scope, body);
 	const cacheKey = cacheable ? cacheKeyFor(provider.id, path, body) : null;
 	if (cacheKey) {
 		const hit = await getCached(token.organizationId, cacheKey);
@@ -324,8 +336,8 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	}
 
 	// upstream credentials
-	const apiKey = await loadProviderKey(token.organizationId, provider.id);
-	if (!apiKey) {
+	const creds = await loadProviderCreds(token.organizationId, provider.id);
+	if (!creds) {
 		await audit({
 			organizationId: token.organizationId,
 			action: `gateway.${scope}`,
@@ -345,23 +357,51 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		);
 	}
 
+	// resolve the upstream base URL — for Azure this is the org's configured
+	// resource endpoint; a misconfigured endpoint-based provider can't be reached.
+	const baseUrl = resolveBaseUrl(provider, creds.baseUrl);
+	if (!baseUrl) {
+		await audit({
+			organizationId: token.organizationId,
+			action: `gateway.${scope}`,
+			status: 'error',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: 502,
+			ip,
+			detail: `no ${provider.id} endpoint configured`
+		});
+		return gatewayError(
+			502,
+			`No ${PROVIDERS[provider.id].label} endpoint configured for this organization`,
+			'api_error'
+		);
+	}
+
+	let outboundBody = body;
+	// Prefix-routed providers (Azure) want the bare deployment name in the body,
+	// not the `azure/…` routing alias the client sent.
+	if (provider.routePrefix && isRecord(outboundBody) && typeof outboundBody.model === 'string') {
+		outboundBody = { ...outboundBody, model: sendModel };
+	}
 	// For streamed chat completions, ask the upstream to emit a final usage
 	// chunk; otherwise streaming responses carry no token counts and we can't
 	// compute cost. Don't clobber a caller-supplied stream_options.
-	let outboundBody = body;
-	if (stream && path.endsWith('/chat/completions') && isRecord(body)) {
-		const existing = isRecord(body.stream_options) ? body.stream_options : {};
-		outboundBody = { ...body, stream_options: { ...existing, include_usage: true } };
+	if (stream && path.endsWith('/chat/completions') && isRecord(outboundBody)) {
+		const existing = isRecord(outboundBody.stream_options) ? outboundBody.stream_options : {};
+		outboundBody = { ...outboundBody, stream_options: { ...existing, include_usage: true } };
 	}
 
 	// proxy upstream
 	let upstream: Response;
 	try {
-		upstream = await fetch(`${provider.baseUrl}${path}`, {
+		upstream = await fetch(`${baseUrl}${path}`, {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
-				authorization: `Bearer ${apiKey}`
+				...authHeaders(provider, creds.apiKey)
 			},
 			body: JSON.stringify(outboundBody)
 		});
@@ -390,7 +430,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		void (async () => {
 			const { usage, raw, complete } = await readSseUsage(costBranch);
 			const { estimateCostUsd } = await import('$lib/server/providers');
-			const cost = usage ? estimateCostUsd(model, usage.input, usage.output) : null;
+			const cost = usage ? estimateCostUsd(sendModel, usage.input, usage.output) : null;
 			await audit({
 				organizationId: token.organizationId,
 				action: `gateway.${scope}`,
@@ -446,7 +486,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		const { estimateCostUsd } = await import('$lib/server/providers');
 		const inputTokens = parsed.usage?.prompt_tokens ?? parsed.usage?.input_tokens;
 		const outputTokens = parsed.usage?.completion_tokens ?? parsed.usage?.output_tokens;
-		cost = estimateCostUsd(model, inputTokens, outputTokens);
+		cost = estimateCostUsd(sendModel, inputTokens, outputTokens);
 	} catch {
 		// non-JSON or no usage; leave cost null
 	}
@@ -488,4 +528,4 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	});
 }
 
-export { loadProviderKey };
+export { loadProviderCreds };

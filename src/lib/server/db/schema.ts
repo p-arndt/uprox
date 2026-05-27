@@ -83,9 +83,13 @@ export const providerSecret = pgTable(
 		organizationId: text('organization_id')
 			.notNull()
 			.references(() => organization.id, { onDelete: 'cascade' }),
-		// "openai" | "anthropic" | …
+		// "openai" | "anthropic" | "azure" | …
 		provider: text('provider').notNull(),
 		label: text('label'),
+		// Per-org upstream endpoint override. Required for providers whose base URL
+		// is per-organization (Azure OpenAI's resource endpoint); NULL otherwise,
+		// in which case the provider's static baseUrl is used.
+		baseUrl: text('base_url'),
 		// AES-256-GCM payload: iv:authTag:ciphertext (all base64)
 		encryptedSecret: text('encrypted_secret').notNull(),
 		// last 4 chars of the raw key, for display only

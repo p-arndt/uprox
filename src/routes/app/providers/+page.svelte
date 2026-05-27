@@ -13,7 +13,12 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 
 	let { data, form } = $props();
-	let editing = $state<{ id: string; label: string } | null>(null);
+	let editing = $state<{
+		id: string;
+		label: string;
+		requiresEndpoint: boolean;
+		baseUrl: string;
+	} | null>(null);
 
 	const byProvider = $derived(new Map(data.secrets.map((s) => [s.provider, s] as const)));
 
@@ -45,7 +50,9 @@
 						</div>
 						<div>
 							<Card.Title class="text-base">{p.label}</Card.Title>
-							<Card.Description class="text-xs">{p.baseUrl}</Card.Description>
+							<Card.Description class="text-xs">
+								{secret?.baseUrl ?? p.baseUrl ?? (p.requiresEndpoint ? 'per-org endpoint' : '')}
+							</Card.Description>
 						</div>
 					</div>
 					{#if secret}
@@ -84,7 +91,13 @@
 						<Button
 							variant="outline"
 							size="sm"
-							onclick={() => (editing = { id: p.id, label: p.label })}
+							onclick={() =>
+								(editing = {
+									id: p.id,
+									label: p.label,
+									requiresEndpoint: p.requiresEndpoint,
+									baseUrl: ''
+								})}
 						>
 							Add key
 						</Button>
@@ -95,7 +108,13 @@
 						<Button
 							variant="outline"
 							size="sm"
-							onclick={() => (editing = { id: p.id, label: p.label })}
+							onclick={() =>
+								(editing = {
+									id: p.id,
+									label: p.label,
+									requiresEndpoint: p.requiresEndpoint,
+									baseUrl: secret?.baseUrl ?? ''
+								})}
 						>
 							Rotate key
 						</Button>
@@ -128,6 +147,23 @@
 					update()}
 		>
 			<input type="hidden" name="provider" value={editing?.id} />
+			{#if editing?.requiresEndpoint}
+				<div class="space-y-2">
+					<Label for="baseUrl">Endpoint URL</Label>
+					<Input
+						id="baseUrl"
+						name="baseUrl"
+						type="url"
+						placeholder="https://my-resource.openai.azure.com"
+						value={editing?.baseUrl ?? ''}
+						autocomplete="off"
+						required
+					/>
+					<p class="text-xs text-muted-foreground">
+						Your Azure resource endpoint. Call models as <code>azure/&lt;deployment&gt;</code>.
+					</p>
+				</div>
+			{/if}
 			<div class="space-y-2">
 				<Label for="secret">API key</Label>
 				<Input

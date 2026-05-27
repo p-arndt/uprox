@@ -9,12 +9,34 @@ export type { Capability };
 export interface ProviderDef {
 	id: string;
 	label: string;
-	/** OpenAI-compatible base URL, no trailing slash. */
+	/**
+	 * OpenAI-compatible base URL, no trailing slash. Empty for providers whose
+	 * endpoint is per-organization (see `requiresEndpoint`); the real base URL
+	 * is then supplied by the org's stored secret.
+	 */
 	baseUrl: string;
 	/** model-name prefixes used to route a request to this provider */
 	modelPrefixes: string[];
 	/** gateway endpoints this provider's upstream actually implements */
 	capabilities: Capability[];
+	/**
+	 * How the upstream authenticates. 'bearer' sends `Authorization: Bearer <key>`
+	 * (OpenAI, Anthropic); 'api-key' sends an `api-key: <key>` header (Azure).
+	 * Defaults to 'bearer'.
+	 */
+	authScheme?: 'bearer' | 'api-key';
+	/**
+	 * When true the provider has no usable static `baseUrl`: each org configures
+	 * its own endpoint (e.g. an Azure resource URL), stored on the secret and
+	 * resolved by `resolveBaseUrl`.
+	 */
+	requiresEndpoint?: boolean;
+	/**
+	 * Model-name prefix that selects this provider and is stripped to form the
+	 * upstream model/deployment name. A client calls `azure/<deployment>`; we
+	 * route to Azure and send the bare `<deployment>` upstream. See `upstreamModel`.
+	 */
+	routePrefix?: string;
 }
 
 export const PROVIDERS: Record<string, ProviderDef> = {
@@ -33,12 +55,63 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 		baseUrl: 'https://api.anthropic.com/v1',
 		modelPrefixes: ['claude-'],
 		capabilities: ['chat', 'models']
+	},
+	azure: {
+		id: 'azure',
+		label: 'Azure OpenAI',
+		// Per-organization endpoint: the real base URL is the org's Azure resource
+		// (e.g. https://my-resource.openai.azure.com), stored on its secret and
+		// normalized to the v1 surface by resolveBaseUrl. We target Azure's newer
+		// OpenAI-compatible `/openai/v1` API, so the same request shapes proxy
+		// through unchanged.
+		baseUrl: '',
+		// Deployment names are arbitrary, so we route on an explicit alias rather
+		// than model prefixes: a client calls `azure/<deployment>`.
+		modelPrefixes: ['azure/'],
+		capabilities: ['chat', 'responses', 'embeddings', 'models'],
+		authScheme: 'api-key',
+		requiresEndpoint: true,
+		routePrefix: 'azure/'
 	}
 };
 
 /** Whether a provider implements a given gateway capability. */
 export function providerSupports(provider: ProviderDef, capability: Capability): boolean {
 	return provider.capabilities.includes(capability);
+}
+
+/**
+ * Strip a provider's `routePrefix` to get the bare upstream model/deployment
+ * name. For Azure, `azure/gpt-4o` → `gpt-4o`. A no-op for providers (OpenAI,
+ * Anthropic) that route by model prefix and pass the model through unchanged.
+ */
+export function upstreamModel(provider: ProviderDef, model: string): string {
+	if (provider.routePrefix && model.startsWith(provider.routePrefix)) {
+		return model.slice(provider.routePrefix.length);
+	}
+	return model;
+}
+
+/**
+ * The effective OpenAI-compatible base URL for a provider. Providers without
+ * `requiresEndpoint` use their static `baseUrl`. Endpoint-based providers
+ * (Azure) take the org-supplied resource URL and normalize it to the v1
+ * surface; returns null when no endpoint is configured.
+ */
+export function resolveBaseUrl(provider: ProviderDef, endpoint: string | null): string | null {
+	if (!provider.requiresEndpoint) return provider.baseUrl;
+	if (!endpoint) return null;
+	const base = endpoint.trim().replace(/\/+$/, '');
+	if (!base) return null;
+	if (provider.id === 'azure' && !/\/openai\/v1$/.test(base)) return `${base}/openai/v1`;
+	return base;
+}
+
+/** Auth header(s) for an upstream request, per the provider's auth scheme. */
+export function authHeaders(provider: ProviderDef, apiKey: string): Record<string, string> {
+	return provider.authScheme === 'api-key'
+		? { 'api-key': apiKey }
+		: { authorization: `Bearer ${apiKey}` };
 }
 
 export const PROVIDER_IDS = Object.keys(PROVIDERS);

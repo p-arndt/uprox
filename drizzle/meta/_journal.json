@@ -29,6 +29,13 @@
       "when": 1779316480367,
       "tag": "0003_abnormal_sinister_six",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1779904469604,
+      "tag": "0004_azure_provider_endpoint",
+      "breakpoints": true
     }
   ]
 }
