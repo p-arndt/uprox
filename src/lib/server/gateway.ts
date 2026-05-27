@@ -15,7 +15,7 @@ import {
 import { audit } from '$lib/server/audit';
 import { checkRateLimit } from '$lib/server/ratelimit';
 import { checkBudget } from '$lib/server/budget';
-import { cacheKeyFor, getCached, putCached } from '$lib/server/cache';
+import { cacheKeyFor, getCached, putCached, isDeterministicRequest } from '$lib/server/cache';
 
 /** OpenAI-style error envelope, so OpenAI SDK clients parse it correctly. */
 export function gatewayError(status: number, message: string, type = 'invalid_request_error') {
@@ -265,7 +265,11 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	const cacheable =
 		(scope === 'chat' || scope === 'embeddings' || scope === 'responses') &&
 		cacheTtl > 0 &&
-		!responsesStoreOff;
+		!responsesStoreOff &&
+			// only cache reproducible requests: embeddings always, chat/responses
+			// only when sampling is pinned (temperature 0 or an explicit seed), so
+			// two identical-but-varied prompts each reach the model.
+			isDeterministicRequest(scope, body);
 	const cacheKey = cacheable ? cacheKeyFor(provider.id, path, body) : null;
 	if (cacheKey) {
 		const hit = await getCached(token.organizationId, cacheKey);

@@ -11,6 +11,11 @@
  * pays off for repeated, identical calls (idempotent retries, hot prompts,
  * embedding the same corpus) and never risks returning a response for a
  * different request.
+ *
+ * It is also gated on *determinism* (see `isDeterministicRequest`): a chat
+ * request only caches when the caller pinned sampling, so two identical but
+ * intentionally-varied prompts ("Hi" at the default temperature 1) each hit the
+ * model instead of replaying one stored answer.
  */
 import { and, eq, gt, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
@@ -25,6 +30,29 @@ import { sha256 } from '$lib/server/crypto';
  * server-side persistence, not the content.
  */
 const IGNORED_KEYS = new Set(['user', 'metadata', 'store']);
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+	return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Whether a request's output is *meant* to be reproducible, so replaying a
+ * cached response is what the caller wants rather than a surprise.
+ *
+ * - Embeddings are deterministic by nature — always cacheable.
+ * - Chat/Responses are only deterministic when sampling is pinned: an explicit
+ *   `temperature` of 0, or a `seed` (same seed → reproducible output). With the
+ *   API default of `temperature: 1` and no seed, the caller expects variety, so
+ *   the request is treated as uncacheable even when byte-identical to a prior one.
+ * - Any other scope is not cached.
+ */
+export function isDeterministicRequest(scope: string, body: unknown): boolean {
+	if (scope === 'embeddings') return true;
+	if (scope !== 'chat' && scope !== 'responses') return false;
+	if (!isRecord(body)) return false;
+	if (body.seed != null) return true;
+	return typeof body.temperature === 'number' && body.temperature === 0;
+}
 
 /** Recursively sort object keys so semantically-equal bodies hash the same. */
 function canonicalize(value: unknown): unknown {
