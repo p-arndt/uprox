@@ -1,189 +1,128 @@
+<div align="center">
+
 # uprox
 
-The identity & access gateway for AI workloads. uprox unifies **human identity**
-(users, organizations, sessions) and **machine identity** (services, agents,
-revocable API tokens) behind a single **OpenAI-compatible gateway** that enforces
-policy, encrypts upstream provider keys, and logs every request.
+**One OpenAI-compatible endpoint for all your AI workloads — with auth, policy, and cost control built in.**
 
-Built as a SvelteKit fullstack monolith: dashboard, REST API, and gateway all in
-one app.
+Point your apps and agents at uprox instead of OpenAI. Hand out revocable tokens instead of
+raw provider keys, enforce per-service limits and budgets, and log every request.
 
-## Stack
+[![SvelteKit](https://img.shields.io/badge/SvelteKit-2-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Postgres](https://img.shields.io/badge/Postgres-Drizzle-4169E1?logo=postgresql&logoColor=white)](https://orm.drizzle.team/)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](./Dockerfile)
 
-- **SvelteKit** + TypeScript — UI, REST API, and gateway endpoints
-- **Tailwind CSS v4** + **shadcn-svelte** + **@lucide/svelte** — dashboard UI
-- **better-auth** (organization plugin) — human identity, sessions, orgs
-- **Postgres** + **Drizzle ORM** — persistence
-- **Node crypto** — AES-256-GCM secret encryption, sha256 token hashing
+<br />
 
-## Architecture
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/dashboard-light.png" alt="uprox dashboard" /></td>
+    <td width="50%"><img src="docs/screenshots/dashboard-dark.png" alt="uprox dashboard, dark mode" /></td>
+  </tr>
+</table>
 
-```
-SvelteKit app
- ├── /app/*        Dashboard UI (auth-gated)
- ├── /api/*        REST API (session + org auth)
- ├── /v1/*         OpenAI-compatible gateway (machine-token auth)
- ├── auth          better-auth (users, orgs, sessions)
- ├── policy engine src/lib/server/policy.ts
- ├── token issuer  src/lib/server/tokens.ts
- ├── crypto        src/lib/server/crypto.ts (AES-256-GCM)
- └── audit log     src/lib/server/audit.ts
-```
+</div>
 
-### Request flow (gateway)
+<br />
 
-```
-Agent/App  --(Bearer uprox_live_…)-->  /v1/chat/completions
-   1. resolve token  (sha256 lookup, check revoked/expired)
-   2. route by model (claude-* → anthropic; gpt-*/o-series → openai or azure,
-                       per the policy's preferred backend when both are configured)
-   3. enforce policy (scopes, allowed providers, allowed models)
-   4. rate limit     (per-token req/min ceiling → 429 + Retry-After)
-   5. cache lookup   (exact-match hit replays the stored response for free)
-   6. budget check   (per-service daily/monthly spend ceiling → 402)
-   7. load + decrypt the org's upstream provider key
-   8. proxy to the provider (streaming passthrough supported)
-   9. write an audit log entry (status, cost, latency) + cache the response
-```
+## Drop-in for the OpenAI SDK
 
-### Policy controls
-
-A policy attaches to a service and enforces, in addition to allowed
-providers/models:
-
-- **Rate limit** — requests/min per token (in-memory sliding window; `0` =
-  unlimited). Over the limit returns `429` with a `Retry-After` header.
-- **Budgets** — daily and monthly USD spend ceilings, summed per service from
-  the audit log over UTC windows (`0` = unlimited). Exhausted returns `402`
-  with `type: insufficient_quota`.
-- **Cache** — exact-match response cache for chat, embeddings, and the
-  Responses API. Unlike the access
-  controls above, caching is an **org-wide setting** (Settings → Response cache,
-  a default TTL in seconds; `0` = off) and applies to every service, with or
-  without a policy. A policy's `cacheTtlSeconds` *overrides* the org default when
-  set: blank = inherit, `0` = force off, `>0` = override the TTL. Identical
-  requests across an org's services replay the stored upstream response at zero
-  cost; responses carry an `x-uprox-cache: HIT|MISS` header. **Streaming is
-  cached too**: the SSE body is buffered as it streams to the client (only if it
-  completes cleanly) and replayed verbatim as `text/event-stream` on a hit — the
-  `stream` flag is part of the cache key, so streamed and buffered variants never
-  cross. Exact-match only — it keys on a canonicalized request body and never
-  matches paraphrased prompts; responses above ~1 MB are not cached. Output-
-  irrelevant fields (`user`, `metadata`, `store`) are stripped from the key so
-  they don't cause spurious misses, and a Responses API call with `store: false`
-  is never cached (its `id` isn't persisted upstream to replay against).
-
-### Security model
-
-- Machine tokens are **opaque** (`uprox_live_…`) and stored **only as a sha256
-  hash** — like a password. The plaintext is shown exactly once at creation.
-- Provider API keys are encrypted at rest with **AES-256-GCM**; only the
-  last 4 characters are kept for display.
-- The gateway never exposes upstream keys to clients — it swaps the machine
-  token for the real key server-side.
-
-## Setup
-
-```sh
-pnpm install
-
-# 1. start Postgres (docker)
-pnpm db:start            # or: docker compose up -d
-
-# 2. configure env (see .env.example)
-#    POSTGRES_HOST/PORT/USER/PASSWORD/DB, BETTER_AUTH_SECRET, ENCRYPTION_KEY
-#    generate a key: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-
-# 3. apply the schema
-pnpm db:migrate          # or: pnpm db:push
-
-# 4. run
-pnpm dev
-```
-
-Open http://localhost:5173, sign up (a personal organization is created
-automatically), then:
-
-1. **Providers** → add an OpenAI/Anthropic API key (for **Azure OpenAI**, also
-   set your resource endpoint, e.g. `https://my-resource.openai.azure.com`).
-   Azure is a drop-in for OpenAI: call deployments by name with no prefix. When
-   both OpenAI and Azure are configured, pick which serves `gpt-*`/o-series
-   models with a policy's **preferred backend**.
-2. **Policies** (optional) → restrict providers/models
-3. **Services** → create a machine identity
-4. **Machine Tokens** → issue a token (copy it — shown once)
-5. **Members** (optional) → invite teammates and assign roles
-
-### Members & roles
-
-Each organization has three roles, backed by better-auth's organization plugin:
-
-| Role       | Can do                                                                 |
-| ---------- | ---------------------------------------------------------------------- |
-| **owner**  | everything, including org-level actions (created with your personal org) |
-| **admin**  | manage providers, policies, services, tokens, pricing, settings, and members |
-| **member** | read-only by default                                                   |
-
-Members are read-only unless an admin opts them in under **Settings → Member
-permissions** (toggles for *create/revoke tokens* and *create services*).
-Provider keys, policies, pricing, settings, and member management stay
-admin/owner-only. Capabilities live in `src/lib/permissions.ts`; the server
-enforces them via `requirePermission()` and the UI hides controls via `can()`.
-
-Invite from **Members → Invite**: the invitee gets an email (when SMTP is
-configured — see `.env.example`) and/or a copy-able link to `/invite/<id>`. They
-sign in or sign up, then join. Belonging to more than one org enables the
-**org switcher** in the sidebar header.
-
-### Use it like the OpenAI SDK
+Change two lines — the base URL and the key — and you're routing through uprox:
 
 ```ts
 import OpenAI from 'openai';
 
 const client = new OpenAI({
-	apiKey: 'uprox_live_…', // your machine token
+	apiKey: 'uprox_live_…',                  // a revocable machine token, not your real key
 	baseURL: 'http://localhost:5173/v1'
 });
 
 await client.chat.completions.create({
-	model: 'gpt-4o',
+	model: 'gpt-4o',                         // claude-* routes to Anthropic automatically
 	messages: [{ role: 'user', content: 'Hello' }]
 });
 ```
 
-## REST API
+## What you get
 
-All under `/api`, authenticated via the dashboard session cookie:
+|                       |                                                                              |
+| --------------------- | ---------------------------------------------------------------------------- |
+| **Machine tokens**    | Revocable `uprox_live_…` tokens per service. Stored as a hash; shown once.   |
+| **Multi-provider**    | OpenAI, Anthropic, and Azure OpenAI behind one endpoint, routed by model.    |
+| **Policies**          | Limit which providers/models a service may call, plus per-token rate limits. |
+| **Budgets**           | Daily/monthly USD ceilings per service — over budget returns `402`.          |
+| **Response cache**    | Exact-match cache (streaming included) replays responses at zero cost.       |
+| **Encrypted keys**    | Provider keys sealed with AES-256-GCM; never exposed to clients.             |
+| **Audit log**         | Every request logged with status, cost, and latency.                         |
+| **Teams**             | Organizations, roles, and email/link invitations via better-auth.            |
 
-| Method       | Path                 | Description                                       |
-| ------------ | -------------------- | ------------------------------------------------- |
-| GET/POST     | `/api/services`      | list / create services                            |
-| PATCH/DELETE | `/api/services/:id`  | update / delete a service                         |
-| GET/POST     | `/api/tokens`        | list / issue tokens (POST returns plaintext once) |
-| DELETE       | `/api/tokens/:id`    | revoke a token                                    |
-| GET/POST     | `/api/providers`     | list / upsert provider secrets                    |
-| DELETE       | `/api/providers/:id` | remove a provider secret                          |
-| GET/POST     | `/api/policies`      | list / create policies                            |
-| PATCH/DELETE | `/api/policies/:id`  | update / delete a policy                          |
-| GET          | `/api/audit`         | recent audit log entries                          |
+## Quick start
 
-## Gateway endpoints
+Needs [Node.js](https://nodejs.org), [pnpm](https://pnpm.io), and [Docker](https://www.docker.com).
 
-- `POST /v1/chat/completions` (streaming supported)
-- `POST /v1/responses` (OpenAI Responses API; streaming supported)
-- `POST /v1/embeddings`
-- `GET  /v1/models` (aggregated from configured providers)
+```sh
+pnpm install
+cp .env.example .env                 # fill in BETTER_AUTH_SECRET + ENCRYPTION_KEY
+pnpm db:start                        # Postgres via docker
+pnpm db:migrate
+pnpm dev
+```
 
-## Scripts
+Open <http://localhost:5173>, sign up, and the dashboard walks you through it:
+**add a provider key → create a service → issue a token → make your first request.**
 
-- `pnpm dev` — dev server
-- `pnpm build` / `pnpm preview` — production build
-- `pnpm check` — typecheck
-- `pnpm db:migrate` / `pnpm db:push` / `pnpm db:studio` — database
-- `pnpm auth:schema` — regenerate the better-auth Drizzle schema
+```sh
+# generate ENCRYPTION_KEY
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 
-## Roadmap
+# or run the whole thing in Docker
+docker build -t uprox . && docker run -p 3000:3000 --env-file .env uprox
+```
 
-Designed to stay a monolith for the MVP. When scale demands it, the gateway,
-queue workers, audit pipeline, and realtime layer can be split out — without
-changing the data model.
+## Endpoints
+
+OpenAI-compatible gateway, authenticated with a `Bearer uprox_live_…` token:
+
+| Endpoint                    | Notes                                     |
+| --------------------------- | ----------------------------------------- |
+| `POST /v1/chat/completions` | streaming supported                       |
+| `POST /v1/responses`        | OpenAI Responses API; streaming supported |
+| `POST /v1/embeddings`       |                                           |
+| `GET  /v1/models`           | aggregated from your configured providers |
+
+Everything else (services, tokens, providers, policies, audit) is managed in the dashboard or
+via the session-authenticated REST API under `/api`.
+
+## Tokens & security
+
+- Machine tokens are opaque (`uprox_live_…`) and stored **only as a sha256 hash** — like a
+  password. The plaintext is shown once at creation; revoking one fails its services instantly.
+- Provider keys are encrypted at rest with **AES-256-GCM**; only the last 4 chars are kept for
+  display, and the gateway swaps the token for the real key server-side — clients never see it.
+
+## Roles
+
+Every organization has three roles, backed by better-auth's organization plugin:
+
+| Role       | Can do                                                                       |
+| ---------- | ---------------------------------------------------------------------------- |
+| **owner**  | everything, including org-level actions                                      |
+| **admin**  | manage providers, policies, services, tokens, pricing, settings, members     |
+| **member** | read-only — unless an admin grants token/service permissions in Settings     |
+
+## Built with
+
+SvelteKit · TypeScript · Tailwind v4 + shadcn-svelte · better-auth · Postgres + Drizzle ORM · Node crypto
+
+<details>
+<summary><strong>Scripts</strong></summary>
+
+| Command                                     | Description                       |
+| ------------------------------------------- | --------------------------------- |
+| `pnpm dev` / `build` / `preview`            | dev / production build / preview  |
+| `pnpm check`                                | typecheck                         |
+| `pnpm test`                                 | unit (Vitest) + E2E (Playwright)  |
+| `pnpm db:migrate` / `db:push` / `db:studio` | database                          |
+| `pnpm auth:schema`                          | regenerate the better-auth schema |
+
+</details>
