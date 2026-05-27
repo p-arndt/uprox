@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { requireOrgApi } from '$lib/server/org';
+import { requireOrgApi, requirePermission } from '$lib/server/org';
 import { listEffectiveModelPrices, createOrgModelPrice } from '$lib/server/pricing';
 
 export const GET: RequestHandler = async (event) => {
@@ -9,7 +9,7 @@ export const GET: RequestHandler = async (event) => {
 };
 
 export const POST: RequestHandler = async (event) => {
-	const { organizationId } = await requireOrgApi(event);
+	const { organizationId } = await requirePermission(event, 'pricing:manage');
 	const body = await event.request.json();
 	if (!body?.model) return json({ error: 'model is required' }, { status: 400 });
 	const inputPerMtok = Number(body.inputPerMtok);

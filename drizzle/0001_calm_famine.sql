@@ -1,0 +1,2 @@
+ALTER TABLE "org_settings" ADD COLUMN "members_can_manage_tokens" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "org_settings" ADD COLUMN "members_can_manage_services" boolean DEFAULT false NOT NULL;

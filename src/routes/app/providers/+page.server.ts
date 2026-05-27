@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { requireOrg } from '$lib/server/org';
+import { requireOrg, requirePermission } from '$lib/server/org';
 import {
 	listProviderSecrets,
 	upsertProviderSecret,
@@ -26,7 +26,7 @@ export const load: PageServerLoad = async (event) => {
 
 export const actions: Actions = {
 	save: async (event) => {
-		const { organizationId, userId } = await requireOrg(event);
+		const { organizationId, userId } = await requirePermission(event, 'providers:manage');
 		const data = await event.request.formData();
 		const provider = data.get('provider')?.toString() ?? '';
 		const secret = data.get('secret')?.toString().trim() ?? '';
@@ -48,7 +48,7 @@ export const actions: Actions = {
 		return { success: true };
 	},
 	editMeta: async (event) => {
-		const { organizationId } = await requireOrg(event);
+		const { organizationId } = await requirePermission(event, 'providers:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString() ?? '';
 		const provider = data.get('provider')?.toString() ?? '';
@@ -68,7 +68,7 @@ export const actions: Actions = {
 		return { success: true };
 	},
 	delete: async (event) => {
-		const { organizationId } = await requireOrg(event);
+		const { organizationId } = await requirePermission(event, 'providers:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
 		if (id) await deleteProviderSecret(organizationId, id);

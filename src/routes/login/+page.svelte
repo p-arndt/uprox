@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import type { ActionData } from './$types';
+	import type { ActionData, PageData } from './$types';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -10,7 +10,7 @@
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
 	import Loader2 from '@lucide/svelte/icons/loader-circle';
 
-	let { form }: { form: ActionData } = $props();
+	let { data, form }: { data: PageData; form: ActionData } = $props();
 	let mode = $state<'signIn' | 'signUp'>('signIn');
 	let loading = $state(false);
 
@@ -93,6 +93,7 @@
 				}}
 				class="space-y-4"
 			>
+				<input type="hidden" name="redirectTo" value={data.redirectTo} />
 				{#if mode === 'signUp'}
 					<div class="space-y-2">
 						<Label for="name">Name</Label>

@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { requireOrg } from '$lib/server/org';
+import { requireOrg, requirePermission } from '$lib/server/org';
 import { getOrgSettings, updateOrgSettings } from '$lib/server/data';
 
 export const load: PageServerLoad = async (event) => {
@@ -10,13 +10,25 @@ export const load: PageServerLoad = async (event) => {
 
 export const actions: Actions = {
 	updateCache: async (event) => {
-		const { organizationId } = await requireOrg(event);
+		const { organizationId } = await requirePermission(event, 'settings:manage');
 		const data = await event.request.formData();
 		const ttl = Number(data.get('cacheTtlSeconds'));
 		if (!Number.isFinite(ttl) || ttl < 0) {
 			return fail(400, { message: 'Cache TTL must be a non-negative number' });
 		}
 		await updateOrgSettings(organizationId, { cacheTtlSeconds: ttl });
+		return { success: true };
+	},
+	updateMemberPermissions: async (event) => {
+		const { organizationId } = await requirePermission(event, 'settings:manage');
+		const data = await event.request.formData();
+		const isOn = (v: FormDataEntryValue | null) => v === 'on' || v === 'true';
+		const membersCanManageTokens = isOn(data.get('membersCanManageTokens'));
+		const membersCanManageServices = isOn(data.get('membersCanManageServices'));
+		await updateOrgSettings(organizationId, {
+			membersCanManageTokens,
+			membersCanManageServices
+		});
 		return { success: true };
 	}
 };

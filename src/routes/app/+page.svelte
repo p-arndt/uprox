@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { resolve } from '$app/paths';
+	import { base } from '$app/paths';
 	import type { Pathname } from '$app/types';
 	import { relativeTime, formatUsd } from '$lib/format';
 	import Boxes from '@lucide/svelte/icons/boxes';
@@ -33,7 +33,7 @@
 <div class="mx-auto max-w-6xl space-y-6">
 	<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 		{#each cards as c (c.label)}
-			<a href={resolve(c.href)} class="block">
+			<a href={`${base}${c.href}`} class="block">
 				<Card.Root class="transition-colors hover:border-foreground/20">
 					<Card.Header class="flex flex-row items-center justify-between space-y-0 pb-2">
 						<Card.Title class="text-sm font-medium text-muted-foreground">{c.label}</Card.Title>

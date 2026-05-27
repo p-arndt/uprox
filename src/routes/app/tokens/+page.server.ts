@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { requireOrg } from '$lib/server/org';
+import { requireOrg, requirePermission } from '$lib/server/org';
 import { listTokens, listServices, createToken, revokeToken } from '$lib/server/data';
 
 export const load: PageServerLoad = async (event) => {
@@ -14,7 +14,7 @@ export const load: PageServerLoad = async (event) => {
 
 export const actions: Actions = {
 	create: async (event) => {
-		const { organizationId, userId } = await requireOrg(event);
+		const { organizationId, userId } = await requirePermission(event, 'tokens:manage');
 		const data = await event.request.formData();
 		const serviceId = data.get('serviceId')?.toString();
 		const name = data.get('name')?.toString().trim();
@@ -39,7 +39,7 @@ export const actions: Actions = {
 		}
 	},
 	revoke: async (event) => {
-		const { organizationId } = await requireOrg(event);
+		const { organizationId } = await requirePermission(event, 'tokens:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
 		if (id) await revokeToken(organizationId, id);

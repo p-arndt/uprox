@@ -1,6 +1,6 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { requireOrg } from '$lib/server/org';
+import { requireOrg, requirePermission } from '$lib/server/org';
 import {
 	listEffectiveModelPrices,
 	createOrgModelPrice,
@@ -24,7 +24,7 @@ function parsePrice(value: FormDataEntryValue | null): number | null {
 
 export const actions: Actions = {
 	create: async (event) => {
-		const { organizationId } = await requireOrg(event);
+		const { organizationId } = await requirePermission(event, 'pricing:manage');
 		const data = await event.request.formData();
 		const model = data.get('model')?.toString().trim();
 		if (!model) return fail(400, { message: 'Model is required' });
@@ -42,7 +42,7 @@ export const actions: Actions = {
 		return { success: true };
 	},
 	update: async (event) => {
-		const { organizationId } = await requireOrg(event);
+		const { organizationId } = await requirePermission(event, 'pricing:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
 		if (!id) return fail(400, { message: 'Missing id' });
@@ -60,7 +60,7 @@ export const actions: Actions = {
 		return { success: true };
 	},
 	delete: async (event) => {
-		const { organizationId } = await requireOrg(event);
+		const { organizationId } = await requirePermission(event, 'pricing:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
 		if (id) await deleteOrgModelPrice(organizationId, id);

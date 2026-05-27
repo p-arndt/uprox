@@ -112,6 +112,28 @@ automatically), then:
 2. **Policies** (optional) → restrict providers/models
 3. **Services** → create a machine identity
 4. **Machine Tokens** → issue a token (copy it — shown once)
+5. **Members** (optional) → invite teammates and assign roles
+
+### Members & roles
+
+Each organization has three roles, backed by better-auth's organization plugin:
+
+| Role       | Can do                                                                 |
+| ---------- | ---------------------------------------------------------------------- |
+| **owner**  | everything, including org-level actions (created with your personal org) |
+| **admin**  | manage providers, policies, services, tokens, pricing, settings, and members |
+| **member** | read-only by default                                                   |
+
+Members are read-only unless an admin opts them in under **Settings → Member
+permissions** (toggles for *create/revoke tokens* and *create services*).
+Provider keys, policies, pricing, settings, and member management stay
+admin/owner-only. Capabilities live in `src/lib/permissions.ts`; the server
+enforces them via `requirePermission()` and the UI hides controls via `can()`.
+
+Invite from **Members → Invite**: the invitee gets an email (when SMTP is
+configured — see `.env.example`) and/or a copy-able link to `/invite/<id>`. They
+sign in or sign up, then join. Belonging to more than one org enables the
+**org switcher** in the sidebar header.
 
 ### Use it like the OpenAI SDK
 

@@ -5,6 +5,7 @@ import {
 	timestamp,
 	integer,
 	numeric,
+	boolean,
 	uniqueIndex,
 	index
 } from 'drizzle-orm/pg-core';
@@ -189,6 +190,10 @@ export const orgSettings = pgTable('org_settings', {
 		.references(() => organization.id, { onDelete: 'cascade' }),
 	// default exact-match cache TTL in seconds for the whole org. 0 = off.
 	cacheTtlSeconds: integer('cache_ttl_seconds').notNull().default(0),
+	// member-permission toggles: when on, plain members (not just owners/admins)
+	// may perform the corresponding action. Default off = members are read-only.
+	membersCanManageTokens: boolean('members_can_manage_tokens').notNull().default(false),
+	membersCanManageServices: boolean('members_can_manage_services').notNull().default(false),
 	updatedAt: timestamp('updated_at')
 		.defaultNow()
 		.$onUpdate(() => new Date())

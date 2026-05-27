@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { requireOrgApi } from '$lib/server/org';
+import { requireOrgApi, requirePermission } from '$lib/server/org';
 import { listProviderSecrets, upsertProviderSecret } from '$lib/server/data';
 import { PROVIDER_IDS } from '$lib/server/providers';
 
@@ -10,7 +10,7 @@ export const GET: RequestHandler = async (event) => {
 };
 
 export const POST: RequestHandler = async (event) => {
-	const { organizationId, userId } = await requireOrgApi(event);
+	const { organizationId, userId } = await requirePermission(event, 'providers:manage');
 	const body = await event.request.json();
 	if (!body?.provider || !body?.secret) {
 		return json({ error: 'provider and secret are required' }, { status: 400 });

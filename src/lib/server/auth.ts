@@ -6,6 +6,7 @@ import { env } from '$env/dynamic/private';
 import { getRequestEvent } from '$app/server';
 import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
+import { sendInvitationEmail } from '$lib/server/email';
 import {
 	user as authUser,
 	session as authSession,
@@ -89,7 +90,19 @@ export const auth = betterAuth({
 		}
 	},
 	plugins: [
-		organization(),
+		organization({
+			// Email the invitee a link to accept. When SMTP isn't configured the
+			// helper no-ops and the dashboard surfaces a copy-able link instead.
+			async sendInvitationEmail(data) {
+				await sendInvitationEmail({
+					to: data.email,
+					inviteUrl: `${env.ORIGIN}/invite/${data.id}`,
+					orgName: data.organization.name,
+					inviterName: data.inviter.user?.name,
+					role: data.role
+				});
+			}
+		}),
 		sveltekitCookies(getRequestEvent) // make sure this is the last plugin in the array
 	]
 });

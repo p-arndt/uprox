@@ -10,6 +10,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { NativeSelect } from '$lib/components/ui/native-select/index.js';
 	import { relativeTime } from '$lib/format';
+	import { can } from '$lib/permissions';
 	import { GATEWAY_SCOPES } from '$lib/scopes';
 	import Plus from '@lucide/svelte/icons/plus';
 	import KeyRound from '@lucide/svelte/icons/key-round';
@@ -22,6 +23,7 @@
 	let secret = $state<{ name: string; plaintext: string } | null>(null);
 
 	const allScopes = GATEWAY_SCOPES;
+	const canManage = $derived(can(data.role, 'tokens:manage', data.memberPermissions));
 
 	// When the create action returns a fresh secret, reveal it once.
 	$effect(() => {
@@ -55,7 +57,8 @@
 				Opaque, hashed-at-rest tokens your services use to authenticate to the gateway.
 			</p>
 		</div>
-		<Dialog.Root bind:open={createOpen}>
+		{#if canManage}
+			<Dialog.Root bind:open={createOpen}>
 			<Dialog.Trigger>
 				{#snippet child({ props })}
 					<Button {...props} disabled={data.services.length === 0}>
@@ -122,7 +125,8 @@
 					</Dialog.Footer>
 				</form>
 			</Dialog.Content>
-		</Dialog.Root>
+			</Dialog.Root>
+		{/if}
 	</div>
 
 	{#if data.services.length === 0}
@@ -172,7 +176,7 @@
 							<Table.Cell class="text-muted-foreground">{relativeTime(t.lastUsedAt)}</Table.Cell>
 							<Table.Cell><Badge variant={st.variant}>{st.label}</Badge></Table.Cell>
 							<Table.Cell>
-								{#if !t.revokedAt}
+								{#if !t.revokedAt && canManage}
 									<form
 										method="post"
 										action="?/revoke"

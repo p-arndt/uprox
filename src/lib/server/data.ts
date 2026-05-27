@@ -307,25 +307,48 @@ export async function deletePolicy(orgId: string, id: string) {
 
 /* -------------------------------- org settings ---------------------------------- */
 
+export interface OrgSettings {
+	cacheTtlSeconds: number;
+	membersCanManageTokens: boolean;
+	membersCanManageServices: boolean;
+}
+
 /** Read an org's settings, falling back to defaults when no row exists yet. */
-export async function getOrgSettings(orgId: string): Promise<{ cacheTtlSeconds: number }> {
+export async function getOrgSettings(orgId: string): Promise<OrgSettings> {
 	const [row] = await db
 		.select()
 		.from(orgSettings)
 		.where(eq(orgSettings.organizationId, orgId))
 		.limit(1);
-	return { cacheTtlSeconds: row?.cacheTtlSeconds ?? 0 };
+	return {
+		cacheTtlSeconds: row?.cacheTtlSeconds ?? 0,
+		membersCanManageTokens: row?.membersCanManageTokens ?? false,
+		membersCanManageServices: row?.membersCanManageServices ?? false
+	};
 }
 
-/** Upsert an org's gateway settings. */
-export async function updateOrgSettings(orgId: string, input: { cacheTtlSeconds: number }) {
-	const cacheTtlSeconds = Math.max(0, Math.floor(input.cacheTtlSeconds) || 0);
+/**
+ * Upsert an org's gateway settings. Only the fields present in `input` are
+ * written, so callers can update the cache TTL and the member-permission
+ * toggles independently.
+ */
+export async function updateOrgSettings(orgId: string, input: Partial<OrgSettings>) {
+	const set: Partial<typeof orgSettings.$inferInsert> = {};
+	if (input.cacheTtlSeconds !== undefined) {
+		set.cacheTtlSeconds = Math.max(0, Math.floor(input.cacheTtlSeconds) || 0);
+	}
+	if (input.membersCanManageTokens !== undefined) {
+		set.membersCanManageTokens = input.membersCanManageTokens;
+	}
+	if (input.membersCanManageServices !== undefined) {
+		set.membersCanManageServices = input.membersCanManageServices;
+	}
 	await db
 		.insert(orgSettings)
-		.values({ organizationId: orgId, cacheTtlSeconds })
+		.values({ organizationId: orgId, ...set })
 		.onConflictDoUpdate({
 			target: orgSettings.organizationId,
-			set: { cacheTtlSeconds }
+			set
 		});
 }
 

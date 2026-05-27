@@ -8,6 +8,7 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { relativeTime } from '$lib/format';
+	import { can } from '$lib/permissions';
 	import Plug from '@lucide/svelte/icons/plug';
 	import Lock from '@lucide/svelte/icons/lock';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
@@ -28,6 +29,7 @@
 	} | null>(null);
 
 	const byProvider = $derived(new Map(data.secrets.map((s) => [s.provider, s] as const)));
+	const canManage = $derived(can(data.role, 'providers:manage', data.memberPermissions));
 
 	$effect(() => {
 		if (form?.success) {
@@ -76,42 +78,46 @@
 							<code>••••{secret.hint}</code>
 							<span class="text-xs">· updated {relativeTime(secret.updatedAt)}</span>
 						</div>
-						<form
-							method="post"
-							action="?/delete"
-							use:enhance={() =>
-								async ({ update }) =>
-									update()}
-						>
-							<input type="hidden" name="id" value={secret.id} />
-							<Button
-								type="submit"
-								variant="ghost"
-								size="icon"
-								class="size-8 text-muted-foreground hover:text-destructive"
-								title="Remove key"
+						{#if canManage}
+							<form
+								method="post"
+								action="?/delete"
+								use:enhance={() =>
+									async ({ update }) =>
+										update()}
 							>
-								<Trash2 class="size-4" />
-							</Button>
-						</form>
+								<input type="hidden" name="id" value={secret.id} />
+								<Button
+									type="submit"
+									variant="ghost"
+									size="icon"
+									class="size-8 text-muted-foreground hover:text-destructive"
+									title="Remove key"
+								>
+									<Trash2 class="size-4" />
+								</Button>
+							</form>
+						{/if}
 					{:else}
 						<span class="text-sm text-muted-foreground">No key configured</span>
-						<Button
-							variant="outline"
-							size="sm"
-							onclick={() =>
-								(editing = {
-									id: p.id,
-									label: p.label,
-									requiresEndpoint: p.requiresEndpoint,
-									baseUrl: ''
-								})}
-						>
-							Add key
-						</Button>
+						{#if canManage}
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={() =>
+									(editing = {
+										id: p.id,
+										label: p.label,
+										requiresEndpoint: p.requiresEndpoint,
+										baseUrl: ''
+									})}
+							>
+								Add key
+							</Button>
+						{/if}
 					{/if}
 				</Card.Content>
-				{#if secret}
+				{#if secret && canManage}
 					<Card.Footer class="gap-2">
 						<Button
 							variant="outline"

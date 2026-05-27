@@ -1,10 +1,10 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { requireOrgApi } from '$lib/server/org';
+import { requirePermission } from '$lib/server/org';
 import { updateOrgModelPrice, deleteOrgModelPrice } from '$lib/server/pricing';
 
 export const PATCH: RequestHandler = async (event) => {
-	const { organizationId } = await requireOrgApi(event);
+	const { organizationId } = await requirePermission(event, 'pricing:manage');
 	const body = await event.request.json();
 	const patch: { provider?: string | null; inputPerMtok?: number; outputPerMtok?: number } = {};
 	if (body.provider !== undefined) patch.provider = body.provider ? String(body.provider) : null;
@@ -26,7 +26,7 @@ export const PATCH: RequestHandler = async (event) => {
 };
 
 export const DELETE: RequestHandler = async (event) => {
-	const { organizationId } = await requireOrgApi(event);
+	const { organizationId } = await requirePermission(event, 'pricing:manage');
 	await deleteOrgModelPrice(organizationId, event.params.id);
 	return new Response(null, { status: 204 });
 };

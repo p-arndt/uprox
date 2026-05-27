@@ -8,6 +8,7 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { NativeSelect } from '$lib/components/ui/native-select/index.js';
+	import { can } from '$lib/permissions';
 	import ShieldHalf from '@lucide/svelte/icons/shield-half';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Pencil from '@lucide/svelte/icons/pencil';
@@ -44,6 +45,7 @@
 	const sharedNamespaceProviders = $derived(
 		data.providers.filter((p) => p.id === 'openai' || p.id === 'azure')
 	);
+	const canManage = $derived(can(data.role, 'policies:manage', data.memberPermissions));
 
 	$effect(() => {
 		if (form?.success) {
@@ -62,7 +64,8 @@
 				Constrain which providers and models a service can reach. Empty lists mean "allow all".
 			</p>
 		</div>
-		<Dialog.Root bind:open>
+		{#if canManage}
+			<Dialog.Root bind:open>
 			<Dialog.Trigger>
 				{#snippet child({ props })}
 					<Button {...props}><Plus class="size-4" /> New policy</Button>
@@ -183,7 +186,8 @@
 					</Dialog.Footer>
 				</form>
 			</Dialog.Content>
-		</Dialog.Root>
+			</Dialog.Root>
+		{/if}
 	</div>
 
 	{#if data.policies.length === 0}
@@ -205,7 +209,8 @@
 							</div>
 							<Card.Title class="text-base">{p.name}</Card.Title>
 						</div>
-						<div class="flex items-center gap-1">
+						{#if canManage}
+							<div class="flex items-center gap-1">
 							<Button
 								variant="ghost"
 								size="icon"
@@ -244,7 +249,8 @@
 									<Trash2 class="size-4" />
 								</Button>
 							</form>
-						</div>
+							</div>
+						{/if}
 					</Card.Header>
 					<Card.Content class="space-y-3 text-sm">
 						<div>

@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { requireOrgApi } from '$lib/server/org';
+import { requireOrgApi, requirePermission } from '$lib/server/org';
 import { listTokens, createToken } from '$lib/server/data';
 
 export const GET: RequestHandler = async (event) => {
@@ -9,7 +9,7 @@ export const GET: RequestHandler = async (event) => {
 };
 
 export const POST: RequestHandler = async (event) => {
-	const { organizationId, userId } = await requireOrgApi(event);
+	const { organizationId, userId } = await requirePermission(event, 'tokens:manage');
 	const body = await event.request.json();
 	if (!body?.serviceId || !body?.name) {
 		return json({ error: 'serviceId and name are required' }, { status: 400 });

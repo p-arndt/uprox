@@ -1,6 +1,6 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { requireOrgApi } from '$lib/server/org';
+import { requireOrgApi, requirePermission } from '$lib/server/org';
 import { listPolicies, createPolicy } from '$lib/server/data';
 
 export const GET: RequestHandler = async (event) => {
@@ -9,7 +9,7 @@ export const GET: RequestHandler = async (event) => {
 };
 
 export const POST: RequestHandler = async (event) => {
-	const { organizationId } = await requireOrgApi(event);
+	const { organizationId } = await requirePermission(event, 'policies:manage');
 	const body = await event.request.json();
 	if (!body?.name) return json({ error: 'name is required' }, { status: 400 });
 	const row = await createPolicy(organizationId, {

@@ -2,6 +2,8 @@ import { error, redirect, type RequestEvent } from '@sveltejs/kit';
 import { and, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { member } from '$lib/server/db/schema';
+import { can, type Capability } from '$lib/permissions';
+import { getOrgSettings } from '$lib/server/data';
 
 export interface OrgContext {
 	userId: string;
@@ -48,5 +50,37 @@ export async function requireOrg(event: RequestEvent): Promise<OrgContext> {
 export async function requireOrgApi(event: RequestEvent): Promise<OrgContext> {
 	const ctx = await getOrgContext(event);
 	if (!ctx) throw error(401, 'Not authenticated');
+	return ctx;
+}
+
+/**
+ * Require the caller to hold a capability in their active org. Resolves the
+ * org context, checks the role against the capability matrix (taking org
+ * member-permission settings into account), and throws 401/403 otherwise.
+ *
+ * Use this in mutating API routes and page actions; use {@link can} in load
+ * functions / components to show or hide the corresponding controls.
+ */
+export async function requirePermission(
+	event: RequestEvent,
+	cap: Capability
+): Promise<OrgContext> {
+	const ctx = await requireOrgApi(event);
+	const settings = await getOrgSettings(ctx.organizationId);
+	if (!can(ctx.role, cap, settings)) {
+		throw error(403, 'You do not have permission to perform this action');
+	}
+	return ctx;
+}
+
+/** Require the caller's role to be one of `roles` in their active org. */
+export async function requireRole(
+	event: RequestEvent,
+	roles: readonly string[]
+): Promise<OrgContext> {
+	const ctx = await requireOrgApi(event);
+	if (!roles.includes(ctx.role)) {
+		throw error(403, 'You do not have permission to perform this action');
+	}
 	return ctx;
 }

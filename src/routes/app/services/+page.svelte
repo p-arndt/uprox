@@ -9,6 +9,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { NativeSelect } from '$lib/components/ui/native-select/index.js';
 	import { relativeTime } from '$lib/format';
+	import { can } from '$lib/permissions';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
@@ -25,6 +26,7 @@
 	} | null>(null);
 
 	const policyName = $derived(new Map(data.policies.map((p) => [p.id, p.name] as const)));
+	const canManage = $derived(can(data.role, 'services:manage', data.memberPermissions));
 </script>
 
 <div class="mx-auto max-w-5xl space-y-6">
@@ -35,7 +37,8 @@
 				Machine identities — apps, workloads and agents that call the gateway.
 			</p>
 		</div>
-		<Dialog.Root bind:open>
+		{#if canManage}
+			<Dialog.Root bind:open>
 			<Dialog.Trigger>
 				{#snippet child({ props })}
 					<Button {...props}><Plus class="size-4" /> New service</Button>
@@ -90,7 +93,8 @@
 					</Dialog.Footer>
 				</form>
 			</Dialog.Content>
-		</Dialog.Root>
+			</Dialog.Root>
+		{/if}
 	</div>
 
 	{#if data.services.length === 0}
@@ -128,7 +132,8 @@
 							</Table.Cell>
 							<Table.Cell class="text-muted-foreground">{relativeTime(s.createdAt)}</Table.Cell>
 							<Table.Cell>
-								<div class="flex items-center gap-1">
+								{#if canManage}
+									<div class="flex items-center gap-1">
 									<Button
 										variant="ghost"
 										size="icon"
@@ -163,7 +168,8 @@
 											<Trash2 class="size-4" />
 										</Button>
 									</form>
-								</div>
+									</div>
+								{/if}
 							</Table.Cell>
 						</Table.Row>
 					{/each}

@@ -10,6 +10,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { NativeSelect } from '$lib/components/ui/native-select/index.js';
 	import { formatUsd } from '$lib/format';
+	import { can } from '$lib/permissions';
 	import Coins from '@lucide/svelte/icons/coins';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
@@ -98,6 +99,7 @@
 
 	const customCount = $derived(data.prices.filter((p) => p.source === 'custom').length);
 	const showProviderCol = $derived(providerFilter === 'all');
+	const canManage = $derived(can(data.role, 'pricing:manage', data.memberPermissions));
 
 	// Inline price editing: the pencil swaps a single row's price cells for
 	// number inputs. Works for custom rows (update) and default rows (override
@@ -165,10 +167,12 @@
 				budgets. Platform defaults apply unless your organization sets its own price.
 			</p>
 		</div>
-		<Button onclick={openAdd}>
-			<Plus class="size-4" />
-			Add model
-		</Button>
+		{#if canManage}
+			<Button onclick={openAdd}>
+				<Plus class="size-4" />
+				Add model
+			</Button>
+		{/if}
 	</div>
 
 	{#if data.prices.length === 0}
@@ -286,7 +290,8 @@
 								{/if}
 							</Table.Cell>
 							<Table.Cell class="text-right whitespace-nowrap">
-								{#if isEditing}
+								{#if canManage}
+									{#if isEditing}
 									<form
 										id={fid}
 										method="post"
@@ -353,6 +358,7 @@
 											</form>
 										{/if}
 									</div>
+									{/if}
 								{/if}
 							</Table.Cell>
 						</Table.Row>
