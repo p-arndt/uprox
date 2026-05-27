@@ -31,10 +31,13 @@ export function evaluatePolicy(token: ResolvedToken, req: PolicyRequest): Policy
 	}
 
 	// 3. model check (supports trailing "*" wildcard, e.g. "gpt-4o*")
+	//    matched case-insensitively, consistent with model routing which lowercases.
 	if (policy.allowedModels.length > 0) {
+		const model = req.model.toLowerCase();
 		const ok = policy.allowedModels.some((pattern) => {
-			if (pattern.endsWith('*')) return req.model.startsWith(pattern.slice(0, -1));
-			return pattern === req.model;
+			const p = pattern.toLowerCase();
+			if (p.endsWith('*')) return model.startsWith(p.slice(0, -1));
+			return p === model;
 		});
 		if (!ok) return { allow: false, reason: `policy forbids model "${req.model}"` };
 	}

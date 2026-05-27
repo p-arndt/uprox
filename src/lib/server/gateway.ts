@@ -17,7 +17,7 @@ import {
 } from '$lib/server/providers';
 import { audit } from '$lib/server/audit';
 import { checkRateLimit } from '$lib/server/ratelimit';
-import { checkBudget } from '$lib/server/budget';
+import { checkBudget, reserve } from '$lib/server/budget';
 import { cacheKeyFor, getCached, putCached, isDeterministicRequest } from '$lib/server/cache';
 
 /** OpenAI-style error envelope, so OpenAI SDK clients parse it correctly. */
@@ -365,6 +365,13 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	}
 
 	// budget enforcement: per-service daily/monthly spend ceilings from the policy.
+	// When a budget is set, reserve a coarse in-flight estimate the moment we
+	// admit the request, so concurrent/streamed requests (whose cost lands in the
+	// audit log only after they complete) count toward the ceiling. The exact
+	// cost is recorded via the audit log on completion, at which point we release
+	// the reservation. `releaseReservation` is a no-op until/unless we reserve, so
+	// the completion/error paths below can call it unconditionally.
+	let releaseReservation: () => void = () => {};
 	if (token.policy) {
 		const budget = await checkBudget(token.serviceId, token.policy);
 		if (!budget.ok) {
@@ -382,11 +389,16 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 			});
 			return gatewayError(402, `Request denied: ${budget.reason}`, 'insufficient_quota');
 		}
+		const hasBudget =
+			Number(token.policy.dailyBudgetUsd ?? 0) > 0 ||
+			Number(token.policy.monthlyBudgetUsd ?? 0) > 0;
+		if (hasBudget) releaseReservation = reserve(token.serviceId);
 	}
 
 	// upstream credentials
 	const creds = await loadProviderCreds(token.organizationId, provider.id);
 	if (!creds) {
+		releaseReservation();
 		await audit({
 			organizationId: token.organizationId,
 			action: `gateway.${scope}`,
@@ -410,6 +422,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	// resource endpoint; a misconfigured endpoint-based provider can't be reached.
 	const baseUrl = resolveBaseUrl(provider, creds.baseUrl);
 	if (!baseUrl) {
+		releaseReservation();
 		await audit({
 			organizationId: token.organizationId,
 			action: `gateway.${scope}`,
@@ -450,6 +463,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 			body: JSON.stringify(outboundBody)
 		});
 	} catch (err) {
+		releaseReservation();
 		await audit({
 			organizationId: token.organizationId,
 			action: `gateway.${scope}`,
@@ -472,38 +486,43 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	if (stream && upstream.ok && upstream.body) {
 		const [clientBranch, costBranch] = upstream.body.tee();
 		void (async () => {
-			const { usage, raw, complete } = await readSseUsage(costBranch);
-			const { estimateCostUsd } = await import('$lib/server/providers');
-			const cost = usage
-				? await estimateCostUsd(token.organizationId, sendModel, usage.input, usage.output)
-				: null;
-			await audit({
-				organizationId: token.organizationId,
-				action: `gateway.${scope}`,
-				status: 'ok',
-				serviceId: token.serviceId,
-				tokenId: token.tokenId,
-				provider: provider.id,
-				model,
-				statusCode: upstream.status,
-				costUsd: cost,
-				providerCachedTokens: usage?.cachedInput ?? null,
-				latencyMs: Date.now() - started,
-				ip,
-				detail: 'stream'
-			});
-			// only cache a stream that finished cleanly — never a truncated one
-			if (cacheKey && complete && raw) {
-				await putCached({
+			try {
+				const { usage, raw, complete } = await readSseUsage(costBranch);
+				const { estimateCostUsd } = await import('$lib/server/providers');
+				const cost = usage
+					? await estimateCostUsd(token.organizationId, sendModel, usage.input, usage.output)
+					: null;
+				await audit({
 					organizationId: token.organizationId,
-					cacheKey,
+					action: `gateway.${scope}`,
+					status: 'ok',
+					serviceId: token.serviceId,
+					tokenId: token.tokenId,
 					provider: provider.id,
 					model,
 					statusCode: upstream.status,
-					response: raw,
 					costUsd: cost,
-					ttlSeconds: cacheTtl
+					providerCachedTokens: usage?.cachedInput ?? null,
+					latencyMs: Date.now() - started,
+					ip,
+					detail: 'stream'
 				});
+				// only cache a stream that finished cleanly — never a truncated one
+				if (cacheKey && complete && raw) {
+					await putCached({
+						organizationId: token.organizationId,
+						cacheKey,
+						provider: provider.id,
+						model,
+						statusCode: upstream.status,
+						response: raw,
+						costUsd: cost,
+						ttlSeconds: cacheTtl
+					});
+				}
+			} finally {
+				// real cost is now in the audit log — drop the in-flight reservation
+				releaseReservation();
 			}
 		})();
 		return new Response(clientBranch, {
@@ -554,6 +573,8 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		latencyMs: Date.now() - started,
 		ip
 	});
+	// real cost is now in the audit log — drop the in-flight reservation
+	releaseReservation();
 
 	// populate the cache on a successful, cacheable response
 	if (cacheKey && upstream.ok) {

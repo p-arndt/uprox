@@ -91,6 +91,20 @@ describe('model allowlist', () => {
 		const t = token({ policy: policy({ allowedModels: ['claude-*', 'gpt-4o'] }) });
 		expect(evaluatePolicy(t, chat)).toEqual({ allow: true });
 	});
+
+	it('matches case-insensitively, consistent with routing', () => {
+		// glob branch: "gpt-4o*" matches a request for "GPT-4o"
+		const glob = token({ policy: policy({ allowedModels: ['gpt-4o*'] }) });
+		expect(evaluatePolicy(glob, { ...chat, model: 'GPT-4o' })).toEqual({ allow: true });
+
+		// exact branch: "gpt-4o" matches a request for "GPT-4O"
+		const exact = token({ policy: policy({ allowedModels: ['gpt-4o'] }) });
+		expect(evaluatePolicy(exact, { ...chat, model: 'GPT-4O' })).toEqual({ allow: true });
+
+		// a non-matching model is still denied
+		const res = evaluatePolicy(exact, { ...chat, model: 'GPT-4o-mini' });
+		expect(res.allow).toBe(false);
+	});
 });
 
 describe('rule ordering', () => {
