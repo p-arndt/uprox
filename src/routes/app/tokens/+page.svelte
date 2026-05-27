@@ -10,6 +10,7 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Switch } from '$lib/components/ui/switch/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
@@ -82,6 +83,14 @@
 		}
 		return { total: data.tokens.length, active, inactive, lastUsed };
 	});
+
+	// Revoked tokens are kept for the audit trail but hidden by default —
+	// the row is functionally dead the moment it's revoked.
+	let showRevoked = $state(false);
+	const revokedCount = $derived(data.tokens.filter((t) => t.revokedAt).length);
+	const visibleTokens = $derived(
+		showRevoked ? data.tokens : data.tokens.filter((t) => !t.revokedAt)
+	);
 </script>
 
 <div class="mx-auto max-w-5xl space-y-6">
@@ -211,6 +220,15 @@
 			</div>
 		</div>
 
+		{#if revokedCount > 0}
+			<div class="flex items-center justify-end gap-2">
+				<Switch id="showRevoked" bind:checked={showRevoked} />
+				<Label for="showRevoked" class="text-sm text-muted-foreground">
+					Show revoked ({revokedCount})
+				</Label>
+			</div>
+		{/if}
+
 		<div class="rounded-xl border">
 			<Table.Root>
 				<Table.Header>
@@ -225,7 +243,14 @@
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
-					{#each data.tokens as t (t.id)}
+					{#if visibleTokens.length === 0}
+						<Table.Row class="hover:bg-transparent">
+							<Table.Cell colspan={7} class="py-8 text-center text-sm text-muted-foreground">
+								All tokens are revoked. Toggle “Show revoked” to view them.
+							</Table.Cell>
+						</Table.Row>
+					{/if}
+					{#each visibleTokens as t (t.id)}
 						{@const st = status(t)}
 						<Table.Row class="group transition-colors hover:bg-accent/40">
 							<Table.Cell class="font-medium">{t.name}</Table.Cell>
