@@ -197,6 +197,56 @@ export const orgSettings = pgTable('org_settings', {
 });
 
 /**
+ * Per-model token pricing used to estimate request cost for spend tracking and
+ * budgets. Prices are in USD per 1,000,000 tokens.
+ *
+ * Two scopes share this table, distinguished by `organizationId`:
+ *  - NULL  → platform defaults, seeded once from the built-in price list. Every
+ *            organization inherits these unless it defines its own row.
+ *  - <org> → an organization's own price: either an override of a default model
+ *            or an entirely new model the defaults don't cover.
+ *
+ * Cost lookup prefers an org's row and falls back to the matching default row,
+ * so deleting an org row simply reverts that model to the platform default.
+ */
+export const modelPrice = pgTable(
+	'model_price',
+	{
+		id: text('id')
+			.primaryKey()
+			.$defaultFn(() => crypto.randomUUID()),
+		// NULL = platform default (shared by all orgs); set = org-specific price.
+		organizationId: text('organization_id').references(() => organization.id, {
+			onDelete: 'cascade'
+		}),
+		// model name or longest-prefix key, matched like the legacy static map
+		// (e.g. "gpt-4o", "claude-opus-4-7"). Lower-cased on write.
+		model: text('model').notNull(),
+		// provider id ("openai" | "anthropic" | "azure"), for display/grouping
+		provider: text('provider'),
+		// USD per 1,000,000 tokens
+		inputPerMtok: numeric('input_per_mtok', { precision: 12, scale: 4 }).notNull(),
+		outputPerMtok: numeric('output_per_mtok', { precision: 12, scale: 4 }).notNull(),
+		createdAt: timestamp('created_at').defaultNow().notNull(),
+		updatedAt: timestamp('updated_at')
+			.defaultNow()
+			.$onUpdate(() => new Date())
+			.notNull()
+	},
+	(t) => [
+		// one default per model, and one override per (org, model). Split into two
+		// partial indexes because Postgres treats NULL org ids as distinct.
+		uniqueIndex('model_price_default_uidx')
+			.on(t.model)
+			.where(sql`${t.organizationId} is null`),
+		uniqueIndex('model_price_org_uidx')
+			.on(t.organizationId, t.model)
+			.where(sql`${t.organizationId} is not null`),
+		index('model_price_org_idx').on(t.organizationId)
+	]
+);
+
+/**
  * Append-only audit trail of every gateway request and admin action.
  */
 export const auditLog = pgTable(

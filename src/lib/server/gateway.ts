@@ -452,7 +452,9 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		void (async () => {
 			const { usage, raw, complete } = await readSseUsage(costBranch);
 			const { estimateCostUsd } = await import('$lib/server/providers');
-			const cost = usage ? estimateCostUsd(sendModel, usage.input, usage.output) : null;
+			const cost = usage
+				? await estimateCostUsd(token.organizationId, sendModel, usage.input, usage.output)
+				: null;
 			await audit({
 				organizationId: token.organizationId,
 				action: `gateway.${scope}`,
@@ -510,7 +512,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		const { estimateCostUsd } = await import('$lib/server/providers');
 		const inputTokens = parsed.usage?.prompt_tokens ?? parsed.usage?.input_tokens;
 		const outputTokens = parsed.usage?.completion_tokens ?? parsed.usage?.output_tokens;
-		cost = estimateCostUsd(sendModel, inputTokens, outputTokens);
+		cost = await estimateCostUsd(token.organizationId, sendModel, inputTokens, outputTokens);
 		cachedTokens = providerCachedTokens(parsed.usage);
 	} catch {
 		// non-JSON or no usage; leave cost null

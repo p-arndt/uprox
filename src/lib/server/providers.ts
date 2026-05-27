@@ -127,10 +127,13 @@ export function providerForModel(model: string | undefined): ProviderDef | null 
 }
 
 /**
- * Very rough USD cost estimate from token usage. Prices are per 1M tokens and
- * intentionally approximate — good enough for spend tracking in the MVP.
+ * Built-in per-model token prices in USD per 1M tokens. These are no longer
+ * consulted at runtime — cost is read from the `model_price` table, which is
+ * the single source of truth. This list exists only to seed the platform
+ * defaults (NULL-org rows) on first migration; see `getDefaultModelPrices`.
+ * Prices are intentionally approximate — good enough for spend tracking.
  */
-const PRICE_PER_MTOK: Record<string, { in: number; out: number }> = {
+export const DEFAULT_MODEL_PRICES: Record<string, { in: number; out: number }> = {
 	// OpenAI — current GPT-5 series (most specific keys first, see lookup note below)
 	'gpt-5.5-pro': { in: 30, out: 180 },
 	'gpt-5.5': { in: 5, out: 30 },
@@ -158,21 +161,49 @@ const PRICE_PER_MTOK: Record<string, { in: number; out: number }> = {
 	'claude-sonnet-4': { in: 3, out: 15 }
 };
 
-export function estimateCostUsd(
-	model: string | undefined,
-	promptTokens: number | undefined,
+/** Compute USD cost from a resolved per-1M-token price and token counts. */
+export function costFromPrice(
+	price: { in: number; out: number },
+	promptTokens: number,
 	completionTokens: number | undefined
-): number | null {
-	if (!model || promptTokens == null) return null;
-	const m = model.toLowerCase();
-	// Match the longest key first so e.g. "gpt-5.4-mini" wins over "gpt-5.4".
-	const key = Object.keys(PRICE_PER_MTOK)
-		.sort((a, b) => b.length - a.length)
-		.find((k) => m.startsWith(k));
-	if (!key) return null;
-	const price = PRICE_PER_MTOK[key];
+): number {
 	const cost = (promptTokens * price.in + (completionTokens ?? 0) * price.out) / 1_000_000;
 	// Round to 8 decimals: rounding to 1e-6 floored cheap models (e.g. gpt-5.4-nano)
 	// to 0 on small requests, since their per-token cost is well below a micro-dollar.
 	return Math.round(cost * 1e8) / 1e8;
+}
+
+/**
+ * Resolve the longest-prefix price for a model from a price map, matching the
+ * legacy lookup: e.g. "gpt-5.4-mini" wins over "gpt-5.4".
+ */
+export function resolvePrice(
+	prices: Record<string, { in: number; out: number }>,
+	model: string
+): { in: number; out: number } | null {
+	const m = model.toLowerCase();
+	const key = Object.keys(prices)
+		.sort((a, b) => b.length - a.length)
+		.find((k) => m.startsWith(k));
+	return key ? prices[key] : null;
+}
+
+/**
+ * Estimate a request's USD cost for an organization. Reads the org's effective
+ * price map (org overrides layered over platform defaults) from the database
+ * via a short-lived in-memory cache, then matches the model by longest prefix.
+ * Returns null when the model has no price or no prompt tokens were reported.
+ */
+export async function estimateCostUsd(
+	organizationId: string,
+	model: string | undefined,
+	promptTokens: number | undefined,
+	completionTokens: number | undefined
+): Promise<number | null> {
+	if (!model || promptTokens == null) return null;
+	const { getEffectivePriceMap } = await import('$lib/server/pricing');
+	const prices = await getEffectivePriceMap(organizationId);
+	const price = resolvePrice(prices, model);
+	if (!price) return null;
+	return costFromPrice(price, promptTokens, completionTokens ?? 0);
 }
