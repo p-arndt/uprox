@@ -1,7 +1,13 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { requireOrg } from '$lib/server/org';
-import { listServices, createService, deleteService, listPolicies } from '$lib/server/data';
+import {
+	listServices,
+	createService,
+	updateService,
+	deleteService,
+	listPolicies
+} from '$lib/server/data';
 
 export const load: PageServerLoad = async (event) => {
 	const { organizationId } = await requireOrg(event);
@@ -22,6 +28,20 @@ export const actions: Actions = {
 			name,
 			type: data.get('type')?.toString() || 'app',
 			description: data.get('description')?.toString() || undefined,
+			policyId: data.get('policyId')?.toString() || null
+		});
+		return { success: true };
+	},
+	update: async (event) => {
+		const { organizationId } = await requireOrg(event);
+		const data = await event.request.formData();
+		const id = data.get('id')?.toString();
+		const name = data.get('name')?.toString().trim();
+		if (!name) return fail(400, { message: 'Name is required' });
+		await updateService(organizationId, id ?? '', {
+			name,
+			type: data.get('type')?.toString() || 'app',
+			description: data.get('description')?.toString() || null,
 			policyId: data.get('policyId')?.toString() || null
 		});
 		return { success: true };

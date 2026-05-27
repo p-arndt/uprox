@@ -12,9 +12,17 @@
 	import Plus from '@lucide/svelte/icons/plus';
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import Pencil from '@lucide/svelte/icons/pencil';
 
 	let { data } = $props();
 	let open = $state(false);
+	let editing = $state<{
+		id: string;
+		name: string;
+		type: string;
+		description: string;
+		policyId: string;
+	} | null>(null);
 
 	const policyName = $derived(new Map(data.policies.map((p) => [p.id, p.name] as const)));
 </script>
@@ -120,24 +128,42 @@
 							</Table.Cell>
 							<Table.Cell class="text-muted-foreground">{relativeTime(s.createdAt)}</Table.Cell>
 							<Table.Cell>
-								<form
-									method="post"
-									action="?/delete"
-									use:enhance={() =>
-										async ({ update }) =>
-											update()}
-								>
-									<input type="hidden" name="id" value={s.id} />
+								<div class="flex items-center gap-1">
 									<Button
-										type="submit"
 										variant="ghost"
 										size="icon"
-										class="size-8 text-muted-foreground hover:text-destructive"
-										title="Delete service"
+										class="size-8 text-muted-foreground hover:text-foreground"
+										title="Edit service"
+										onclick={() =>
+											(editing = {
+												id: s.id,
+												name: s.name,
+												type: s.type,
+												description: s.description ?? '',
+												policyId: s.policyId ?? ''
+											})}
 									>
-										<Trash2 class="size-4" />
+										<Pencil class="size-4" />
 									</Button>
-								</form>
+									<form
+										method="post"
+										action="?/delete"
+										use:enhance={() =>
+											async ({ update }) =>
+												update()}
+									>
+										<input type="hidden" name="id" value={s.id} />
+										<Button
+											type="submit"
+											variant="ghost"
+											size="icon"
+											class="size-8 text-muted-foreground hover:text-destructive"
+											title="Delete service"
+										>
+											<Trash2 class="size-4" />
+										</Button>
+									</form>
+								</div>
 							</Table.Cell>
 						</Table.Row>
 					{/each}
@@ -146,3 +172,79 @@
 		</div>
 	{/if}
 </div>
+
+<Dialog.Root
+	open={editing !== null}
+	onOpenChange={(v) => {
+		if (!v) editing = null;
+	}}
+>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>Edit service</Dialog.Title>
+			<Dialog.Description>Update this machine identity.</Dialog.Description>
+		</Dialog.Header>
+		{#if editing}
+			<form
+				method="post"
+				action="?/update"
+				class="space-y-4"
+				use:enhance={() => {
+					return async ({ result, update }) => {
+						await update({ reset: true });
+						if (result.type === 'success') {
+							editing = null;
+							await invalidateAll();
+						}
+					};
+				}}
+			>
+				<input type="hidden" name="id" value={editing?.id} />
+				<div class="space-y-2">
+					<Label for="edit-name">Name</Label>
+					<Input
+						id="edit-name"
+						name="name"
+						placeholder="support-agent"
+						bind:value={editing.name}
+						required
+					/>
+				</div>
+				<div class="space-y-2">
+					<Label for="edit-type">Type</Label>
+					<NativeSelect id="edit-type" name="type" class="w-full" bind:value={editing.type}>
+						<option value="app">App</option>
+						<option value="agent">Agent</option>
+						<option value="workload">Workload</option>
+					</NativeSelect>
+				</div>
+				<div class="space-y-2">
+					<Label for="edit-policyId">Policy</Label>
+					<NativeSelect
+						id="edit-policyId"
+						name="policyId"
+						class="w-full"
+						bind:value={editing.policyId}
+					>
+						<option value="">No policy (allow all)</option>
+						{#each data.policies as p (p.id)}
+							<option value={p.id}>{p.name}</option>
+						{/each}
+					</NativeSelect>
+				</div>
+				<div class="space-y-2">
+					<Label for="edit-description">Description</Label>
+					<Input
+						id="edit-description"
+						name="description"
+						placeholder="Optional"
+						bind:value={editing.description}
+					/>
+				</div>
+				<Dialog.Footer>
+					<Button type="submit">Save changes</Button>
+				</Dialog.Footer>
+			</form>
+		{/if}
+	</Dialog.Content>
+</Dialog.Root>

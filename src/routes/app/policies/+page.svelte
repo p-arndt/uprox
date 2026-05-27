@@ -9,6 +9,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import ShieldHalf from '@lucide/svelte/icons/shield-half';
 	import Plus from '@lucide/svelte/icons/plus';
+	import Pencil from '@lucide/svelte/icons/pencil';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Gauge from '@lucide/svelte/icons/gauge';
 	import Wallet from '@lucide/svelte/icons/wallet';
@@ -25,10 +26,21 @@
 
 	let { data, form } = $props();
 	let open = $state(false);
+	let editing = $state<{
+		id: string;
+		name: string;
+		allowedProviders: string[];
+		allowedModels: string;
+		rateLimitPerMinute: number;
+		dailyBudgetUsd: string;
+		monthlyBudgetUsd: string;
+		cacheTtlSeconds: string;
+	} | null>(null);
 
 	$effect(() => {
 		if (form?.success) {
 			open = false;
+			editing = null;
 			invalidateAll();
 		}
 	});
@@ -171,24 +183,45 @@
 							</div>
 							<Card.Title class="text-base">{p.name}</Card.Title>
 						</div>
-						<form
-							method="post"
-							action="?/delete"
-							use:enhance={() =>
-								async ({ update }) =>
-									update()}
-						>
-							<input type="hidden" name="id" value={p.id} />
+						<div class="flex items-center gap-1">
 							<Button
-								type="submit"
 								variant="ghost"
 								size="icon"
-								class="size-8 text-muted-foreground hover:text-destructive"
-								title="Delete policy"
+								class="size-8 text-muted-foreground"
+								title="Edit policy"
+								onclick={() =>
+									(editing = {
+										id: p.id,
+										name: p.name,
+										allowedProviders: [...p.allowedProviders],
+										allowedModels: p.allowedModels.join(', '),
+										rateLimitPerMinute: p.rateLimitPerMinute,
+										dailyBudgetUsd: String(Number(p.dailyBudgetUsd)),
+										monthlyBudgetUsd: String(Number(p.monthlyBudgetUsd)),
+										cacheTtlSeconds: p.cacheTtlSeconds == null ? '' : String(p.cacheTtlSeconds)
+									})}
 							>
-								<Trash2 class="size-4" />
+								<Pencil class="size-4" />
 							</Button>
-						</form>
+							<form
+								method="post"
+								action="?/delete"
+								use:enhance={() =>
+									async ({ update }) =>
+										update()}
+							>
+								<input type="hidden" name="id" value={p.id} />
+								<Button
+									type="submit"
+									variant="ghost"
+									size="icon"
+									class="size-8 text-muted-foreground hover:text-destructive"
+									title="Delete policy"
+								>
+									<Trash2 class="size-4" />
+								</Button>
+							</form>
+						</div>
 					</Card.Header>
 					<Card.Content class="space-y-3 text-sm">
 						<div>
@@ -238,3 +271,125 @@
 		</div>
 	{/if}
 </div>
+
+<Dialog.Root
+	open={editing !== null}
+	onOpenChange={(v) => {
+		if (!v) editing = null;
+	}}
+>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>Edit policy</Dialog.Title>
+			<Dialog.Description>Attach a policy to a service to enforce it.</Dialog.Description>
+		</Dialog.Header>
+		{#if editing}
+			<form
+				method="post"
+				action="?/update"
+				class="space-y-4"
+				use:enhance={() =>
+					async ({ update }) => {
+						await update();
+					}}
+			>
+				<input type="hidden" name="id" value={editing.id} />
+				<div class="space-y-2">
+					<Label for="edit-name">Name</Label>
+					<Input
+						id="edit-name"
+						name="name"
+						placeholder="read-only-openai"
+						value={editing.name}
+						required
+					/>
+				</div>
+				<div class="space-y-2">
+					<Label>Allowed providers</Label>
+					<div class="flex flex-wrap gap-4">
+						{#each data.providers as p (p.id)}
+							<label class="flex items-center gap-2 text-sm">
+								<input
+									type="checkbox"
+									name="allowedProviders"
+									value={p.id}
+									checked={editing.allowedProviders.includes(p.id)}
+									class="size-4 accent-foreground"
+								/>
+								{p.label}
+							</label>
+						{/each}
+					</div>
+					<p class="text-xs text-muted-foreground">None checked = all providers allowed.</p>
+				</div>
+				<div class="space-y-2">
+					<Label for="edit-allowedModels">Allowed models</Label>
+					<Input
+						id="edit-allowedModels"
+						name="allowedModels"
+						placeholder="gpt-4o*, claude-3-5-sonnet"
+						value={editing.allowedModels}
+					/>
+					<p class="text-xs text-muted-foreground">
+						Comma-separated. Trailing <code>*</code> matches a prefix. Blank = all models.
+					</p>
+				</div>
+				<div class="space-y-2">
+					<Label for="edit-rateLimitPerMinute">Rate limit (req/min)</Label>
+					<Input
+						id="edit-rateLimitPerMinute"
+						name="rateLimitPerMinute"
+						type="number"
+						min="0"
+						value={editing.rateLimitPerMinute}
+					/>
+					<p class="text-xs text-muted-foreground">0 = unlimited.</p>
+				</div>
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-2">
+						<Label for="edit-dailyBudgetUsd">Daily budget (USD)</Label>
+						<Input
+							id="edit-dailyBudgetUsd"
+							name="dailyBudgetUsd"
+							type="number"
+							min="0"
+							step="0.01"
+							value={editing.dailyBudgetUsd}
+						/>
+					</div>
+					<div class="space-y-2">
+						<Label for="edit-monthlyBudgetUsd">Monthly budget (USD)</Label>
+						<Input
+							id="edit-monthlyBudgetUsd"
+							name="monthlyBudgetUsd"
+							type="number"
+							min="0"
+							step="0.01"
+							value={editing.monthlyBudgetUsd}
+						/>
+					</div>
+				</div>
+				<p class="-mt-2 text-xs text-muted-foreground">
+					Per-service spend ceilings (UTC windows). 0 = unlimited.
+				</p>
+				<div class="space-y-2">
+					<Label for="edit-cacheTtlSeconds">Cache TTL (seconds)</Label>
+					<Input
+						id="edit-cacheTtlSeconds"
+						name="cacheTtlSeconds"
+						type="number"
+						min="0"
+						placeholder="inherit org default"
+						value={editing.cacheTtlSeconds}
+					/>
+					<p class="text-xs text-muted-foreground">
+						Overrides the org-wide cache setting. Blank = inherit, 0 = force off, &gt;0 = TTL.
+					</p>
+				</div>
+				<Dialog.Footer>
+					<Button type="submit">Save policy</Button>
+				</Dialog.Footer>
+			</form>
+		{/if}
+	</Dialog.Content>
+</Dialog.Root>

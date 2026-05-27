@@ -199,6 +199,32 @@ export async function upsertProviderSecret(
 	return row;
 }
 
+export async function updateProviderSecret(
+	orgId: string,
+	id: string,
+	input: { label?: string | null; baseUrl?: string | null }
+) {
+	const [row] = await db
+		.update(providerSecret)
+		.set({
+			label: input.label ?? null,
+			baseUrl: input.baseUrl?.trim() || null,
+			updatedAt: new Date()
+		})
+		.where(and(eq(providerSecret.id, id), eq(providerSecret.organizationId, orgId)))
+		.returning({ id: providerSecret.id, provider: providerSecret.provider });
+	if (row) {
+		await audit({
+			organizationId: orgId,
+			action: 'provider.update',
+			status: 'ok',
+			provider: row.provider,
+			detail: row.provider
+		});
+	}
+	return row ?? null;
+}
+
 export async function deleteProviderSecret(orgId: string, id: string) {
 	await db
 		.delete(providerSecret)

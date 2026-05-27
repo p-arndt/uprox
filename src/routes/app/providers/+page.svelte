@@ -19,12 +19,20 @@
 		requiresEndpoint: boolean;
 		baseUrl: string;
 	} | null>(null);
+	let editingMeta = $state<{
+		id: string;
+		provider: string;
+		label: string;
+		requiresEndpoint: boolean;
+		baseUrl: string;
+	} | null>(null);
 
 	const byProvider = $derived(new Map(data.secrets.map((s) => [s.provider, s] as const)));
 
 	$effect(() => {
 		if (form?.success) {
 			editing = null;
+			editingMeta = null;
 			invalidateAll();
 		}
 	});
@@ -104,7 +112,7 @@
 					{/if}
 				</Card.Content>
 				{#if secret}
-					<Card.Footer>
+					<Card.Footer class="gap-2">
 						<Button
 							variant="outline"
 							size="sm"
@@ -117,6 +125,20 @@
 								})}
 						>
 							Rotate key
+						</Button>
+						<Button
+							variant="outline"
+							size="sm"
+							onclick={() =>
+								(editingMeta = {
+									id: secret.id,
+									provider: p.id,
+									label: secret.label ?? '',
+									requiresEndpoint: p.requiresEndpoint,
+									baseUrl: secret.baseUrl ?? ''
+								})}
+						>
+							Edit details
 						</Button>
 					</Card.Footer>
 				{/if}
@@ -184,6 +206,65 @@
 			{/if}
 			<Dialog.Footer>
 				<Button type="submit">Save key</Button>
+			</Dialog.Footer>
+		</form>
+	</Dialog.Content>
+</Dialog.Root>
+
+<Dialog.Root
+	open={editingMeta !== null}
+	onOpenChange={(v) => {
+		if (!v) editingMeta = null;
+	}}
+>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>{editingMeta?.label || 'Provider'} details</Dialog.Title>
+			<Dialog.Description
+				>Update the label and endpoint. The stored key is unchanged.</Dialog.Description
+			>
+		</Dialog.Header>
+		<form
+			method="post"
+			action="?/editMeta"
+			class="space-y-4"
+			use:enhance={() =>
+				async ({ update }) =>
+					update()}
+		>
+			<input type="hidden" name="id" value={editingMeta?.id} />
+			<input type="hidden" name="provider" value={editingMeta?.provider} />
+			{#if editingMeta?.requiresEndpoint}
+				<div class="space-y-2">
+					<Label for="meta-baseUrl">Endpoint URL</Label>
+					<Input
+						id="meta-baseUrl"
+						name="baseUrl"
+						type="url"
+						placeholder="https://my-resource.openai.azure.com"
+						value={editingMeta?.baseUrl ?? ''}
+						autocomplete="off"
+						required
+					/>
+					<p class="text-xs text-muted-foreground">
+						Your Azure resource endpoint. Call models as <code>azure/&lt;deployment&gt;</code>.
+					</p>
+				</div>
+			{/if}
+			<div class="space-y-2">
+				<Label for="meta-label">Label (optional)</Label>
+				<Input
+					id="meta-label"
+					name="label"
+					value={editingMeta?.label ?? ''}
+					placeholder="Production key"
+				/>
+			</div>
+			{#if form?.message}
+				<p class="text-sm text-destructive">{form.message}</p>
+			{/if}
+			<Dialog.Footer>
+				<Button type="submit">Save details</Button>
 			</Dialog.Footer>
 		</form>
 	</Dialog.Content>
