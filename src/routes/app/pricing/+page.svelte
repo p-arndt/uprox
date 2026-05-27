@@ -3,8 +3,7 @@
 	import { invalidateAll } from '$app/navigation';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import * as Card from '$lib/components/ui/card/index.js';
-	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
+	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -16,27 +15,17 @@
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import Search from '@lucide/svelte/icons/search';
 	import Plus from '@lucide/svelte/icons/plus';
-	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import ArrowUp from '@lucide/svelte/icons/arrow-up';
+	import ArrowDown from '@lucide/svelte/icons/arrow-down';
+	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
 
 	let { data, form } = $props();
 
 	type Price = (typeof data.prices)[number];
+	type Row = Price & { providerKey: string; providerLabel: string };
 
-	type Editing = {
-		// present => editing an existing org row (update); absent => create
-		id: string | null;
-		model: string;
-		// lock the model field when overriding a known model
-		modelLocked: boolean;
-		provider: string;
-		inputPerMtok: string;
-		outputPerMtok: string;
-		title: string;
-	};
-	let editing = $state<Editing | null>(null);
-	let query = $state('');
+	const OTHER_KEY = '__other';
 
-	/** Map a provider id to its display label. */
 	const providerLabel = $derived(new Map(data.providers.map((p) => [p.id, p.label] as const)));
 
 	/** Best-effort provider id from a model name, for rows without an explicit one. */
@@ -47,59 +36,84 @@
 		return null;
 	}
 
-	const OTHER_KEY = '__other';
-
-	/** Prices grouped by provider, filtered by the search query, in a stable order. */
-	const groups = $derived.by(() => {
-		const q = query.trim().toLowerCase();
-		const rows = q ? data.prices.filter((p) => p.model.toLowerCase().includes(q)) : data.prices;
-
-		const byKey = new Map<
-			string,
-			{ key: string; id: string | null; label: string; rows: Price[] }
-		>();
-		for (const p of rows) {
+	/** Every price tagged with its provider (explicit, else inferred from name). */
+	const rows = $derived<Row[]>(
+		data.prices.map((p) => {
 			const id = p.provider || inferProviderId(p.model);
-			const key = id ?? OTHER_KEY;
-			let g = byKey.get(key);
-			if (!g) {
-				g = { key, id, label: id ? (providerLabel.get(id) ?? id) : 'Other models', rows: [] };
-				byKey.set(key, g);
-			}
-			g.rows.push(p);
-		}
+			return {
+				...p,
+				providerKey: id ?? OTHER_KEY,
+				providerLabel: id ? (providerLabel.get(id) ?? id) : 'Other'
+			};
+		})
+	);
 
-		// Known providers first (in their declared order), then "Other" last.
+	// One filter tab per provider that actually has models, in declared order,
+	// with "Other" last. Each carries its count for an at-a-glance badge.
+	const tabs = $derived.by(() => {
+		const counts = new Map<string, number>();
+		for (const r of rows) counts.set(r.providerKey, (counts.get(r.providerKey) ?? 0) + 1);
 		const order = data.providers.map((p) => p.id);
-		const rank = (id: string | null) => {
-			if (!id) return Number.MAX_SAFE_INTEGER;
-			const i = order.indexOf(id);
-			return i === -1 ? order.length : i;
-		};
-		return [...byKey.values()].sort((a, b) => rank(a.id) - rank(b.id));
+		const keys = [...counts.keys()].sort((a, b) => {
+			const ra = a === OTHER_KEY ? order.length : order.indexOf(a);
+			const rb = b === OTHER_KEY ? order.length : order.indexOf(b);
+			return (ra === -1 ? order.length : ra) - (rb === -1 ? order.length : rb);
+		});
+		return keys.map((key) => ({
+			key,
+			label: key === OTHER_KEY ? 'Other' : (providerLabel.get(key) ?? key),
+			count: counts.get(key) ?? 0
+		}));
+	});
+
+	let providerFilter = $state('all');
+	let query = $state('');
+	let sortKey = $state<'model' | 'inputPerMtok' | 'outputPerMtok'>('model');
+	let sortDir = $state<'asc' | 'desc'>('asc');
+
+	function toggleSort(key: typeof sortKey) {
+		if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+		else {
+			sortKey = key;
+			sortDir = key === 'model' ? 'asc' : 'desc';
+		}
+	}
+
+	const visible = $derived.by(() => {
+		const q = query.trim().toLowerCase();
+		let out = rows.filter((r) => {
+			if (providerFilter !== 'all' && r.providerKey !== providerFilter) return false;
+			if (q && !r.model.toLowerCase().includes(q)) return false;
+			return true;
+		});
+		const dir = sortDir === 'asc' ? 1 : -1;
+		out = [...out].sort((a, b) => {
+			if (sortKey === 'model') return a.model.localeCompare(b.model) * dir;
+			return ((a[sortKey] as number) - (b[sortKey] as number)) * dir;
+		});
+		return out;
 	});
 
 	const customCount = $derived(data.prices.filter((p) => p.source === 'custom').length);
+	const showProviderCol = $derived(providerFilter === 'all');
 
-	// Per-group expanded state. Collapsed by default so the page stays short;
-	// an active search force-expands every matching group so results are visible.
-	let expanded = $state<Record<string, boolean>>({});
-	const searching = $derived(query.trim().length > 0);
-	const isOpen = (key: string) => searching || (expanded[key] ?? false);
-
-	function setAll(open: boolean) {
-		const next: Record<string, boolean> = {};
-		for (const g of groups) next[g.key] = open;
-		expanded = next;
-	}
-	const allOpen = $derived(groups.length > 0 && groups.every((g) => expanded[g.key]));
+	type Editing = {
+		id: string | null;
+		model: string;
+		modelLocked: boolean;
+		provider: string;
+		inputPerMtok: string;
+		outputPerMtok: string;
+		title: string;
+	};
+	let editing = $state<Editing | null>(null);
 
 	function openAdd() {
 		editing = {
 			id: null,
 			model: '',
 			modelLocked: false,
-			provider: '',
+			provider: providerFilter !== 'all' && providerFilter !== OTHER_KEY ? providerFilter : '',
 			inputPerMtok: '',
 			outputPerMtok: '',
 			title: 'Add model price'
@@ -126,7 +140,24 @@
 	});
 </script>
 
-<div class="mx-auto max-w-5xl space-y-6">
+{#snippet sortHead(label: string, key: typeof sortKey, align: 'left' | 'right')}
+	<button
+		type="button"
+		onclick={() => toggleSort(key)}
+		class="inline-flex items-center gap-1 hover:text-foreground {align === 'right'
+			? 'flex-row-reverse'
+			: ''} {sortKey === key ? 'text-foreground' : ''}"
+	>
+		{label}
+		{#if sortKey === key}
+			{#if sortDir === 'asc'}<ArrowUp class="size-3.5" />{:else}<ArrowDown class="size-3.5" />{/if}
+		{:else}
+			<ChevronsUpDown class="size-3.5 opacity-40" />
+		{/if}
+	</button>
+{/snippet}
+
+<div class="mx-auto max-w-5xl space-y-5">
 	<div class="flex items-start justify-between gap-4">
 		<div>
 			<h2 class="text-xl font-semibold tracking-tight">Model Prices</h2>
@@ -141,151 +172,148 @@
 		</Button>
 	</div>
 
-	<div class="flex flex-wrap items-center justify-between gap-3">
-		<div class="relative w-full max-w-xs">
-			<Search
-				class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-			/>
-			<Input
-				bind:value={query}
-				placeholder="Search models…"
-				class="pl-9"
-				aria-label="Search models"
-			/>
-		</div>
-		<div class="flex items-center gap-2 text-sm text-muted-foreground">
-			<Badge variant="outline">{data.prices.length} models</Badge>
-			{#if customCount > 0}
-				<Badge variant="secondary">{customCount} custom</Badge>
-			{/if}
-			{#if !searching && groups.length > 1}
-				<Button variant="outline" size="sm" onclick={() => setAll(!allOpen)}>
-					{allOpen ? 'Collapse all' : 'Expand all'}
-				</Button>
-			{/if}
-		</div>
-	</div>
-
 	{#if data.prices.length === 0}
 		<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
 			<Coins class="size-8 text-muted-foreground" />
 			<p class="mt-3 text-sm font-medium">No model prices</p>
 			<p class="text-sm text-muted-foreground">Add a model to start tracking its cost.</p>
 		</div>
-	{:else if groups.length === 0}
-		<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
-			<Search class="size-8 text-muted-foreground" />
-			<p class="mt-3 text-sm font-medium">No models match “{query}”</p>
-			<p class="text-sm text-muted-foreground">Try a different search.</p>
-		</div>
 	{:else}
-		<div class="space-y-6">
-			{#each groups as group (group.key)}
-				{@const open = isOpen(group.key)}
-				{@const groupCustom = group.rows.filter((p) => p.source === 'custom').length}
-				<Card.Root class="overflow-hidden py-0">
-					<Collapsible.Root
-						{open}
-						onOpenChange={(v) => (expanded = { ...expanded, [group.key]: v })}
-					>
-						<Collapsible.Trigger
-							disabled={searching}
-							class="flex w-full items-center justify-between gap-2 border-b bg-muted/40 px-4 py-3 text-left transition-colors hover:bg-muted/70 disabled:cursor-default disabled:hover:bg-muted/40"
-						>
-							<div class="flex items-center gap-2">
-								<ChevronDown
-									class="size-4 text-muted-foreground transition-transform duration-200 {open
-										? ''
-										: '-rotate-90'}"
-								/>
-								<span class="text-sm font-semibold">{group.label}</span>
-								<Badge variant="outline" class="font-normal">{group.rows.length}</Badge>
-								{#if groupCustom > 0}
-									<Badge variant="secondary" class="font-normal">{groupCustom} custom</Badge>
-								{/if}
-							</div>
-						</Collapsible.Trigger>
-						<Collapsible.Content>
-							<Table.Root>
-						<Table.Header>
-							<Table.Row class="hover:bg-transparent">
-								<Table.Head>Model</Table.Head>
-								<Table.Head class="text-right">Input / 1M</Table.Head>
-								<Table.Head class="text-right">Output / 1M</Table.Head>
-								<Table.Head class="w-[1%]">Source</Table.Head>
-								<Table.Head class="w-[1%]"></Table.Head>
-							</Table.Row>
-						</Table.Header>
-						<Table.Body>
-							{#each group.rows as p (p.model)}
-								<Table.Row>
-									<Table.Cell class="font-medium">{p.model}</Table.Cell>
-									<Table.Cell class="text-right tabular-nums">
-										{formatUsd(p.inputPerMtok)}
-										{#if p.source === 'custom' && p.defaultInputPerMtok !== null && p.defaultInputPerMtok !== p.inputPerMtok}
-											<div class="text-xs text-muted-foreground line-through">
-												{formatUsd(p.defaultInputPerMtok)}
-											</div>
-										{/if}
-									</Table.Cell>
-									<Table.Cell class="text-right tabular-nums">
-										{formatUsd(p.outputPerMtok)}
-										{#if p.source === 'custom' && p.defaultOutputPerMtok !== null && p.defaultOutputPerMtok !== p.outputPerMtok}
-											<div class="text-xs text-muted-foreground line-through">
-												{formatUsd(p.defaultOutputPerMtok)}
-											</div>
-										{/if}
-									</Table.Cell>
-									<Table.Cell>
-										{#if p.source === 'custom'}
-											<Badge variant="secondary">custom</Badge>
-										{:else}
-											<Badge variant="outline">default</Badge>
-										{/if}
-									</Table.Cell>
-									<Table.Cell class="text-right whitespace-nowrap">
-										<Button
-											variant="ghost"
-											size="icon"
-											class="size-8"
-											title={p.source === 'custom' ? 'Edit price' : 'Override default'}
-											onclick={() => openEdit(p)}
-										>
-											<Pencil class="size-4" />
-										</Button>
-										{#if p.source === 'custom'}
-											<form
-												method="post"
-												action="?/delete"
-												class="inline"
-												use:enhance={() =>
-													async ({ update }) =>
-														update()}
-											>
-												<input type="hidden" name="id" value={p.id} />
-												<Button
-													type="submit"
-													variant="ghost"
-													size="icon"
-													class="size-8 text-muted-foreground hover:text-destructive"
-													title={p.defaultInputPerMtok !== null
-														? 'Reset to platform default'
-														: 'Remove price'}
-												>
-													<RotateCcw class="size-4" />
-												</Button>
-											</form>
-										{/if}
-									</Table.Cell>
-								</Table.Row>
-							{/each}
-							</Table.Body>
-						</Table.Root>
-						</Collapsible.Content>
-					</Collapsible.Root>
-				</Card.Root>
-			{/each}
+		<div class="flex flex-wrap items-center justify-between gap-3">
+			<Tabs.Root bind:value={providerFilter}>
+				<Tabs.List>
+					<Tabs.Trigger value="all">
+						All
+						<span class="ml-1.5 text-xs text-muted-foreground">{rows.length}</span>
+					</Tabs.Trigger>
+					{#each tabs as t (t.key)}
+						<Tabs.Trigger value={t.key}>
+							{t.label}
+							<span class="ml-1.5 text-xs text-muted-foreground">{t.count}</span>
+						</Tabs.Trigger>
+					{/each}
+				</Tabs.List>
+			</Tabs.Root>
+
+			<div class="relative w-full max-w-xs sm:w-64">
+				<Search
+					class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+				/>
+				<Input
+					bind:value={query}
+					placeholder="Search models…"
+					class="pl-9"
+					aria-label="Search models"
+				/>
+			</div>
 		</div>
+
+		<div class="rounded-xl border">
+			<Table.Root>
+				<Table.Header>
+					<Table.Row class="hover:bg-transparent">
+						<Table.Head>{@render sortHead('Model', 'model', 'left')}</Table.Head>
+						{#if showProviderCol}
+							<Table.Head>Provider</Table.Head>
+						{/if}
+						<Table.Head class="text-right">
+							{@render sortHead('Input / 1M', 'inputPerMtok', 'right')}
+						</Table.Head>
+						<Table.Head class="text-right">
+							{@render sortHead('Output / 1M', 'outputPerMtok', 'right')}
+						</Table.Head>
+						<Table.Head class="w-[1%]">Source</Table.Head>
+						<Table.Head class="w-[1%]"></Table.Head>
+					</Table.Row>
+				</Table.Header>
+				<Table.Body>
+					{#each visible as p (p.model)}
+						<Table.Row class="group">
+							<Table.Cell class="font-medium">{p.model}</Table.Cell>
+							{#if showProviderCol}
+								<Table.Cell class="text-muted-foreground">{p.providerLabel}</Table.Cell>
+							{/if}
+							<Table.Cell class="text-right tabular-nums">
+								{formatUsd(p.inputPerMtok)}
+								{#if p.source === 'custom' && p.defaultInputPerMtok !== null && p.defaultInputPerMtok !== p.inputPerMtok}
+									<div class="text-xs text-muted-foreground line-through">
+										{formatUsd(p.defaultInputPerMtok)}
+									</div>
+								{/if}
+							</Table.Cell>
+							<Table.Cell class="text-right tabular-nums">
+								{formatUsd(p.outputPerMtok)}
+								{#if p.source === 'custom' && p.defaultOutputPerMtok !== null && p.defaultOutputPerMtok !== p.outputPerMtok}
+									<div class="text-xs text-muted-foreground line-through">
+										{formatUsd(p.defaultOutputPerMtok)}
+									</div>
+								{/if}
+							</Table.Cell>
+							<Table.Cell>
+								{#if p.source === 'custom'}
+									<Badge variant="secondary">custom</Badge>
+								{:else}
+									<Badge variant="outline" class="text-muted-foreground">default</Badge>
+								{/if}
+							</Table.Cell>
+							<Table.Cell class="text-right whitespace-nowrap">
+								<div
+									class="flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+								>
+									<Button
+										variant="ghost"
+										size="icon"
+										class="size-8"
+										title={p.source === 'custom' ? 'Edit price' : 'Override default'}
+										onclick={() => openEdit(p)}
+									>
+										<Pencil class="size-4" />
+									</Button>
+									{#if p.source === 'custom'}
+										<form
+											method="post"
+											action="?/delete"
+											class="inline"
+											use:enhance={() =>
+												async ({ update }) =>
+													update()}
+										>
+											<input type="hidden" name="id" value={p.id} />
+											<Button
+												type="submit"
+												variant="ghost"
+												size="icon"
+												class="size-8 text-muted-foreground hover:text-destructive"
+												title={p.defaultInputPerMtok !== null
+													? 'Reset to platform default'
+													: 'Remove price'}
+											>
+												<RotateCcw class="size-4" />
+											</Button>
+										</form>
+									{/if}
+								</div>
+							</Table.Cell>
+						</Table.Row>
+					{/each}
+				</Table.Body>
+			</Table.Root>
+
+			{#if visible.length === 0}
+				<div class="flex flex-col items-center justify-center py-12">
+					<Search class="size-6 text-muted-foreground" />
+					<p class="mt-2 text-sm text-muted-foreground">
+						No models match {query ? `“${query}”` : 'this filter'}.
+					</p>
+				</div>
+			{/if}
+		</div>
+
+		<p class="text-xs text-muted-foreground">
+			Showing {visible.length} of {rows.length} models{customCount > 0
+				? ` · ${customCount} custom`
+				: ''}.
+		</p>
 	{/if}
 </div>
 
