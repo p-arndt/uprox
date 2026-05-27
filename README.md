@@ -35,28 +35,28 @@ Change two lines — the base URL and the key — and you're routing through upr
 import OpenAI from 'openai';
 
 const client = new OpenAI({
-	apiKey: 'uprox_live_…',                  // a revocable machine token, not your real key
+	apiKey: 'uprox_live_…', // a revocable machine token, not your real key
 	baseURL: 'http://localhost:5173/v1'
 });
 
 await client.chat.completions.create({
-	model: 'gpt-4o',                         // claude-* routes to Anthropic automatically
+	model: 'gpt-4o', // claude-* routes to Anthropic automatically
 	messages: [{ role: 'user', content: 'Hello' }]
 });
 ```
 
 ## What you get
 
-|                       |                                                                              |
-| --------------------- | ---------------------------------------------------------------------------- |
-| **Machine tokens**    | Revocable `uprox_live_…` tokens per service. Stored as a hash; shown once.   |
-| **Multi-provider**    | OpenAI, Anthropic, and Azure OpenAI behind one endpoint, routed by model.    |
-| **Policies**          | Limit which providers/models a service may call, plus per-token rate limits. |
-| **Budgets**           | Daily/monthly USD ceilings per service — over budget returns `402`.          |
-| **Response cache**    | Exact-match cache (streaming included) replays responses at zero cost.       |
-| **Encrypted keys**    | Provider keys sealed with AES-256-GCM; never exposed to clients.             |
-| **Audit log**         | Every request logged with status, cost, and latency.                         |
-| **Teams**             | Organizations, roles, and email/link invitations via better-auth.            |
+|                    |                                                                              |
+| ------------------ | ---------------------------------------------------------------------------- |
+| **Machine tokens** | Revocable `uprox_live_…` tokens per service. Stored as a hash; shown once.   |
+| **Multi-provider** | OpenAI, Anthropic, and Azure OpenAI behind one endpoint, routed by model.    |
+| **Policies**       | Limit which providers/models a service may call, plus per-token rate limits. |
+| **Budgets**        | Daily/monthly USD ceilings per service — over budget returns `402`.          |
+| **Response cache** | Exact-match cache (streaming included) replays responses at zero cost.       |
+| **Encrypted keys** | Provider keys sealed with AES-256-GCM; never exposed to clients.             |
+| **Audit log**      | Every request logged with status, cost, and latency.                         |
+| **Teams & SSO**    | Invite-only orgs and roles, with email/password or OIDC sign-in.             |
 
 ## Quick start
 
@@ -70,8 +70,10 @@ pnpm db:migrate
 pnpm dev
 ```
 
-Open <http://localhost:5173>, sign up, and the dashboard walks you through it:
-**add a provider key → create a service → issue a token → make your first request.**
+Open <http://localhost:5173>. On first run you'll land on a one-time **`/setup`** wizard to
+create the administrator account (it becomes owner of the first organization). After that the
+dashboard walks you through it: **add a provider key → create a service → issue a token → make
+your first request.** New teammates join by invitation — see [Authentication](#authentication).
 
 ```sh
 # generate ENCRYPTION_KEY
@@ -102,15 +104,40 @@ via the session-authenticated REST API under `/api`.
 - Provider keys are encrypted at rest with **AES-256-GCM**; only the last 4 chars are kept for
   display, and the gateway swaps the token for the real key server-side — clients never see it.
 
+## Authentication
+
+uprox is **invite-only**. The first account is created once via the `/setup` wizard; everyone
+else joins through an organization invitation (email or copy-able link) or via SSO. Sign-in
+methods are configured with environment variables — no in-app toggles; set them and restart.
+
+| Variable                                                | Effect                                                                       |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `EMAIL_AUTH_DISABLED`                                   | `true` hides email/password login, leaving SSO only. Default: email enabled. |
+| `OIDC_ISSUER` + `OIDC_CLIENT_ID` + `OIDC_CLIENT_SECRET` | Set all three to enable a "Sign in with SSO" button (any OIDC provider).     |
+| `OIDC_PROVIDER_NAME`                                    | Button label (default `Single sign-on`).                                     |
+| `OIDC_SCOPES`                                           | Comma-separated scopes (default `openid,email,profile`).                     |
+
+**OIDC setup.** Register uprox with your identity provider (Authentik, Keycloak, Entra ID,
+Auth0, …) using this redirect/callback URL:
+
+```
+{ORIGIN}/api/auth/oauth2/callback/oidc
+```
+
+then set the three `OIDC_*` vars and restart. OIDC users are auto-provisioned on first sign-in.
+
+> **Note:** keep email auth enabled until the first admin exists. If you disable it on an empty
+> database the `/setup` wizard can't create an account and you'll be locked out.
+
 ## Roles
 
 Every organization has three roles, backed by better-auth's organization plugin:
 
-| Role       | Can do                                                                       |
-| ---------- | ---------------------------------------------------------------------------- |
-| **owner**  | everything, including org-level actions                                      |
-| **admin**  | manage providers, policies, services, tokens, pricing, settings, members     |
-| **member** | read-only — unless an admin grants token/service permissions in Settings     |
+| Role       | Can do                                                                   |
+| ---------- | ------------------------------------------------------------------------ |
+| **owner**  | everything, including org-level actions                                  |
+| **admin**  | manage providers, policies, services, tokens, pricing, settings, members |
+| **member** | read-only — unless an admin grants token/service permissions in Settings |
 
 ## Built with
 
