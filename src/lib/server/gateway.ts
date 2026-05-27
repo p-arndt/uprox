@@ -29,8 +29,28 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 	return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+/**
+ * Input tokens the upstream provider served from its *own* prompt cache, read
+ * from a usage object. Spans the chat shape
+ * (`prompt_tokens_details.cached_tokens`), the Responses shape
+ * (`input_tokens_details.cached_tokens`), and Anthropic's
+ * (`cache_read_input_tokens`). Returns null when no cache usage is reported.
+ * This is the provider's discount on repeated input — unrelated to uprox's own
+ * exact-match response cache.
+ */
+function providerCachedTokens(usage: unknown): number | null {
+	if (!isRecord(usage)) return null;
+	const fromDetails = (d: unknown) =>
+		isRecord(d) && typeof d.cached_tokens === 'number' ? d.cached_tokens : null;
+	return (
+		fromDetails(usage.prompt_tokens_details) ??
+		fromDetails(usage.input_tokens_details) ??
+		(typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : null)
+	);
+}
+
 interface DrainedSse {
-	usage: { input?: number; output?: number } | null;
+	usage: { input?: number; output?: number; cachedInput?: number | null } | null;
 	/** the verbatim SSE body, reassembled — used to cache a streamed response */
 	raw: string;
 	/** false if the stream errored/aborted before completing (don't cache) */
@@ -48,7 +68,7 @@ async function readSseUsage(stream: ReadableStream<Uint8Array>): Promise<Drained
 	const decoder = new TextDecoder();
 	let buffer = '';
 	let raw = '';
-	let usage: { input?: number; output?: number } | null = null;
+	let usage: { input?: number; output?: number; cachedInput?: number | null } | null = null;
 	let complete = false;
 
 	const take = (line: string) => {
@@ -63,7 +83,9 @@ async function readSseUsage(stream: ReadableStream<Uint8Array>): Promise<Drained
 				const rec = u as Record<string, unknown>;
 				const input = (rec.prompt_tokens ?? rec.input_tokens) as number | undefined;
 				const output = (rec.completion_tokens ?? rec.output_tokens) as number | undefined;
-				if (input != null || output != null) usage = { input, output };
+				const cachedInput = providerCachedTokens(rec);
+				if (input != null || output != null || cachedInput != null)
+					usage = { input, output, cachedInput };
 			}
 		} catch {
 			// ignore non-JSON keepalive/comment lines
@@ -441,6 +463,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 				model,
 				statusCode: upstream.status,
 				costUsd: cost,
+				providerCachedTokens: usage?.cachedInput ?? null,
 				latencyMs: Date.now() - started,
 				ip,
 				detail: 'stream'
@@ -472,6 +495,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	// buffered response: parse usage for cost tracking
 	const text = await upstream.text();
 	let cost: number | null = null;
+	let cachedTokens: number | null = null;
 	try {
 		const parsed = JSON.parse(text) as {
 			usage?: {
@@ -487,6 +511,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		const inputTokens = parsed.usage?.prompt_tokens ?? parsed.usage?.input_tokens;
 		const outputTokens = parsed.usage?.completion_tokens ?? parsed.usage?.output_tokens;
 		cost = estimateCostUsd(sendModel, inputTokens, outputTokens);
+		cachedTokens = providerCachedTokens(parsed.usage);
 	} catch {
 		// non-JSON or no usage; leave cost null
 	}
@@ -501,6 +526,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		model,
 		statusCode: upstream.status,
 		costUsd: cost,
+		providerCachedTokens: cachedTokens,
 		latencyMs: Date.now() - started,
 		ip
 	});

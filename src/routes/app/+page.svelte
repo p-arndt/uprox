@@ -72,6 +72,11 @@
 					<p class="mt-1 text-xs text-muted-foreground">
 						{data.stats.cacheHits} hits · {formatUsd(data.stats.cacheSavedUsd)} saved
 					</p>
+					{#if data.stats.providerCachedTokens > 0}
+						<p class="text-xs text-muted-foreground">
+							+ {data.stats.providerCachedTokens.toLocaleString()} input tokens from provider cache
+						</p>
+					{/if}
 				</Card.Content>
 			</Card.Root>
 		</div>

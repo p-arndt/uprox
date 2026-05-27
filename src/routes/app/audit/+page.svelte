@@ -38,6 +38,7 @@
 						<Table.Head>Service</Table.Head>
 						<Table.Head>Model</Table.Head>
 						<Table.Head class="text-right">Cost</Table.Head>
+						<Table.Head class="text-right">Provider cache</Table.Head>
 						<Table.Head class="text-right">Latency</Table.Head>
 						<Table.Head>Detail</Table.Head>
 					</Table.Row>
@@ -58,6 +59,9 @@
 							<Table.Cell class="text-muted-foreground">{e.model ?? '—'}</Table.Cell>
 							<Table.Cell class="text-right text-muted-foreground tabular-nums">
 								{e.costUsd ? formatUsd(e.costUsd) : '—'}
+							</Table.Cell>
+							<Table.Cell class="text-right text-muted-foreground tabular-nums">
+								{e.providerCachedTokens ? `${e.providerCachedTokens.toLocaleString()} tok` : '—'}
 							</Table.Cell>
 							<Table.Cell class="text-right text-muted-foreground tabular-nums">
 								{e.latencyMs != null ? `${e.latencyMs}ms` : '—'}

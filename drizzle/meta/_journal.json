@@ -36,6 +36,13 @@
       "when": 1779904469604,
       "tag": "0004_azure_provider_endpoint",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1779905280087,
+      "tag": "0005_fuzzy_blue_blade",
+      "breakpoints": true
     }
   ]
 }

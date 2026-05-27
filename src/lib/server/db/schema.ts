@@ -220,6 +220,10 @@ export const auditLog = pgTable(
 		costUsd: numeric('cost_usd', { precision: 12, scale: 6 }),
 		// for cache hits: the exact amount saved (the cached entry's original cost)
 		savedUsd: numeric('saved_usd', { precision: 12, scale: 6 }),
+		// input tokens the *upstream provider* served from its own prompt cache
+		// (OpenAI/Anthropic prompt caching) — distinct from uprox's exact-match
+		// response cache. NULL when the response reported no cache usage.
+		providerCachedTokens: integer('provider_cached_tokens'),
 		latencyMs: integer('latency_ms'),
 		ip: text('ip'),
 		detail: text('detail'),

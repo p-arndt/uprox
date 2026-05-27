@@ -337,6 +337,7 @@ export function listAudit(orgId: string, limit = 100) {
 			model: auditLog.model,
 			statusCode: auditLog.statusCode,
 			costUsd: auditLog.costUsd,
+			providerCachedTokens: auditLog.providerCachedTokens,
 			latencyMs: auditLog.latencyMs,
 			ip: auditLog.ip,
 			detail: auditLog.detail,
@@ -372,7 +373,9 @@ export async function orgStats(orgId: string) {
 			// cache hits log detail 'cache hit' / 'cache hit (stream)' at cost 0
 			cacheHits: sql<number>`count(*) filter (where ${auditLog.detail} like 'cache hit%')`,
 			// exact savings: each hit recorded the cached entry's original cost
-			cacheSaved: sql<string>`coalesce(sum(${auditLog.savedUsd}), 0)`
+			cacheSaved: sql<string>`coalesce(sum(${auditLog.savedUsd}), 0)`,
+			// input tokens the upstream providers served from their own prompt cache
+			providerCachedTokens: sql<number>`coalesce(sum(${auditLog.providerCachedTokens}), 0)`
 		})
 		.from(auditLog)
 		.where(and(eq(auditLog.organizationId, orgId), sql`${auditLog.action} like 'gateway.%'`));
@@ -390,6 +393,8 @@ export async function orgStats(orgId: string) {
 		// share of all gateway requests served from cache (0–1)
 		cacheHitRate: total > 0 ? cacheHits / total : 0,
 		// exact: sum of each hit's recorded saved amount
-		cacheSavedUsd: Number(reqs?.cacheSaved ?? 0)
+		cacheSavedUsd: Number(reqs?.cacheSaved ?? 0),
+		// total input tokens upstream providers served from their own prompt cache
+		providerCachedTokens: Number(reqs?.providerCachedTokens ?? 0)
 	};
 }
