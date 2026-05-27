@@ -18,6 +18,8 @@
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
 	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
+	import Check from '@lucide/svelte/icons/check';
+	import X from '@lucide/svelte/icons/x';
 
 	let { data, form } = $props();
 
@@ -97,44 +99,41 @@
 	const customCount = $derived(data.prices.filter((p) => p.source === 'custom').length);
 	const showProviderCol = $derived(providerFilter === 'all');
 
+	// Inline price editing: the pencil swaps a single row's price cells for
+	// number inputs. Works for custom rows (update) and default rows (override
+	// via create). Provider is carried through unchanged; the only field most
+	// edits touch is the two numbers, so the dialog is reserved for adding.
+	let editRow = $state<string | null>(null);
+	let draftIn = $state('');
+	let draftOut = $state('');
+
+	function startEdit(p: Price) {
+		editRow = p.model;
+		draftIn = String(p.inputPerMtok);
+		draftOut = String(p.outputPerMtok);
+	}
+	const inlineFormId = (model: string) => `edit-${model.replace(/[^a-z0-9]+/gi, '-')}`;
+
 	type Editing = {
-		id: string | null;
-		model: string;
-		modelLocked: boolean;
 		provider: string;
 		inputPerMtok: string;
 		outputPerMtok: string;
-		title: string;
 	};
-	let editing = $state<Editing | null>(null);
+	let adding = $state<Editing | null>(null);
 
 	function openAdd() {
-		editing = {
-			id: null,
-			model: '',
-			modelLocked: false,
+		editRow = null;
+		adding = {
 			provider: providerFilter !== 'all' && providerFilter !== OTHER_KEY ? providerFilter : '',
 			inputPerMtok: '',
-			outputPerMtok: '',
-			title: 'Add model price'
-		};
-	}
-
-	function openEdit(p: Price) {
-		editing = {
-			id: p.id,
-			model: p.model,
-			modelLocked: true,
-			provider: p.provider ?? '',
-			inputPerMtok: String(p.inputPerMtok),
-			outputPerMtok: String(p.outputPerMtok),
-			title: p.source === 'custom' ? `Edit ${p.model}` : `Override ${p.model}`
+			outputPerMtok: ''
 		};
 	}
 
 	$effect(() => {
 		if (form?.success) {
-			editing = null;
+			adding = null;
+			editRow = null;
 			invalidateAll();
 		}
 	});
@@ -228,25 +227,55 @@
 				</Table.Header>
 				<Table.Body>
 					{#each visible as p (p.model)}
+						{@const isEditing = editRow === p.model}
+						{@const fid = inlineFormId(p.model)}
 						<Table.Row class="group">
 							<Table.Cell class="font-medium">{p.model}</Table.Cell>
 							{#if showProviderCol}
 								<Table.Cell class="text-muted-foreground">{p.providerLabel}</Table.Cell>
 							{/if}
 							<Table.Cell class="text-right tabular-nums">
-								{formatUsd(p.inputPerMtok)}
-								{#if p.source === 'custom' && p.defaultInputPerMtok !== null && p.defaultInputPerMtok !== p.inputPerMtok}
-									<div class="text-xs text-muted-foreground line-through">
-										{formatUsd(p.defaultInputPerMtok)}
-									</div>
+								{#if isEditing}
+									<Input
+										form={fid}
+										name="inputPerMtok"
+										type="number"
+										step="0.0001"
+										min="0"
+										bind:value={draftIn}
+										required
+										aria-label="Input price per 1M tokens"
+										class="ml-auto h-8 w-28 text-right"
+									/>
+								{:else}
+									{formatUsd(p.inputPerMtok)}
+									{#if p.source === 'custom' && p.defaultInputPerMtok !== null && p.defaultInputPerMtok !== p.inputPerMtok}
+										<div class="text-xs text-muted-foreground line-through">
+											{formatUsd(p.defaultInputPerMtok)}
+										</div>
+									{/if}
 								{/if}
 							</Table.Cell>
 							<Table.Cell class="text-right tabular-nums">
-								{formatUsd(p.outputPerMtok)}
-								{#if p.source === 'custom' && p.defaultOutputPerMtok !== null && p.defaultOutputPerMtok !== p.outputPerMtok}
-									<div class="text-xs text-muted-foreground line-through">
-										{formatUsd(p.defaultOutputPerMtok)}
-									</div>
+								{#if isEditing}
+									<Input
+										form={fid}
+										name="outputPerMtok"
+										type="number"
+										step="0.0001"
+										min="0"
+										bind:value={draftOut}
+										required
+										aria-label="Output price per 1M tokens"
+										class="ml-auto h-8 w-28 text-right"
+									/>
+								{:else}
+									{formatUsd(p.outputPerMtok)}
+									{#if p.source === 'custom' && p.defaultOutputPerMtok !== null && p.defaultOutputPerMtok !== p.outputPerMtok}
+										<div class="text-xs text-muted-foreground line-through">
+											{formatUsd(p.defaultOutputPerMtok)}
+										</div>
+									{/if}
 								{/if}
 							</Table.Cell>
 							<Table.Cell>
@@ -257,42 +286,74 @@
 								{/if}
 							</Table.Cell>
 							<Table.Cell class="text-right whitespace-nowrap">
-								<div
-									class="flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
-								>
-									<Button
-										variant="ghost"
-										size="icon"
-										class="size-8"
-										title={p.source === 'custom' ? 'Edit price' : 'Override default'}
-										onclick={() => openEdit(p)}
+								{#if isEditing}
+									<form
+										id={fid}
+										method="post"
+										action={p.id ? '?/update' : '?/create'}
+										class="flex justify-end gap-1"
+										use:enhance={() =>
+											async ({ update }) =>
+												update()}
 									>
-										<Pencil class="size-4" />
-									</Button>
-									{#if p.source === 'custom'}
-										<form
-											method="post"
-											action="?/delete"
-											class="inline"
-											use:enhance={() =>
-												async ({ update }) =>
-													update()}
-										>
+										{#if p.id}
 											<input type="hidden" name="id" value={p.id} />
-											<Button
-												type="submit"
-												variant="ghost"
-												size="icon"
-												class="size-8 text-muted-foreground hover:text-destructive"
-												title={p.defaultInputPerMtok !== null
-													? 'Reset to platform default'
-													: 'Remove price'}
+										{:else}
+											<input type="hidden" name="model" value={p.model} />
+										{/if}
+										<input type="hidden" name="provider" value={p.provider ?? ''} />
+										<Button type="submit" variant="ghost" size="icon" class="size-8" title="Save">
+											<Check class="size-4 text-primary" />
+										</Button>
+										<Button
+											type="button"
+											variant="ghost"
+											size="icon"
+											class="size-8 text-muted-foreground"
+											title="Cancel"
+											onclick={() => (editRow = null)}
+										>
+											<X class="size-4" />
+										</Button>
+									</form>
+								{:else}
+									<div
+										class="flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+									>
+										<Button
+											variant="ghost"
+											size="icon"
+											class="size-8"
+											title={p.source === 'custom' ? 'Edit price' : 'Override default'}
+											onclick={() => startEdit(p)}
+										>
+											<Pencil class="size-4" />
+										</Button>
+										{#if p.source === 'custom'}
+											<form
+												method="post"
+												action="?/delete"
+												class="inline"
+												use:enhance={() =>
+													async ({ update }) =>
+														update()}
 											>
-												<RotateCcw class="size-4" />
-											</Button>
-										</form>
-									{/if}
-								</div>
+												<input type="hidden" name="id" value={p.id} />
+												<Button
+													type="submit"
+													variant="ghost"
+													size="icon"
+													class="size-8 text-muted-foreground hover:text-destructive"
+													title={p.defaultInputPerMtok !== null
+														? 'Reset to platform default'
+														: 'Remove price'}
+												>
+													<RotateCcw class="size-4" />
+												</Button>
+											</form>
+										{/if}
+									</div>
+								{/if}
 							</Table.Cell>
 						</Table.Row>
 					{/each}
@@ -318,47 +379,35 @@
 </div>
 
 <Dialog.Root
-	open={editing !== null}
+	open={adding !== null}
 	onOpenChange={(v) => {
-		if (!v) editing = null;
+		if (!v) adding = null;
 	}}
 >
 	<Dialog.Content>
 		<Dialog.Header>
-			<Dialog.Title>{editing?.title}</Dialog.Title>
+			<Dialog.Title>Add model price</Dialog.Title>
 			<Dialog.Description>Prices are in USD per 1,000,000 tokens.</Dialog.Description>
 		</Dialog.Header>
 		<form
 			method="post"
-			action={editing?.id ? '?/update' : '?/create'}
+			action="?/create"
 			class="space-y-4"
 			use:enhance={() =>
 				async ({ update }) =>
 					update()}
 		>
-			{#if editing?.id}
-				<input type="hidden" name="id" value={editing.id} />
-			{/if}
 			<div class="space-y-2">
 				<Label for="model">Model</Label>
-				<Input
-					id="model"
-					name="model"
-					placeholder="gpt-4o"
-					value={editing?.model ?? ''}
-					readonly={editing?.modelLocked}
-					required
-				/>
-				{#if !editing?.modelLocked}
-					<p class="text-xs text-muted-foreground">
-						Matched by longest prefix, e.g. <code>gpt-4o</code> covers
-						<code>gpt-4o-2024-08-06</code>.
-					</p>
-				{/if}
+				<Input id="model" name="model" placeholder="gpt-4o" required />
+				<p class="text-xs text-muted-foreground">
+					Matched by longest prefix, e.g. <code>gpt-4o</code> covers
+					<code>gpt-4o-2024-08-06</code>.
+				</p>
 			</div>
 			<div class="space-y-2">
 				<Label for="provider">Provider (optional)</Label>
-				<NativeSelect id="provider" name="provider" value={editing?.provider ?? ''} class="w-full">
+				<NativeSelect id="provider" name="provider" value={adding?.provider ?? ''} class="w-full">
 					<option value="">—</option>
 					{#each data.providers as prov (prov.id)}
 						<option value={prov.id}>{prov.label}</option>
@@ -375,7 +424,6 @@
 						step="0.0001"
 						min="0"
 						placeholder="2.5"
-						value={editing?.inputPerMtok ?? ''}
 						required
 					/>
 				</div>
@@ -388,7 +436,6 @@
 						step="0.0001"
 						min="0"
 						placeholder="10"
-						value={editing?.outputPerMtok ?? ''}
 						required
 					/>
 				</div>
@@ -397,7 +444,7 @@
 				<p class="text-sm text-destructive">{form.message}</p>
 			{/if}
 			<Dialog.Footer>
-				<Button type="submit">Save</Button>
+				<Button type="submit">Add model</Button>
 			</Dialog.Footer>
 		</form>
 	</Dialog.Content>
