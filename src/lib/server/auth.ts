@@ -4,7 +4,7 @@ import { sveltekitCookies } from 'better-auth/svelte-kit';
 import { organization, genericOAuth } from 'better-auth/plugins';
 import { env } from '$env/dynamic/private';
 import { getRequestEvent } from '$app/server';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { sendInvitationEmail } from '$lib/server/email';
 import { getOidcConfig, isEmailAuthEnabled } from '$lib/server/auth-config';
@@ -57,23 +57,45 @@ export const auth = betterAuth({
 	databaseHooks: {
 		user: {
 			create: {
-				// Every user gets a personal organization so the dashboard always
-				// has an active org to work within.
+				// Single organization per company: the whole deployment shares one
+				// organization. The first user to sign up bootstraps it and becomes
+				// its owner; everyone after joins that same org. Invited users are
+				// added by the invitation flow with their invited role, so we skip
+				// them here to avoid creating a duplicate membership.
 				after: async (createdUser) => {
-					const orgName = createdUser.name ? `${createdUser.name}'s Org` : 'Personal';
-					const [org] = await db
-						.insert(organizationTable)
-						.values({
-							name: orgName,
-							slug: slugify(createdUser.email.split('@')[0] ?? createdUser.name),
+					const [existingOrg] = await db
+						.select({ id: organizationTable.id })
+						.from(organizationTable)
+						.limit(1);
+
+					if (!existingOrg) {
+						const name = env.ORG_NAME?.trim() || 'uprox';
+						const [org] = await db
+							.insert(organizationTable)
+							.values({ name, slug: slugify(name), createdAt: new Date() })
+							.returning();
+						await db.insert(member).values({
+							organizationId: org.id,
+							userId: createdUser.id,
+							role: 'owner',
 							createdAt: new Date()
-						})
-						.returning();
+						});
+						return;
+					}
+
+					const [pendingInvite] = await db
+						.select({ id: authInvitation.id })
+						.from(authInvitation)
+						.where(
+							and(eq(authInvitation.email, createdUser.email), eq(authInvitation.status, 'pending'))
+						)
+						.limit(1);
+					if (pendingInvite) return;
 
 					await db.insert(member).values({
-						organizationId: org.id,
+						organizationId: existingOrg.id,
 						userId: createdUser.id,
-						role: 'owner',
+						role: 'member',
 						createdAt: new Date()
 					});
 				}
@@ -95,6 +117,10 @@ export const auth = betterAuth({
 	},
 	plugins: [
 		organization({
+			// Single organization per company: the one org is bootstrapped in the
+			// user.create hook above, so block the create-organization endpoint to
+			// stop additional orgs from ever being made.
+			allowUserToCreateOrganization: false,
 			// Email the invitee a link to accept. When SMTP isn't configured the
 			// helper no-ops and the dashboard surfaces a copy-able link instead.
 			async sendInvitationEmail(data) {
@@ -108,8 +134,8 @@ export const auth = betterAuth({
 			}
 		}),
 		// A single OIDC provider, only registered when fully configured. Users
-		// signing in this way are auto-provisioned (and get a personal org via the
-		// user.create hook above), which is the expected behaviour for org SSO.
+		// signing in this way are auto-provisioned and join the shared company org
+		// via the user.create hook above (unless an invitation is pending).
 		...(oidcConfig
 			? [
 					genericOAuth({
