@@ -2,12 +2,19 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { auth } from '$lib/server/auth';
 import { APIError } from 'better-auth/api';
-import { isEmailAuthEnabled } from '$lib/server/auth-config';
+import {
+	getEnabledProviders,
+	getOidcConfig,
+	isEmailAuthEnabled
+} from '$lib/server/auth-config';
 import { markSetupComplete } from '$lib/server/setup';
 
 export const load: PageServerLoad = (event) => {
 	if (event.locals.user) redirect(303, '/app');
-	return { emailAuthEnabled: isEmailAuthEnabled() };
+	return {
+		enabledProviders: getEnabledProviders(),
+		oidcLabel: getOidcConfig()?.providerName ?? null
+	};
 };
 
 export const actions: Actions = {
@@ -57,5 +64,23 @@ export const actions: Actions = {
 
 		markSetupComplete();
 		redirect(303, '/app');
+	},
+	// Bootstrap via OIDC: the first user to complete the OAuth flow becomes the
+	// owner of their auto-provisioned organization (see databaseHooks.user.create
+	// in auth.ts), which is the only "admin" concept the platform currently has.
+	oidc: async (event) => {
+		if (!getEnabledProviders().oidc) {
+			return fail(400, { message: 'SSO is not configured.' });
+		}
+		let res;
+		try {
+			res = await auth.api.signInWithOAuth2({
+				body: { providerId: 'oidc', callbackURL: '/app', errorCallbackURL: '/setup' },
+				headers: event.request.headers
+			});
+		} catch {
+			return fail(500, { message: 'Could not start SSO sign-in.' });
+		}
+		redirect(302, res.url);
 	}
 };

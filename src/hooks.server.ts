@@ -30,12 +30,18 @@ export const init: ServerInit = async () => {
  * Gate the whole app behind one-time setup. Until the first admin account
  * exists, every request is funnelled to `/setup`; once it does, `/setup`
  * itself is closed off so the wizard can't be replayed.
+ *
+ * `/api/auth/**` is exempted during bootstrap so the OIDC sign-in flow can
+ * complete (start on `/setup`, hop to the IdP, land on better-auth's
+ * callback) — otherwise the callback would be hijacked back to `/setup`.
  */
 const handleSetup: Handle = async ({ event, resolve }) => {
-	const onSetup = event.url.pathname === '/setup';
+	const path = event.url.pathname;
+	const onSetup = path === '/setup';
+	const isAuthApi = path.startsWith('/api/auth/');
 	if (await isSetupComplete()) {
 		if (onSetup) redirect(302, '/login');
-	} else if (!onSetup) {
+	} else if (!onSetup && !isAuthApi) {
 		redirect(302, '/setup');
 	}
 	return resolve(event);
