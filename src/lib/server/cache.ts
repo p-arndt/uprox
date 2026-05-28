@@ -83,6 +83,9 @@ export interface CachedResponse {
 	statusCode: number;
 	/** what the original (miss) response was billed — the exact amount this hit saves */
 	costUsd: number | null;
+	/** tokens the original (miss) request consumed, surfaced as "saved by cache" on hits */
+	inputTokens: number | null;
+	outputTokens: number | null;
 }
 
 /** Look up a live (unexpired) cache entry and bump its hit counter. */
@@ -92,7 +95,9 @@ export async function getCached(cacheKey: string): Promise<CachedResponse | null
 			id: responseCache.id,
 			response: responseCache.response,
 			statusCode: responseCache.statusCode,
-			costUsd: responseCache.costUsd
+			costUsd: responseCache.costUsd,
+			inputTokens: responseCache.inputTokens,
+			outputTokens: responseCache.outputTokens
 		})
 		.from(responseCache)
 		.where(and(eq(responseCache.cacheKey, cacheKey), gt(responseCache.expiresAt, new Date())))
@@ -109,7 +114,9 @@ export async function getCached(cacheKey: string): Promise<CachedResponse | null
 	return {
 		response: row.response,
 		statusCode: row.statusCode,
-		costUsd: row.costUsd != null ? Number(row.costUsd) : null
+		costUsd: row.costUsd != null ? Number(row.costUsd) : null,
+		inputTokens: row.inputTokens,
+		outputTokens: row.outputTokens
 	};
 }
 
@@ -132,11 +139,16 @@ export async function putCached(opts: {
 	response: string;
 	/** the cost this response was billed at, stored so each hit can report it as saved */
 	costUsd: number | null;
+	/** tokens the miss consumed, stored so each hit can report them as "saved" */
+	inputTokens?: number | null;
+	outputTokens?: number | null;
 	ttlSeconds: number;
 }): Promise<void> {
 	if (opts.response.length > MAX_CACHED_BYTES) return;
 	const expiresAt = new Date(Date.now() + opts.ttlSeconds * 1000);
 	const costUsd = opts.costUsd != null ? opts.costUsd.toFixed(6) : null;
+	const inputTokens = opts.inputTokens ?? null;
+	const outputTokens = opts.outputTokens ?? null;
 	try {
 		await db
 			.insert(responseCache)
@@ -147,12 +159,22 @@ export async function putCached(opts: {
 				statusCode: opts.statusCode,
 				response: opts.response,
 				costUsd,
+				inputTokens,
+				outputTokens,
 				hits: 0,
 				expiresAt
 			})
 			.onConflictDoUpdate({
 				target: responseCache.cacheKey,
-				set: { response: opts.response, statusCode: opts.statusCode, costUsd, expiresAt, hits: 0 }
+				set: {
+					response: opts.response,
+					statusCode: opts.statusCode,
+					costUsd,
+					inputTokens,
+					outputTokens,
+					expiresAt,
+					hits: 0
+				}
 			});
 	} catch (err) {
 		console.error('[cache] failed to store entry', err);

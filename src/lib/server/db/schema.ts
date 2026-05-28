@@ -147,6 +147,11 @@ export const responseCache = pgTable(
 		// the cost the original (miss) response was billed at — replayed as the
 		// exact amount saved on each subsequent hit
 		costUsd: numeric('cost_usd', { precision: 12, scale: 6 }),
+		// LLM tokens the original (miss) request consumed, replayed on each hit
+		// as `savedInputTokens` / `savedOutputTokens` in the audit log so the
+		// analytics can report how many tokens uprox's cache saved upstream.
+		inputTokens: integer('input_tokens'),
+		outputTokens: integer('output_tokens'),
 		hits: integer('hits').notNull().default(0),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
 		expiresAt: timestamp('expires_at').notNull()
@@ -279,6 +284,11 @@ export const auditLog = pgTable(
 		// non-JSON responses, or models that do not report token counts).
 		inputTokens: integer('input_tokens'),
 		outputTokens: integer('output_tokens'),
+		// for cache hits: tokens the original (miss) request would have consumed,
+		// replayed here so the analytics can show "tokens saved by cache" without
+		// inflating the actual-consumption columns above.
+		savedInputTokens: integer('saved_input_tokens'),
+		savedOutputTokens: integer('saved_output_tokens'),
 		// input tokens the *upstream provider* served from its own prompt cache
 		// (OpenAI/Anthropic prompt caching) — distinct from uprox's exact-match
 		// response cache. NULL when the response reported no cache usage.

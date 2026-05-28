@@ -354,6 +354,10 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 				costUsd: 0,
 				// exact savings: what this request would have cost upstream
 				savedUsd: hit.costUsd,
+				// tokens the miss consumed — replayed here as "saved" so analytics
+				// can show cache impact without double-counting consumption.
+				savedInputTokens: hit.inputTokens,
+				savedOutputTokens: hit.outputTokens,
 				latencyMs: Date.now() - started,
 				ip,
 				detail: stream ? 'cache hit (stream)' : 'cache hit'
@@ -524,6 +528,8 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 						statusCode: upstream.status,
 						response: raw,
 						costUsd: cost,
+						inputTokens: usage?.input ?? null,
+						outputTokens: usage?.output ?? null,
 						ttlSeconds: cacheTtl
 					});
 				}
@@ -595,6 +601,8 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 			statusCode: upstream.status,
 			response: text,
 			costUsd: cost,
+			inputTokens,
+			outputTokens,
 			ttlSeconds: cacheTtl
 		});
 	}

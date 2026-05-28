@@ -14,6 +14,9 @@ export interface AuditEntry {
 	/** LLM tokens consumed (prompt / completion), as reported by the upstream */
 	inputTokens?: number | null;
 	outputTokens?: number | null;
+	/** for cache hits: tokens the original (miss) request consumed — saved by replay */
+	savedInputTokens?: number | null;
+	savedOutputTokens?: number | null;
 	/** input tokens the upstream provider served from its own prompt cache */
 	providerCachedTokens?: number | null;
 	latencyMs?: number | null;
@@ -39,6 +42,8 @@ export async function audit(entry: AuditEntry): Promise<void> {
 			savedUsd: entry.savedUsd != null ? entry.savedUsd.toFixed(6) : null,
 			inputTokens: entry.inputTokens ?? null,
 			outputTokens: entry.outputTokens ?? null,
+			savedInputTokens: entry.savedInputTokens ?? null,
+			savedOutputTokens: entry.savedOutputTokens ?? null,
 			providerCachedTokens: entry.providerCachedTokens ?? null,
 			latencyMs: entry.latencyMs ?? null,
 			ip: entry.ip ?? null,

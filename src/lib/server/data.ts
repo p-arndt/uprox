@@ -420,13 +420,34 @@ export async function orgStats() {
 			// LLM tokens billed by upstream — sums separately so the overview can
 			// show prompt vs completion volume alongside the dollar figure.
 			inputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}), 0)::bigint`,
-			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`
+			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`,
+			// tokens uprox's response cache saved this window — replayed from the
+			// stored miss totals on every hit. Folded into the token-based cache
+			// rate so the headline reflects both layers of caching.
+			savedInputTokens: sql<number>`coalesce(sum(${auditLog.savedInputTokens}), 0)::bigint`,
+			savedOutputTokens: sql<number>`coalesce(sum(${auditLog.savedOutputTokens}), 0)::bigint`
 		})
 		.from(auditLog)
 		.where(sql`${auditLog.action} like 'gateway.%'`);
 
 	const cacheHits = Number(reqs?.cacheHits ?? 0);
 	const total = Number(reqs?.total ?? 0);
+	const inputTokens = Number(reqs?.inputTokens ?? 0);
+	const outputTokens = Number(reqs?.outputTokens ?? 0);
+	const savedInputTokens = Number(reqs?.savedInputTokens ?? 0);
+	const savedOutputTokens = Number(reqs?.savedOutputTokens ?? 0);
+	const providerCachedTokens = Number(reqs?.providerCachedTokens ?? 0);
+
+	// Token-based cache rate combines both layers:
+	//  - uprox's response cache (savedInputTokens) skips upstream entirely
+	//  - the provider's own prompt cache (providerCachedTokens) discounts a
+	//    subset of the inputTokens that *did* go upstream
+	// Denominator is total prompt volume the gateway has been asked to process —
+	// "served upstream" + "served from uprox cache" — so the rate answers
+	// "what fraction of input tokens benefited from caching?".
+	const cacheableInputTokens = inputTokens + savedInputTokens;
+	const cachedInputTokens = providerCachedTokens + savedInputTokens;
+	const tokenCacheRate = cacheableInputTokens > 0 ? cachedInputTokens / cacheableInputTokens : 0;
 
 	return {
 		services: Number(counts?.services ?? 0),
@@ -436,14 +457,20 @@ export async function orgStats() {
 		denied: Number(reqs?.denied ?? 0),
 		costUsd: Number(reqs?.cost ?? 0),
 		cacheHits,
-		// share of all gateway requests served from cache (0–1)
+		// share of all gateway requests served from uprox's cache (0–1) — kept
+		// for callers that want the request-count view, but the headline tile
+		// now uses tokenCacheRate so provider cache counts too.
 		cacheHitRate: total > 0 ? cacheHits / total : 0,
+		// share of input tokens that benefited from any cache layer (0–1)
+		tokenCacheRate,
 		// exact: sum of each hit's recorded saved amount
 		cacheSavedUsd: Number(reqs?.cacheSaved ?? 0),
 		// total input tokens upstream providers served from their own prompt cache
-		providerCachedTokens: Number(reqs?.providerCachedTokens ?? 0),
-		inputTokens: Number(reqs?.inputTokens ?? 0),
-		outputTokens: Number(reqs?.outputTokens ?? 0)
+		providerCachedTokens,
+		inputTokens,
+		outputTokens,
+		savedInputTokens,
+		savedOutputTokens
 	};
 }
 
@@ -554,6 +581,10 @@ export interface ServiceUsage {
 	denied: number;
 	inputTokens: number;
 	outputTokens: number;
+	savedInputTokens: number;
+	savedOutputTokens: number;
+	/** input tokens this service had served from the upstream provider's prompt cache */
+	providerCachedTokens: number;
 }
 
 /**
@@ -569,7 +600,10 @@ export async function orgUsageByService(days = 30): Promise<ServiceUsage[]> {
 			cost: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)::text`,
 			denied: sql<number>`(count(*) filter (where ${auditLog.status} = 'deny'))::int`,
 			inputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}), 0)::bigint`,
-			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`
+			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`,
+			savedInputTokens: sql<number>`coalesce(sum(${auditLog.savedInputTokens}), 0)::bigint`,
+			savedOutputTokens: sql<number>`coalesce(sum(${auditLog.savedOutputTokens}), 0)::bigint`,
+			providerCachedTokens: sql<number>`coalesce(sum(${auditLog.providerCachedTokens}), 0)::bigint`
 		})
 		.from(auditLog)
 		.leftJoin(service, eq(service.id, auditLog.serviceId))
@@ -586,7 +620,10 @@ export async function orgUsageByService(days = 30): Promise<ServiceUsage[]> {
 		costUsd: Number(r.cost ?? 0),
 		denied: Number(r.denied ?? 0),
 		inputTokens: Number(r.inputTokens ?? 0),
-		outputTokens: Number(r.outputTokens ?? 0)
+		outputTokens: Number(r.outputTokens ?? 0),
+		savedInputTokens: Number(r.savedInputTokens ?? 0),
+		savedOutputTokens: Number(r.savedOutputTokens ?? 0),
+		providerCachedTokens: Number(r.providerCachedTokens ?? 0)
 	}));
 }
 
