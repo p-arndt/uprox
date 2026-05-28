@@ -11,6 +11,17 @@ export function smtpConfigured(): boolean {
 	return Boolean(env.SMTP_HOST);
 }
 
+async function getTransport() {
+	const { createTransport } = await import('nodemailer');
+	const port = Number(env.SMTP_PORT) || 587;
+	return createTransport({
+		host: env.SMTP_HOST,
+		port,
+		secure: port === 465,
+		auth: env.SMTP_USER ? { user: env.SMTP_USER, pass: env.SMTP_PASS } : undefined
+	});
+}
+
 interface InvitationEmail {
 	to: string;
 	inviteUrl: string;
@@ -26,26 +37,27 @@ export async function sendInvitationEmail(data: InvitationEmail): Promise<void> 
 		return;
 	}
 
-	// Imported lazily so nodemailer is only loaded when SMTP is actually used.
-	const { createTransport } = await import('nodemailer');
-	const port = Number(env.SMTP_PORT) || 587;
-	const transport = createTransport({
-		host: env.SMTP_HOST,
-		port,
-		secure: port === 465,
-		auth: env.SMTP_USER ? { user: env.SMTP_USER, pass: env.SMTP_PASS } : undefined
-	});
-
 	const inviter = data.inviterName ? `${data.inviterName} invited you` : 'You have been invited';
-	await transport.sendMail({
-		from: env.SMTP_FROM || env.SMTP_USER,
-		to: data.to,
-		subject: `Join ${data.orgName} on uprox`,
-		text: `${inviter} to join ${data.orgName} on uprox as ${data.role}.\n\nAccept: ${data.inviteUrl}`,
-		html: `<p>${inviter} to join <strong>${data.orgName}</strong> on uprox as <strong>${data.role}</strong>.</p>
+	try {
+		const transport = await getTransport();
+		await transport.sendMail({
+			from: env.SMTP_FROM || env.SMTP_USER,
+			to: data.to,
+			subject: `Join ${data.orgName} on uprox`,
+			text: `${inviter} to join ${data.orgName} on uprox as ${data.role}.\n\nAccept: ${data.inviteUrl}`,
+			html: `<p>${inviter} to join <strong>${data.orgName}</strong> on uprox as <strong>${data.role}</strong>.</p>
 <p><a href="${data.inviteUrl}">Accept invitation</a></p>
 <p style="color:#888;font-size:12px">If you weren't expecting this, you can ignore this email.</p>`
-	});
+		});
+	} catch (err) {
+		// Swallow so the caller (better-auth background task) doesn't crash.
+		// The invite still exists in the DB and is reachable via the copy-link
+		// in the members dashboard.
+		const reason = err instanceof Error ? err.message : String(err);
+		console.error(
+			`[email] Failed to send invitation to ${data.to} (${reason}). Invite link: ${data.inviteUrl}`
+		);
+	}
 }
 
 interface BudgetAlertEmail {
@@ -84,27 +96,26 @@ export async function sendBudgetAlertEmail(data: BudgetAlertEmail): Promise<void
 		return;
 	}
 
-	const { createTransport } = await import('nodemailer');
-	const port = Number(env.SMTP_PORT) || 587;
-	const transport = createTransport({
-		host: env.SMTP_HOST,
-		port,
-		secure: port === 465,
-		auth: env.SMTP_USER ? { user: env.SMTP_USER, pass: env.SMTP_PASS } : undefined
-	});
-
 	const link = data.usageUrl ? `\n\nView usage: ${data.usageUrl}` : '';
 	const linkHtml = data.usageUrl
 		? `<p><a href="${data.usageUrl}">View usage dashboard</a></p>`
 		: '';
 
-	await transport.sendMail({
-		from: env.SMTP_FROM || env.SMTP_USER,
-		to: recipients,
-		subject: `[uprox] ${headline}`,
-		text: `${headline} in ${data.orgName}.\n\nSpend: ${money(data.spentUsd)} of ${money(data.budgetUsd)} (${data.pct}%).${link}`,
-		html: `<p><strong>${headline}</strong> in ${data.orgName}.</p>
+	try {
+		const transport = await getTransport();
+		await transport.sendMail({
+			from: env.SMTP_FROM || env.SMTP_USER,
+			to: recipients,
+			subject: `[uprox] ${headline}`,
+			text: `${headline} in ${data.orgName}.\n\nSpend: ${money(data.spentUsd)} of ${money(data.budgetUsd)} (${data.pct}%).${link}`,
+			html: `<p><strong>${headline}</strong> in ${data.orgName}.</p>
 <p>Spend: <strong>${money(data.spentUsd)}</strong> of ${money(data.budgetUsd)} (${data.pct}%).</p>
 ${linkHtml}`
-	});
+		});
+	} catch (err) {
+		const reason = err instanceof Error ? err.message : String(err);
+		console.error(
+			`[email] Failed to send budget alert to ${recipients.join(', ')} (${reason}): ${headline}`
+		);
+	}
 }
