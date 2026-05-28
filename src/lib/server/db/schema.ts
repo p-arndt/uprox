@@ -274,6 +274,11 @@ export const auditLog = pgTable(
 		costUsd: numeric('cost_usd', { precision: 12, scale: 6 }),
 		// for cache hits: the exact amount saved (the cached entry's original cost)
 		savedUsd: numeric('saved_usd', { precision: 12, scale: 6 }),
+		// LLM tokens consumed by this request, as reported by the upstream provider.
+		// NULL when the response carried no usage block (e.g. cache hits, errors,
+		// non-JSON responses, or models that do not report token counts).
+		inputTokens: integer('input_tokens'),
+		outputTokens: integer('output_tokens'),
 		// input tokens the *upstream provider* served from its own prompt cache
 		// (OpenAI/Anthropic prompt caching) — distinct from uprox's exact-match
 		// response cache. NULL when the response reported no cache usage.

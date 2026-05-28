@@ -416,7 +416,11 @@ export async function orgStats() {
 			// exact savings: each hit recorded the cached entry's original cost
 			cacheSaved: sql<string>`coalesce(sum(${auditLog.savedUsd}), 0)`,
 			// input tokens the upstream providers served from their own prompt cache
-			providerCachedTokens: sql<number>`coalesce(sum(${auditLog.providerCachedTokens}), 0)`
+			providerCachedTokens: sql<number>`coalesce(sum(${auditLog.providerCachedTokens}), 0)`,
+			// LLM tokens billed by upstream — sums separately so the overview can
+			// show prompt vs completion volume alongside the dollar figure.
+			inputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}), 0)::bigint`,
+			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`
 		})
 		.from(auditLog)
 		.where(sql`${auditLog.action} like 'gateway.%'`);
@@ -437,7 +441,9 @@ export async function orgStats() {
 		// exact: sum of each hit's recorded saved amount
 		cacheSavedUsd: Number(reqs?.cacheSaved ?? 0),
 		// total input tokens upstream providers served from their own prompt cache
-		providerCachedTokens: Number(reqs?.providerCachedTokens ?? 0)
+		providerCachedTokens: Number(reqs?.providerCachedTokens ?? 0),
+		inputTokens: Number(reqs?.inputTokens ?? 0),
+		outputTokens: Number(reqs?.outputTokens ?? 0)
 	};
 }
 
@@ -497,6 +503,8 @@ export interface ModelUsage {
 	requests: number;
 	costUsd: number;
 	denied: number;
+	inputTokens: number;
+	outputTokens: number;
 }
 
 /**
@@ -511,7 +519,9 @@ export async function orgUsageByModel(days = 30, limit = 50): Promise<ModelUsage
 			provider: sql<string | null>`max(${auditLog.provider})`,
 			requests: sql<number>`count(*)::int`,
 			cost: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)::text`,
-			denied: sql<number>`(count(*) filter (where ${auditLog.status} = 'deny'))::int`
+			denied: sql<number>`(count(*) filter (where ${auditLog.status} = 'deny'))::int`,
+			inputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}), 0)::bigint`,
+			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`
 		})
 		.from(auditLog)
 		.where(
@@ -530,7 +540,9 @@ export async function orgUsageByModel(days = 30, limit = 50): Promise<ModelUsage
 		provider: r.provider,
 		requests: Number(r.requests ?? 0),
 		costUsd: Number(r.cost ?? 0),
-		denied: Number(r.denied ?? 0)
+		denied: Number(r.denied ?? 0),
+		inputTokens: Number(r.inputTokens ?? 0),
+		outputTokens: Number(r.outputTokens ?? 0)
 	}));
 }
 
@@ -540,6 +552,8 @@ export interface ServiceUsage {
 	requests: number;
 	costUsd: number;
 	denied: number;
+	inputTokens: number;
+	outputTokens: number;
 }
 
 /**
@@ -553,7 +567,9 @@ export async function orgUsageByService(days = 30): Promise<ServiceUsage[]> {
 			serviceName: sql<string | null>`max(${service.name})`,
 			requests: sql<number>`count(*)::int`,
 			cost: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)::text`,
-			denied: sql<number>`(count(*) filter (where ${auditLog.status} = 'deny'))::int`
+			denied: sql<number>`(count(*) filter (where ${auditLog.status} = 'deny'))::int`,
+			inputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}), 0)::bigint`,
+			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`
 		})
 		.from(auditLog)
 		.leftJoin(service, eq(service.id, auditLog.serviceId))
@@ -568,7 +584,68 @@ export async function orgUsageByService(days = 30): Promise<ServiceUsage[]> {
 		serviceName: r.serviceName,
 		requests: Number(r.requests ?? 0),
 		costUsd: Number(r.cost ?? 0),
-		denied: Number(r.denied ?? 0)
+		denied: Number(r.denied ?? 0),
+		inputTokens: Number(r.inputTokens ?? 0),
+		outputTokens: Number(r.outputTokens ?? 0)
+	}));
+}
+
+export interface TokenUsage {
+	tokenId: string | null;
+	tokenName: string | null;
+	tokenDisplay: string | null;
+	serviceName: string | null;
+	requests: number;
+	costUsd: number;
+	denied: number;
+	inputTokens: number;
+	outputTokens: number;
+}
+
+/**
+ * Gateway traffic grouped by the calling machine token over the last `days`
+ * days, busiest first. Lets operators see which individual API key is driving
+ * spend (a service can carry multiple tokens; a leaked one would stand out
+ * here long before the per-service total looks unusual). Revoked tokens are
+ * still surfaced so historical activity remains attributable.
+ */
+export async function orgUsageByToken(days = 30, limit = 50): Promise<TokenUsage[]> {
+	const rows = await db
+		.select({
+			tokenId: auditLog.tokenId,
+			tokenName: sql<string | null>`max(${machineToken.name})`,
+			tokenDisplay: sql<string | null>`max(${machineToken.display})`,
+			serviceName: sql<string | null>`max(${service.name})`,
+			requests: sql<number>`count(*)::int`,
+			cost: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)::text`,
+			denied: sql<number>`(count(*) filter (where ${auditLog.status} = 'deny'))::int`,
+			inputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}), 0)::bigint`,
+			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`
+		})
+		.from(auditLog)
+		.leftJoin(machineToken, eq(machineToken.id, auditLog.tokenId))
+		.leftJoin(service, eq(service.id, machineToken.serviceId))
+		.where(
+			and(
+				sql`${auditLog.action} like 'gateway.%'`,
+				sql`${auditLog.tokenId} is not null`,
+				gte(auditLog.createdAt, windowStart(days))
+			)
+		)
+		.groupBy(auditLog.tokenId)
+		.orderBy(desc(sql`count(*)`))
+		.limit(limit);
+
+	return rows.map((r) => ({
+		tokenId: r.tokenId,
+		tokenName: r.tokenName,
+		tokenDisplay: r.tokenDisplay,
+		serviceName: r.serviceName,
+		requests: Number(r.requests ?? 0),
+		costUsd: Number(r.cost ?? 0),
+		denied: Number(r.denied ?? 0),
+		inputTokens: Number(r.inputTokens ?? 0),
+		outputTokens: Number(r.outputTokens ?? 0)
 	}));
 }
 

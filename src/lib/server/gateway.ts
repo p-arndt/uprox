@@ -508,6 +508,8 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 					model,
 					statusCode: upstream.status,
 					costUsd: cost,
+					inputTokens: usage?.input ?? null,
+					outputTokens: usage?.output ?? null,
 					providerCachedTokens: usage?.cachedInput ?? null,
 					latencyMs: Date.now() - started,
 					ip,
@@ -544,6 +546,8 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	const text = await upstream.text();
 	let cost: number | null = null;
 	let cachedTokens: number | null = null;
+	let inputTokens: number | null = null;
+	let outputTokens: number | null = null;
 	try {
 		const parsed = JSON.parse(text) as {
 			usage?: {
@@ -556,9 +560,9 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 			};
 		};
 		const { estimateCostUsd } = await import('$lib/server/providers');
-		const inputTokens = parsed.usage?.prompt_tokens ?? parsed.usage?.input_tokens;
-		const outputTokens = parsed.usage?.completion_tokens ?? parsed.usage?.output_tokens;
-		cost = await estimateCostUsd(sendModel, inputTokens, outputTokens);
+		inputTokens = parsed.usage?.prompt_tokens ?? parsed.usage?.input_tokens ?? null;
+		outputTokens = parsed.usage?.completion_tokens ?? parsed.usage?.output_tokens ?? null;
+		cost = await estimateCostUsd(sendModel, inputTokens ?? undefined, outputTokens ?? undefined);
 		cachedTokens = providerCachedTokens(parsed.usage);
 	} catch {
 		// non-JSON or no usage; leave cost null
@@ -573,6 +577,8 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		model,
 		statusCode: upstream.status,
 		costUsd: cost,
+		inputTokens,
+		outputTokens,
 		providerCachedTokens: cachedTokens,
 		latencyMs: Date.now() - started,
 		ip

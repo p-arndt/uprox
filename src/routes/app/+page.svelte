@@ -4,7 +4,7 @@
 	import BudgetAlert from '$lib/components/budget-alert.svelte';
 	import { resolve } from '$app/paths';
 	import type { Pathname, ResolvedPathname } from '$app/types';
-	import { relativeTime, formatDateTime, formatUsd } from '$lib/format';
+	import { relativeTime, formatDateTime, formatUsd, formatTokens } from '$lib/format';
 	import { eventTone, toneDot, toneText, actionIcon } from '$lib/events';
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import KeyRound from '@lucide/svelte/icons/key-round';
@@ -199,6 +199,12 @@
 							{formatUsd(data.stats.costUsd)}
 						</div>
 						<p class="mt-1 text-xs text-muted-foreground">Across all proxied requests</p>
+						{#if data.stats.inputTokens > 0 || data.stats.outputTokens > 0}
+							<p class="mt-2 text-xs text-muted-foreground tabular-nums">
+								{formatTokens(data.stats.inputTokens)} in · {formatTokens(data.stats.outputTokens)} out
+								tokens
+							</p>
+						{/if}
 					</Card.Content>
 				</Card.Root>
 
