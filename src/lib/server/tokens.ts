@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { machineToken, service, policy, orgSettings } from '$lib/server/db/schema';
+import { machineToken, service, policy, settings } from '$lib/server/db/schema';
 import { sha256 } from '$lib/server/crypto';
 
 export const TOKEN_PREFIX = 'uprox_live_';
@@ -31,13 +31,12 @@ export function issueToken(): IssuedToken {
 
 export interface ResolvedToken {
 	tokenId: string;
-	organizationId: string;
 	serviceId: string;
 	serviceName: string;
 	scopes: string[];
 	policy: typeof policy.$inferSelect | null;
-	/** org-wide default cache TTL (seconds); policy.cacheTtlSeconds overrides it */
-	orgCacheTtlSeconds: number;
+	/** instance-wide default cache TTL (seconds); policy.cacheTtlSeconds overrides it */
+	defaultCacheTtlSeconds: number;
 }
 
 /**
@@ -53,13 +52,11 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 		.select({
 			token: machineToken,
 			service: service,
-			policy: policy,
-			orgSettings: orgSettings
+			policy: policy
 		})
 		.from(machineToken)
 		.innerJoin(service, eq(service.id, machineToken.serviceId))
 		.leftJoin(policy, eq(policy.id, service.policyId))
-		.leftJoin(orgSettings, eq(orgSettings.organizationId, machineToken.organizationId))
 		// reject tokens of a retired (soft-deleted) service, even if a token row
 		// somehow outlived deleteService's revoke step
 		.where(
@@ -78,6 +75,9 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 		return null;
 	}
 
+	// instance-wide default cache TTL from the singleton settings row
+	const [settingsRow] = await db.select().from(settings).where(eq(settings.id, 1)).limit(1);
+
 	// best-effort last-used bookkeeping; don't block the request on it
 	void db
 		.update(machineToken)
@@ -87,11 +87,10 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 
 	return {
 		tokenId: row.token.id,
-		organizationId: row.token.organizationId,
 		serviceId: row.service.id,
 		serviceName: row.service.name,
 		scopes: row.token.scopes ?? [],
 		policy: row.policy,
-		orgCacheTtlSeconds: row.orgSettings?.cacheTtlSeconds ?? 0
+		defaultCacheTtlSeconds: settingsRow?.cacheTtlSeconds ?? 0
 	};
 }

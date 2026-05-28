@@ -72,7 +72,7 @@
 		<div>
 			<h2 class="text-xl font-semibold tracking-tight">Members</h2>
 			<p class="text-sm text-muted-foreground">
-				People who belong to this organization and their roles.
+				People with access to this workspace and their roles.
 			</p>
 		</div>
 		{#if canManage}
@@ -102,7 +102,13 @@
 					>
 						<div class="space-y-2">
 							<Label for="email">Email</Label>
-							<Input id="email" name="email" type="email" placeholder="person@example.com" required />
+							<Input
+								id="email"
+								name="email"
+								type="email"
+								placeholder="person@example.com"
+								required
+							/>
 						</div>
 						<div class="space-y-2">
 							<Label for="role">Role</Label>
@@ -198,7 +204,7 @@
 										<AlertDialog.Header>
 											<AlertDialog.Title>Remove {m.name}?</AlertDialog.Title>
 											<AlertDialog.Description>
-												They immediately lose access to this organization. You can re-invite them
+												They immediately lose access to this workspace. You can re-invite them
 												later.
 											</AlertDialog.Description>
 										</AlertDialog.Header>
@@ -251,7 +257,9 @@
 								<Table.Cell>
 									<Badge variant={roleVariant(inv.role ?? 'member')}>{inv.role ?? 'member'}</Badge>
 								</Table.Cell>
-								<Table.Cell class="text-muted-foreground">{formatDateTime(inv.expiresAt)}</Table.Cell>
+								<Table.Cell class="text-muted-foreground"
+									>{formatDateTime(inv.expiresAt)}</Table.Cell
+								>
 								<Table.Cell>
 									<div class="flex items-center justify-end gap-1">
 										<Button
@@ -282,8 +290,7 @@
 													<AlertDialog.Header>
 														<AlertDialog.Title>Revoke invitation?</AlertDialog.Title>
 														<AlertDialog.Description>
-															The invite link for {inv.email} stops working. You can send a new one
-															anytime.
+															The invite link for {inv.email} stops working. You can send a new one anytime.
 														</AlertDialog.Description>
 													</AlertDialog.Header>
 													<AlertDialog.Footer>

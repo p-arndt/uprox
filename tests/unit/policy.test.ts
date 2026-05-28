@@ -6,12 +6,11 @@ import type { ResolvedToken } from '$lib/server/tokens';
 function token(over: Partial<ResolvedToken> = {}): ResolvedToken {
 	return {
 		tokenId: 't1',
-		organizationId: 'org1',
 		serviceId: 'svc1',
 		serviceName: 'svc',
 		scopes: [],
 		policy: null,
-		orgCacheTtlSeconds: 0,
+		defaultCacheTtlSeconds: 0,
 		...over
 	};
 }
@@ -45,7 +44,9 @@ describe('scope check', () => {
 
 describe('no policy attached', () => {
 	it('allows once scopes pass', () => {
-		expect(evaluatePolicy(token({ scopes: ['chat'], policy: null }), chat)).toEqual({ allow: true });
+		expect(evaluatePolicy(token({ scopes: ['chat'], policy: null }), chat)).toEqual({
+			allow: true
+		});
 	});
 });
 

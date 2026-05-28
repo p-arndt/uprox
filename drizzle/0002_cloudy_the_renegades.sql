@@ -1,1 +1,0 @@
-ALTER TABLE "service" ADD COLUMN "deleted_at" timestamp;

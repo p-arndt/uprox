@@ -1,8 +1,8 @@
 /**
- * Org-wide budget alerting. The gateway calls {@link maybeSendBudgetAlert} as a
- * fire-and-forget step on every budgeted request; this module decides whether the
- * service has crossed its org's warn threshold (or its ceiling) and, if so, emails
- * the org's owners/admins (plus an optional notification address).
+ * Instance-wide budget alerting. The gateway calls {@link maybeSendBudgetAlert}
+ * as a fire-and-forget step on every budgeted request; this module decides whether
+ * the service has crossed the instance's warn threshold (or its ceiling) and, if
+ * so, emails the instance's owners/admins (plus an optional notification address).
  *
  * Re-sends are suppressed by the `budget_alert_state` ledger: one row per
  * (service, window) tracks the highest level already emailed for the current
@@ -10,11 +10,11 @@
  * escalates from warn to over. Everything here is best-effort and never throws —
  * alerting must not affect the request it observes.
  */
-import { and, eq, inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import { db } from '$lib/server/db';
-import { budgetAlertState, member, user, organization } from '$lib/server/db/schema';
-import { getOrgSettings } from '$lib/server/data';
+import { budgetAlertState, user } from '$lib/server/db/schema';
+import { getSettings } from '$lib/server/data';
 import { currentSpend, type BudgetLimits } from '$lib/server/budget';
 import { sendBudgetAlertEmail } from '$lib/server/email';
 
@@ -27,13 +27,12 @@ function levelFor(fraction: number, thresholdPct: number): Level | null {
 	return null;
 }
 
-/** Owner/admin emails for the org, plus the optional configured alert address. */
-async function recipientsFor(orgId: string, extra: string | null): Promise<string[]> {
+/** Owner/admin emails for the instance, plus the optional configured alert address. */
+async function recipientsFor(extra: string | null): Promise<string[]> {
 	const rows = await db
 		.select({ email: user.email })
-		.from(member)
-		.innerJoin(user, eq(user.id, member.userId))
-		.where(and(eq(member.organizationId, orgId), inArray(member.role, ['owner', 'admin'])));
+		.from(user)
+		.where(inArray(user.role, ['owner', 'admin']));
 	const emails = new Set(rows.map((r) => r.email).filter(Boolean));
 	if (extra) emails.add(extra);
 	return [...emails];
@@ -41,17 +40,16 @@ async function recipientsFor(orgId: string, extra: string | null): Promise<strin
 
 /**
  * Evaluate a service's budget standing and email an alert if it has newly
- * crossed the org's warn threshold or its ceiling. No-ops when alerts are
+ * crossed the instance's warn threshold or its ceiling. No-ops when alerts are
  * disabled or no budget is set. Safe to call without awaiting.
  */
 export async function maybeSendBudgetAlert(
-	orgId: string,
 	serviceId: string,
 	serviceName: string,
 	limits: BudgetLimits
 ): Promise<void> {
 	try {
-		const settings = await getOrgSettings(orgId);
+		const settings = await getSettings();
 		if (!settings.budgetAlertsEnabled) return;
 
 		const dailyBudget = Number(limits.dailyBudgetUsd ?? 0);
@@ -80,7 +78,7 @@ export async function maybeSendBudgetAlert(
 			.where(eq(budgetAlertState.serviceId, serviceId));
 
 		let recipients: string[] | null = null;
-		let orgName: string | null = null;
+		const orgName = env.ORG_NAME?.trim() || 'uprox';
 
 		for (const w of windows) {
 			const fraction = w.spent / w.budget;
@@ -92,20 +90,14 @@ export async function maybeSendBudgetAlert(
 			const escalated = prior ? RANK[level] > RANK[prior.lastLevel as Level] : false;
 			if (!windowRolledOver && !escalated) continue;
 
-			// resolve recipients/org name lazily, only once we know we'll send
+			// resolve recipients lazily, only once we know we'll send
 			if (recipients === null) {
-				recipients = await recipientsFor(orgId, settings.budgetAlertEmail);
-				const [org] = await db
-					.select({ name: organization.name })
-					.from(organization)
-					.where(eq(organization.id, orgId))
-					.limit(1);
-				orgName = org?.name ?? 'your organization';
+				recipients = await recipientsFor(settings.budgetAlertEmail);
 			}
 
 			await sendBudgetAlertEmail({
 				to: recipients,
-				orgName: orgName ?? 'your organization',
+				orgName,
 				serviceName,
 				window: w.name,
 				level,

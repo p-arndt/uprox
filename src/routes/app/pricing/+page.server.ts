@@ -10,9 +10,9 @@ import {
 import { PROVIDERS } from '$lib/server/providers';
 
 export const load: PageServerLoad = async (event) => {
-	const { organizationId } = await requireOrg(event);
+	await requireOrg(event);
 	return {
-		prices: await listEffectiveModelPrices(organizationId),
+		prices: await listEffectiveModelPrices(),
 		providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label }))
 	};
 };
@@ -24,7 +24,7 @@ function parsePrice(value: FormDataEntryValue | null): number | null {
 
 export const actions: Actions = {
 	create: async (event) => {
-		const { organizationId } = await requirePermission(event, 'pricing:manage');
+		await requirePermission(event, 'pricing:manage');
 		const data = await event.request.formData();
 		const model = data.get('model')?.toString().trim();
 		if (!model) return fail(400, { message: 'Model is required' });
@@ -33,7 +33,7 @@ export const actions: Actions = {
 		if (inputPerMtok === null || outputPerMtok === null)
 			return fail(400, { message: 'Prices must be non-negative numbers' });
 
-		await createOrgModelPrice(organizationId, {
+		await createOrgModelPrice({
 			model,
 			provider: data.get('provider')?.toString() || null,
 			inputPerMtok,
@@ -42,7 +42,7 @@ export const actions: Actions = {
 		return { success: true };
 	},
 	update: async (event) => {
-		const { organizationId } = await requirePermission(event, 'pricing:manage');
+		await requirePermission(event, 'pricing:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
 		if (!id) return fail(400, { message: 'Missing id' });
@@ -51,7 +51,7 @@ export const actions: Actions = {
 		if (inputPerMtok === null || outputPerMtok === null)
 			return fail(400, { message: 'Prices must be non-negative numbers' });
 
-		const row = await updateOrgModelPrice(organizationId, id, {
+		const row = await updateOrgModelPrice(id, {
 			provider: data.get('provider')?.toString() || null,
 			inputPerMtok,
 			outputPerMtok
@@ -60,10 +60,10 @@ export const actions: Actions = {
 		return { success: true };
 	},
 	delete: async (event) => {
-		const { organizationId } = await requirePermission(event, 'pricing:manage');
+		await requirePermission(event, 'pricing:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
-		if (id) await deleteOrgModelPrice(organizationId, id);
+		if (id) await deleteOrgModelPrice(id);
 		return { success: true };
 	}
 };

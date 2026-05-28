@@ -1,5 +1,5 @@
 import { json, type RequestEvent } from '@sveltejs/kit';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { providerSecret } from '$lib/server/db/schema';
 import { decrypt } from '$lib/server/crypto';
@@ -159,26 +159,23 @@ export async function authenticateGateway(
 
 interface ProviderCreds {
 	apiKey: string;
-	/** per-org endpoint override (Azure), null when the static baseUrl applies */
+	/** endpoint override (Azure), null when the static baseUrl applies */
 	baseUrl: string | null;
 }
 
-async function loadProviderCreds(orgId: string, provider: string): Promise<ProviderCreds | null> {
+async function loadProviderCreds(provider: string): Promise<ProviderCreds | null> {
 	const [row] = await db
 		.select()
 		.from(providerSecret)
-		.where(and(eq(providerSecret.organizationId, orgId), eq(providerSecret.provider, provider)))
+		.where(eq(providerSecret.provider, provider))
 		.limit(1);
 	if (!row) return null;
 	return { apiKey: decrypt(row.encryptedSecret), baseUrl: row.baseUrl };
 }
 
-/** Provider ids the organization has credentials configured for. */
-async function loadConfiguredProviders(orgId: string): Promise<string[]> {
-	const rows = await db
-		.select({ provider: providerSecret.provider })
-		.from(providerSecret)
-		.where(eq(providerSecret.organizationId, orgId));
+/** Provider ids the instance has credentials configured for. */
+async function loadConfiguredProviders(): Promise<string[]> {
+	const rows = await db.select({ provider: providerSecret.provider }).from(providerSecret);
 	return rows.map((r) => r.provider);
 }
 
@@ -208,11 +205,11 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	const started = Date.now();
 	const { token, ip } = auth;
 
-	// Route by model, choosing among the providers this org has configured.
+	// Route by model, choosing among the providers this instance has configured.
 	// OpenAI and Azure share the model namespace; an explicit `preferProvider`
 	// (set by Azure-style URL routes to signal URL-level intent) wins, otherwise
 	// the policy's preferredProvider breaks the tie. See resolveProvider.
-	const configuredProviders = await loadConfiguredProviders(token.organizationId);
+	const configuredProviders = await loadConfiguredProviders();
 	const provider: ProviderDef | null = resolveProvider(
 		model,
 		configuredProviders,
@@ -223,10 +220,9 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	const sendModel = model;
 	if (!provider) {
 		// Distinguish "we don't recognize this model" from "we recognize it but
-		// the org hasn't configured the provider that would serve it".
+		// the instance hasn't configured the provider that would serve it".
 		const known = providerForModel(model);
 		await audit({
-			organizationId: token.organizationId,
 			action: `gateway.${scope}`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -240,7 +236,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		return known
 			? gatewayError(
 					502,
-					`No ${PROVIDERS[known.id].label} credentials configured for this organization`,
+					`No ${PROVIDERS[known.id].label} credentials configured for this instance`,
 					'api_error'
 				)
 			: gatewayError(400, `Unknown or unsupported model: ${model}`, 'model_not_found');
@@ -250,7 +246,6 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	// (e.g. the Responses API and embeddings are OpenAI-only).
 	if (!providerSupports(provider, scope)) {
 		await audit({
-			organizationId: token.organizationId,
 			action: `gateway.${scope}`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -272,7 +267,6 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	const decision = evaluatePolicy(token, { provider: provider.id, model, scope });
 	if (!decision.allow) {
 		await audit({
-			organizationId: token.organizationId,
 			action: 'policy.deny',
 			status: 'deny',
 			serviceId: token.serviceId,
@@ -291,7 +285,6 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	const rl = checkRateLimit(token.tokenId, token.policy?.rateLimitPerMinute ?? 0);
 	if (!rl.ok) {
 		await audit({
-			organizationId: token.organizationId,
 			action: 'policy.deny',
 			status: 'deny',
 			serviceId: token.serviceId,
@@ -328,13 +321,13 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	// replay it verbatim on a hit. The cache key includes the request's `stream`
 	// flag, so a streamed request only ever matches a stored SSE body and a
 	// buffered request only matches stored JSON — formats never cross.
-	// caching is an org-wide optimization, not access control: it applies even
+	// caching is an instance-wide optimization, not access control: it applies even
 	// to services with no policy. A policy's cacheTtlSeconds, when set (non-null),
-	// overrides the org default — including 0 to explicitly opt a policy out.
+	// overrides the instance default — including 0 to explicitly opt a policy out.
 	// Note on the Responses API: a multi-turn call carries `previous_response_id`,
 	// which differs every turn, so its body never collides with another turn —
 	// only a byte-identical request is ever served from cache.
-	const cacheTtl = token.policy?.cacheTtlSeconds ?? token.orgCacheTtlSeconds;
+	const cacheTtl = token.policy?.cacheTtlSeconds ?? token.defaultCacheTtlSeconds;
 	// A Responses API call with store:false isn't persisted by OpenAI, so its
 	// returned `id` can't be referenced later — don't cache/replay one.
 	const responsesStoreOff = scope === 'responses' && isRecord(body) && body.store === false;
@@ -348,10 +341,9 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		isDeterministicRequest(scope, body);
 	const cacheKey = cacheable ? cacheKeyFor(provider.id, path, body) : null;
 	if (cacheKey) {
-		const hit = await getCached(token.organizationId, cacheKey);
+		const hit = await getCached(cacheKey);
 		if (hit) {
 			await audit({
-				organizationId: token.organizationId,
 				action: `gateway.${scope}`,
 				status: 'ok',
 				serviceId: token.serviceId,
@@ -392,20 +384,14 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 			Number(token.policy.dailyBudgetUsd ?? 0) > 0 ||
 			Number(token.policy.monthlyBudgetUsd ?? 0) > 0;
 		const budget = await checkBudget(token.serviceId, token.policy);
-		// Fire-and-forget soft-alert evaluation (org-wide threshold; emails admins
+		// Fire-and-forget soft-alert evaluation (instance-wide threshold; emails admins
 		// once per window/level). Runs on allow and deny alike so an over-budget
 		// request still triggers the "over" alert. Never blocks the request.
 		if (hasBudget) {
-			void maybeSendBudgetAlert(
-				token.organizationId,
-				token.serviceId,
-				token.serviceName,
-				token.policy
-			);
+			void maybeSendBudgetAlert(token.serviceId, token.serviceName, token.policy);
 		}
 		if (!budget.ok) {
 			await audit({
-				organizationId: token.organizationId,
 				action: 'policy.deny',
 				status: 'deny',
 				serviceId: token.serviceId,
@@ -422,11 +408,10 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	}
 
 	// upstream credentials
-	const creds = await loadProviderCreds(token.organizationId, provider.id);
+	const creds = await loadProviderCreds(provider.id);
 	if (!creds) {
 		releaseReservation();
 		await audit({
-			organizationId: token.organizationId,
 			action: `gateway.${scope}`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -439,18 +424,17 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		});
 		return gatewayError(
 			502,
-			`No ${PROVIDERS[provider.id].label} credentials configured for this organization`,
+			`No ${PROVIDERS[provider.id].label} credentials configured for this instance`,
 			'api_error'
 		);
 	}
 
-	// resolve the upstream base URL — for Azure this is the org's configured
+	// resolve the upstream base URL — for Azure this is the instance's configured
 	// resource endpoint; a misconfigured endpoint-based provider can't be reached.
 	const baseUrl = resolveBaseUrl(provider, creds.baseUrl);
 	if (!baseUrl) {
 		releaseReservation();
 		await audit({
-			organizationId: token.organizationId,
 			action: `gateway.${scope}`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -463,7 +447,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		});
 		return gatewayError(
 			502,
-			`No ${PROVIDERS[provider.id].label} endpoint configured for this organization`,
+			`No ${PROVIDERS[provider.id].label} endpoint configured for this instance`,
 			'api_error'
 		);
 	}
@@ -491,7 +475,6 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	} catch (err) {
 		releaseReservation();
 		await audit({
-			organizationId: token.organizationId,
 			action: `gateway.${scope}`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -515,11 +498,8 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 			try {
 				const { usage, raw, complete } = await readSseUsage(costBranch);
 				const { estimateCostUsd } = await import('$lib/server/providers');
-				const cost = usage
-					? await estimateCostUsd(token.organizationId, sendModel, usage.input, usage.output)
-					: null;
+				const cost = usage ? await estimateCostUsd(sendModel, usage.input, usage.output) : null;
 				await audit({
-					organizationId: token.organizationId,
 					action: `gateway.${scope}`,
 					status: 'ok',
 					serviceId: token.serviceId,
@@ -536,7 +516,6 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 				// only cache a stream that finished cleanly — never a truncated one
 				if (cacheKey && complete && raw) {
 					await putCached({
-						organizationId: token.organizationId,
 						cacheKey,
 						provider: provider.id,
 						model,
@@ -579,14 +558,13 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		const { estimateCostUsd } = await import('$lib/server/providers');
 		const inputTokens = parsed.usage?.prompt_tokens ?? parsed.usage?.input_tokens;
 		const outputTokens = parsed.usage?.completion_tokens ?? parsed.usage?.output_tokens;
-		cost = await estimateCostUsd(token.organizationId, sendModel, inputTokens, outputTokens);
+		cost = await estimateCostUsd(sendModel, inputTokens, outputTokens);
 		cachedTokens = providerCachedTokens(parsed.usage);
 	} catch {
 		// non-JSON or no usage; leave cost null
 	}
 
 	await audit({
-		organizationId: token.organizationId,
 		action: `gateway.${scope}`,
 		status: upstream.ok ? 'ok' : 'error',
 		serviceId: token.serviceId,
@@ -605,7 +583,6 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	// populate the cache on a successful, cacheable response
 	if (cacheKey && upstream.ok) {
 		await putCached({
-			organizationId: token.organizationId,
 			cacheKey,
 			provider: provider.id,
 			model,
@@ -658,10 +635,9 @@ export async function proxyRawUpstream(
 	const provider = PROVIDERS[providerId];
 	if (!provider) return gatewayError(500, 'Unknown provider', 'api_error');
 
-	const creds = await loadProviderCreds(token.organizationId, providerId);
+	const creds = await loadProviderCreds(providerId);
 	if (!creds) {
 		await audit({
-			organizationId: token.organizationId,
 			action: `gateway.files`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -673,7 +649,7 @@ export async function proxyRawUpstream(
 		});
 		return gatewayError(
 			502,
-			`No ${provider.label} credentials configured for this organization`,
+			`No ${provider.label} credentials configured for this instance`,
 			'api_error'
 		);
 	}
@@ -681,7 +657,6 @@ export async function proxyRawUpstream(
 	const baseUrl = resolveBaseUrl(provider, creds.baseUrl);
 	if (!baseUrl) {
 		await audit({
-			organizationId: token.organizationId,
 			action: `gateway.files`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -693,7 +668,7 @@ export async function proxyRawUpstream(
 		});
 		return gatewayError(
 			502,
-			`No ${provider.label} endpoint configured for this organization`,
+			`No ${provider.label} endpoint configured for this instance`,
 			'api_error'
 		);
 	}
@@ -723,7 +698,6 @@ export async function proxyRawUpstream(
 		} as RequestInit & { duplex?: 'half' });
 	} catch (err) {
 		await audit({
-			organizationId: token.organizationId,
 			action: `gateway.files`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -738,7 +712,6 @@ export async function proxyRawUpstream(
 	}
 
 	await audit({
-		organizationId: token.organizationId,
 		action: `gateway.files`,
 		status: upstream.ok ? 'ok' : 'error',
 		serviceId: token.serviceId,

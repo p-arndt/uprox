@@ -1,9 +1,12 @@
 import { fail } from '@sveltejs/kit';
-import { APIError } from 'better-auth/api';
 import type { Actions, PageServerLoad } from './$types';
+import { and, eq } from 'drizzle-orm';
+import { db } from '$lib/server/db';
+import { user, invitation } from '$lib/server/db/schema';
 import { requireOrg, requirePermission } from '$lib/server/org';
-import { auth } from '$lib/server/auth';
 import { listMembers, listPendingInvitations } from '$lib/server/members';
+import { sendInvitationEmail } from '$lib/server/email';
+import { env } from '$env/dynamic/private';
 
 const ROLES = ['admin', 'member'] as const;
 type AssignableRole = (typeof ROLES)[number];
@@ -13,39 +16,60 @@ function normalizeRole(value: string | undefined): AssignableRole {
 }
 
 export const load: PageServerLoad = async (event) => {
-	const ctx = await requireOrg(event);
-	const [members, invitations] = await Promise.all([
-		listMembers(ctx.organizationId),
-		listPendingInvitations(ctx.organizationId)
-	]);
+	const { userId } = await requireOrg(event);
+	const [members, invitations] = await Promise.all([listMembers(), listPendingInvitations()]);
 	return {
 		members,
 		invitations,
-		currentUserId: ctx.userId,
+		currentUserId: userId,
 		inviteBaseUrl: event.url.origin
 	};
 };
 
 export const actions: Actions = {
 	invite: async (event) => {
-		await requirePermission(event, 'members:manage');
+		const ctx = await requirePermission(event, 'members:manage');
 		const data = await event.request.formData();
 		const email = data.get('email')?.toString().trim();
 		const role = normalizeRole(data.get('role')?.toString());
 		if (!email) return fail(400, { message: 'Email is required' });
 
-		try {
-			await auth.api.createInvitation({
-				body: { email, role },
-				headers: event.request.headers
-			});
-			return { invited: true };
-		} catch (err) {
-			if (err instanceof APIError) {
-				return fail(400, { message: err.message || 'Failed to send invitation' });
-			}
-			return fail(500, { message: 'Unexpected error' });
+		// Reject if the address already belongs to a user or has a pending invite.
+		const [existingUser] = await db
+			.select({ id: user.id })
+			.from(user)
+			.where(eq(user.email, email))
+			.limit(1);
+		if (existingUser) {
+			return fail(400, { message: 'A user with that email already exists' });
 		}
+		const [existingInvite] = await db
+			.select({ id: invitation.id })
+			.from(invitation)
+			.where(and(eq(invitation.email, email), eq(invitation.status, 'pending')))
+			.limit(1);
+		if (existingInvite) {
+			return fail(400, { message: 'There is already a pending invitation for that email' });
+		}
+
+		// 7-day expiry, matching the previous invitation lifetime.
+		const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+		const [inv] = await db
+			.insert(invitation)
+			.values({ email, role, inviterId: ctx.userId, expiresAt, status: 'pending' })
+			.returning();
+
+		// Best-effort email. When SMTP isn't configured the helper no-ops and the
+		// dashboard surfaces a copy-able link in the pending list instead.
+		await sendInvitationEmail({
+			to: email,
+			inviteUrl: `${event.url.origin}/invite/${inv.id}`,
+			orgName: env.ORG_NAME?.trim() || 'uprox',
+			inviterName: event.locals.user?.name,
+			role
+		});
+
+		return { invited: true };
 	},
 
 	changeRole: async (event) => {
@@ -56,24 +80,12 @@ export const actions: Actions = {
 		if (!memberId) return fail(400, { message: 'Missing member' });
 
 		// Prevent self-lockout: don't let the caller change their own role.
-		const members = await listMembers(ctx.organizationId);
-		const target = members.find((m) => m.id === memberId);
-		if (target && target.userId === ctx.userId) {
+		if (memberId === ctx.userId) {
 			return fail(400, { message: 'You cannot change your own role' });
 		}
 
-		try {
-			await auth.api.updateMemberRole({
-				body: { role, memberId },
-				headers: event.request.headers
-			});
-			return { success: true };
-		} catch (err) {
-			if (err instanceof APIError) {
-				return fail(400, { message: err.message || 'Failed to update role' });
-			}
-			return fail(500, { message: 'Unexpected error' });
-		}
+		await db.update(user).set({ role }).where(eq(user.id, memberId));
+		return { success: true };
 	},
 
 	remove: async (event) => {
@@ -83,24 +95,13 @@ export const actions: Actions = {
 		if (!memberIdOrEmail) return fail(400, { message: 'Missing member' });
 
 		// Prevent removing yourself.
-		const members = await listMembers(ctx.organizationId);
-		const target = members.find((m) => m.id === memberIdOrEmail);
-		if (target && target.userId === ctx.userId) {
+		if (memberIdOrEmail === ctx.userId) {
 			return fail(400, { message: 'You cannot remove yourself' });
 		}
 
-		try {
-			await auth.api.removeMember({
-				body: { memberIdOrEmail },
-				headers: event.request.headers
-			});
-			return { success: true };
-		} catch (err) {
-			if (err instanceof APIError) {
-				return fail(400, { message: err.message || 'Failed to remove member' });
-			}
-			return fail(500, { message: 'Unexpected error' });
-		}
+		// Deleting the user cascades their sessions and accounts.
+		await db.delete(user).where(eq(user.id, memberIdOrEmail));
+		return { success: true };
 	},
 
 	revokeInvite: async (event) => {
@@ -109,17 +110,7 @@ export const actions: Actions = {
 		const invitationId = data.get('invitationId')?.toString();
 		if (!invitationId) return fail(400, { message: 'Missing invitation' });
 
-		try {
-			await auth.api.cancelInvitation({
-				body: { invitationId },
-				headers: event.request.headers
-			});
-			return { success: true };
-		} catch (err) {
-			if (err instanceof APIError) {
-				return fail(400, { message: err.message || 'Failed to revoke invitation' });
-			}
-			return fail(500, { message: 'Unexpected error' });
-		}
+		await db.update(invitation).set({ status: 'canceled' }).where(eq(invitation.id, invitationId));
+		return { success: true };
 	}
 };
