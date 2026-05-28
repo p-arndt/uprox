@@ -4,14 +4,11 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Command from '$lib/components/ui/command/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import ChartColumn from '@lucide/svelte/icons/chart-column';
-	import Check from '@lucide/svelte/icons/check';
-	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
 	import Coins from '@lucide/svelte/icons/coins';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
@@ -92,55 +89,17 @@
 <Sidebar.Provider>
 	<Sidebar.Root collapsible="icon">
 		<Sidebar.Header>
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger
-					class="flex w-full items-center gap-2 rounded-lg py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-sidebar-accent"
-				>
-					<div
-						class="flex aspect-square size-8 items-center justify-center rounded-lg bg-white p-1"
+			<div class="flex w-full items-center gap-2 rounded-lg py-1.5">
+				<div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-white p-1">
+					<img src="/uprox-logo.png" alt="uprox" class="size-full object-contain" />
+				</div>
+				<div class="grid flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
+					<span class="truncate text-sm font-semibold">uprox</span>
+					<span class="truncate text-xs text-muted-foreground"
+						>{data.org?.name ?? 'Organization'}</span
 					>
-						<img src="/uprox-logo.png" alt="uprox" class="size-full object-contain" />
-					</div>
-					<div class="grid flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
-						<span class="truncate text-sm font-semibold">uprox</span>
-						<span class="truncate text-xs text-muted-foreground"
-							>{data.org?.name ?? 'Organization'}</span
-						>
-					</div>
-					<ChevronsUpDown
-						class="ml-auto size-4 text-muted-foreground group-data-[collapsible=icon]:hidden"
-					/>
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="start" class="min-w-56">
-					<DropdownMenu.Label class="text-xs text-muted-foreground"
-						>Organizations</DropdownMenu.Label
-					>
-					{#each data.memberships as m (m.id)}
-						<DropdownMenu.Item closeOnSelect={false} class="p-0">
-							{#snippet child({ props })}
-								<form method="post" action="/active-org" class="w-full">
-									<input type="hidden" name="organizationId" value={m.id} />
-									<button
-										type="submit"
-										{...props}
-										class="flex w-full items-center gap-2 rounded-2xl px-3 py-2 text-left text-sm font-medium outline-hidden focus:bg-accent focus:text-accent-foreground"
-									>
-										<div class="grid flex-1 leading-tight">
-											<span class="truncate">{m.name}</span>
-											<span class="truncate text-xs font-normal text-muted-foreground capitalize"
-												>{m.role}</span
-											>
-										</div>
-										{#if m.id === data.org?.id}
-											<Check class="ml-auto size-4" />
-										{/if}
-									</button>
-								</form>
-							{/snippet}
-						</DropdownMenu.Item>
-					{/each}
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
+				</div>
+			</div>
 		</Sidebar.Header>
 		<Sidebar.Content>
 			<Sidebar.Group>
