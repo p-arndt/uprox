@@ -58,4 +58,28 @@ const handleBetterAuth: Handle = async ({ event, resolve }) => {
 	return svelteKitHandler({ event, resolve, auth, building });
 };
 
-export const handle: Handle = sequence(handleSetup, handleBetterAuth);
+/**
+ * One line per HTTP request: `[access] METHOD path -> status (ms)`. Skips
+ * SvelteKit static assets and auth chatter so logs stay focused on the gateway
+ * surface. Enable verbose mode with `ACCESS_LOG=verbose` to log everything.
+ */
+const handleAccessLog: Handle = async ({ event, resolve }) => {
+	const start = Date.now();
+	const response = await resolve(event);
+	const path = event.url.pathname;
+	const verbose = process.env.ACCESS_LOG === 'verbose';
+	const skip =
+		!verbose &&
+		(path.startsWith('/_app/') ||
+			path.startsWith('/@') ||
+			path === '/favicon.ico' ||
+			path.startsWith('/api/auth/'));
+	if (!skip) {
+		console.log(
+			`[access] ${event.request.method} ${path} -> ${response.status} (${Date.now() - start}ms)`
+		);
+	}
+	return response;
+};
+
+export const handle: Handle = sequence(handleAccessLog, handleSetup, handleBetterAuth);

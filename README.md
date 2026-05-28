@@ -94,6 +94,7 @@ OpenAI-compatible gateway, authenticated with a `Bearer uprox_live_…` token (o
 | `POST /v1/responses`        | OpenAI Responses API; streaming supported |
 | `POST /v1/embeddings`       |                                           |
 | `GET  /v1/models`           | aggregated from your configured providers |
+| `/v1/files`, `/v1/files/{id}`, `/v1/files/{id}/content` | upload/list/retrieve/delete/download — used by SDKs that auto-upload image inputs |
 
 ### Azure OpenAI SDK clients
 

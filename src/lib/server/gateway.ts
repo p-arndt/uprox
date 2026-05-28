@@ -626,3 +626,135 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 }
 
 export { loadProviderCreds };
+
+export interface RawProxyOptions {
+	auth: GatewayAuth;
+	/** which configured provider to route to (no model-based routing for files) */
+	provider: 'openai' | 'azure';
+	/** upstream path appended to the provider base url, e.g. "/files" */
+	path: string;
+}
+
+/**
+ * Stream-through proxy for endpoints whose body isn't JSON (Files API uploads
+ * are multipart/form-data; downloads are binary). The request body and the
+ * upstream response body are forwarded as opaque streams, so payload size and
+ * content-type are preserved. Auth, provider selection, and audit are the same
+ * as the JSON path, but model routing, policy by-model, caching, budget
+ * estimation, and rate limiting are skipped — there's no model to scope by.
+ *
+ * Query strings (e.g. Azure's `?api-version=…`) are forwarded as-is so the
+ * upstream sees the version the client specified.
+ */
+export async function proxyRawUpstream(
+	event: RequestEvent,
+	opts: RawProxyOptions
+): Promise<Response> {
+	const { auth, provider: providerId, path } = opts;
+	const started = Date.now();
+	const { token, ip } = auth;
+	const method = event.request.method;
+
+	const provider = PROVIDERS[providerId];
+	if (!provider) return gatewayError(500, 'Unknown provider', 'api_error');
+
+	const creds = await loadProviderCreds(token.organizationId, providerId);
+	if (!creds) {
+		await audit({
+			organizationId: token.organizationId,
+			action: `gateway.files`,
+			status: 'error',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: providerId,
+			statusCode: 502,
+			ip,
+			detail: `no ${providerId} secret configured`
+		});
+		return gatewayError(
+			502,
+			`No ${provider.label} credentials configured for this organization`,
+			'api_error'
+		);
+	}
+
+	const baseUrl = resolveBaseUrl(provider, creds.baseUrl);
+	if (!baseUrl) {
+		await audit({
+			organizationId: token.organizationId,
+			action: `gateway.files`,
+			status: 'error',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: providerId,
+			statusCode: 502,
+			ip,
+			detail: `no ${providerId} endpoint configured`
+		});
+		return gatewayError(
+			502,
+			`No ${provider.label} endpoint configured for this organization`,
+			'api_error'
+		);
+	}
+
+	// Forward the original query string (api-version etc.) verbatim.
+	const upstreamUrl = `${baseUrl}${path}${event.url.search}`;
+
+	// Build upstream headers: keep the client's content-type so multipart
+	// boundaries survive, drop hop-by-hop and host headers, override auth.
+	const fwdHeaders: Record<string, string> = {};
+	const ct = event.request.headers.get('content-type');
+	if (ct) fwdHeaders['content-type'] = ct;
+	const accept = event.request.headers.get('accept');
+	if (accept) fwdHeaders['accept'] = accept;
+	Object.assign(fwdHeaders, authHeaders(provider, creds.apiKey));
+
+	const hasBody = method !== 'GET' && method !== 'HEAD' && method !== 'DELETE';
+
+	let upstream: Response;
+	try {
+		upstream = await fetch(upstreamUrl, {
+			method,
+			headers: fwdHeaders,
+			body: hasBody ? event.request.body : undefined,
+			// Required by undici when streaming a request body.
+			...(hasBody ? { duplex: 'half' } : {})
+		} as RequestInit & { duplex?: 'half' });
+	} catch (err) {
+		await audit({
+			organizationId: token.organizationId,
+			action: `gateway.files`,
+			status: 'error',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: providerId,
+			statusCode: 502,
+			latencyMs: Date.now() - started,
+			ip,
+			detail: err instanceof Error ? err.message : 'upstream fetch failed'
+		});
+		return gatewayError(502, 'Upstream provider request failed', 'api_error');
+	}
+
+	await audit({
+		organizationId: token.organizationId,
+		action: `gateway.files`,
+		status: upstream.ok ? 'ok' : 'error',
+		serviceId: token.serviceId,
+		tokenId: token.tokenId,
+		provider: providerId,
+		statusCode: upstream.status,
+		latencyMs: Date.now() - started,
+		ip,
+		detail: `${method} ${path}`
+	});
+
+	// Stream the upstream response straight back, preserving content-type.
+	const outHeaders = new Headers();
+	const outCt = upstream.headers.get('content-type');
+	if (outCt) outHeaders.set('content-type', outCt);
+	const outCl = upstream.headers.get('content-length');
+	if (outCl) outHeaders.set('content-length', outCl);
+	return new Response(upstream.body, { status: upstream.status, headers: outHeaders });
+}
