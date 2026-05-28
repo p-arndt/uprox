@@ -2,7 +2,6 @@ import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
 
 export interface AuditEntry {
-	organizationId: string;
 	action: string;
 	status: 'allow' | 'deny' | 'error' | 'ok';
 	serviceId?: string | null;
@@ -26,7 +25,6 @@ export interface AuditEntry {
 export async function audit(entry: AuditEntry): Promise<void> {
 	try {
 		await db.insert(auditLog).values({
-			organizationId: entry.organizationId,
 			action: entry.action,
 			status: entry.status,
 			serviceId: entry.serviceId ?? null,

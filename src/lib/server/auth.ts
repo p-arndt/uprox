@@ -1,32 +1,18 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { sveltekitCookies } from 'better-auth/svelte-kit';
-import { organization, genericOAuth } from 'better-auth/plugins';
+import { genericOAuth } from 'better-auth/plugins';
 import { env } from '$env/dynamic/private';
 import { getRequestEvent } from '$app/server';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { sendInvitationEmail } from '$lib/server/email';
 import { getOidcConfig, isEmailAuthEnabled } from '$lib/server/auth-config';
 import {
 	user as authUser,
 	session as authSession,
 	account as authAccount,
-	verification as authVerification,
-	organization as organizationTable,
-	member,
-	invitation as authInvitation
+	verification as authVerification
 } from '$lib/server/db/auth.schema';
-
-/** Make a url-safe, reasonably unique slug from a seed. */
-function slugify(seed: string): string {
-	const base = seed
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, '-')
-		.replace(/^-+|-+$/g, '')
-		.slice(0, 24);
-	return `${base || 'org'}-${crypto.randomUUID().slice(0, 8)}`;
-}
 
 // Optional single OIDC provider, configured via env (see auth-config.ts).
 const oidcConfig = getOidcConfig();
@@ -47,69 +33,33 @@ export const auth = betterAuth({
 			user: authUser,
 			session: authSession,
 			account: authAccount,
-			verification: authVerification,
-			organization: organizationTable,
-			member,
-			invitation: authInvitation
+			verification: authVerification
 		}
 	}),
 	emailAndPassword: { enabled: isEmailAuthEnabled(), autoSignIn: true },
 	databaseHooks: {
 		user: {
 			create: {
-				// Every user gets a personal organization so the dashboard always
-				// has an active org to work within.
+				// The whole self-hosted instance is a single workspace. The first
+				// account to be created bootstraps it and becomes the owner; everyone
+				// after keeps the column default ('member'). Invited users have their
+				// role set by invitation acceptance (see /invite/[id]), so there is
+				// nothing to do here for them.
 				after: async (createdUser) => {
-					const orgName = createdUser.name ? `${createdUser.name}'s Org` : 'Personal';
-					const [org] = await db
-						.insert(organizationTable)
-						.values({
-							name: orgName,
-							slug: slugify(createdUser.email.split('@')[0] ?? createdUser.name),
-							createdAt: new Date()
-						})
-						.returning();
-
-					await db.insert(member).values({
-						organizationId: org.id,
-						userId: createdUser.id,
-						role: 'owner',
-						createdAt: new Date()
-					});
-				}
-			}
-		},
-		session: {
-			create: {
-				// Pin the user's first organization as active for the new session.
-				before: async (session) => {
-					const [m] = await db
-						.select({ organizationId: member.organizationId })
-						.from(member)
-						.where(eq(member.userId, session.userId))
-						.limit(1);
-					return { data: { ...session, activeOrganizationId: m?.organizationId ?? null } };
+					if (!createdUser?.id) return;
+					const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(authUser);
+					// This newly-created user is the only one → make them the owner.
+					if (Number(count) === 1) {
+						await db.update(authUser).set({ role: 'owner' }).where(eq(authUser.id, createdUser.id));
+					}
 				}
 			}
 		}
 	},
 	plugins: [
-		organization({
-			// Email the invitee a link to accept. When SMTP isn't configured the
-			// helper no-ops and the dashboard surfaces a copy-able link instead.
-			async sendInvitationEmail(data) {
-				await sendInvitationEmail({
-					to: data.email,
-					inviteUrl: `${env.ORIGIN}/invite/${data.id}`,
-					orgName: data.organization.name,
-					inviterName: data.inviter.user?.name,
-					role: data.role
-				});
-			}
-		}),
 		// A single OIDC provider, only registered when fully configured. Users
-		// signing in this way are auto-provisioned (and get a personal org via the
-		// user.create hook above), which is the expected behaviour for org SSO.
+		// signing in this way are auto-provisioned as instance members (the first
+		// one becomes the owner via the user.create hook above).
 		...(oidcConfig
 			? [
 					genericOAuth({

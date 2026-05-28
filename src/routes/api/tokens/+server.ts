@@ -4,18 +4,18 @@ import { requireOrgApi, requirePermission } from '$lib/server/org';
 import { listTokens, createToken } from '$lib/server/data';
 
 export const GET: RequestHandler = async (event) => {
-	const { organizationId } = await requireOrgApi(event);
-	return json(await listTokens(organizationId));
+	await requireOrgApi(event);
+	return json(await listTokens());
 };
 
 export const POST: RequestHandler = async (event) => {
-	const { organizationId, userId } = await requirePermission(event, 'tokens:manage');
+	const { userId } = await requirePermission(event, 'tokens:manage');
 	const body = await event.request.json();
 	if (!body?.serviceId || !body?.name) {
 		return json({ error: 'serviceId and name are required' }, { status: 400 });
 	}
 	try {
-		const { token, plaintext } = await createToken(organizationId, userId, {
+		const { token, plaintext } = await createToken(userId, {
 			serviceId: body.serviceId,
 			name: body.name,
 			scopes: Array.isArray(body.scopes) ? body.scopes : [],

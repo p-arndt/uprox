@@ -4,12 +4,12 @@ import { requireOrgApi, requirePermission } from '$lib/server/org';
 import { listEffectiveModelPrices, createOrgModelPrice } from '$lib/server/pricing';
 
 export const GET: RequestHandler = async (event) => {
-	const { organizationId } = await requireOrgApi(event);
-	return json(await listEffectiveModelPrices(organizationId));
+	await requireOrgApi(event);
+	return json(await listEffectiveModelPrices());
 };
 
 export const POST: RequestHandler = async (event) => {
-	const { organizationId } = await requirePermission(event, 'pricing:manage');
+	await requirePermission(event, 'pricing:manage');
 	const body = await event.request.json();
 	if (!body?.model) return json({ error: 'model is required' }, { status: 400 });
 	const inputPerMtok = Number(body.inputPerMtok);
@@ -24,7 +24,7 @@ export const POST: RequestHandler = async (event) => {
 			{ error: 'inputPerMtok and outputPerMtok must be non-negative numbers' },
 			{ status: 400 }
 		);
-	const row = await createOrgModelPrice(organizationId, {
+	const row = await createOrgModelPrice({
 		model: String(body.model),
 		provider: body.provider ? String(body.provider) : null,
 		inputPerMtok,

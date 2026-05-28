@@ -4,15 +4,15 @@ import { requireOrgApi, requirePermission } from '$lib/server/org';
 import { listPolicies, createPolicy } from '$lib/server/data';
 
 export const GET: RequestHandler = async (event) => {
-	const { organizationId } = await requireOrgApi(event);
-	return json(await listPolicies(organizationId));
+	await requireOrgApi(event);
+	return json(await listPolicies());
 };
 
 export const POST: RequestHandler = async (event) => {
-	const { organizationId } = await requirePermission(event, 'policies:manage');
+	await requirePermission(event, 'policies:manage');
 	const body = await event.request.json();
 	if (!body?.name) return json({ error: 'name is required' }, { status: 400 });
-	const row = await createPolicy(organizationId, {
+	const row = await createPolicy({
 		name: body.name,
 		allowedProviders: Array.isArray(body.allowedProviders) ? body.allowedProviders : [],
 		allowedModels: Array.isArray(body.allowedModels) ? body.allowedModels : [],

@@ -5,12 +5,12 @@ import { listProviderSecrets, upsertProviderSecret } from '$lib/server/data';
 import { PROVIDER_IDS } from '$lib/server/providers';
 
 export const GET: RequestHandler = async (event) => {
-	const { organizationId } = await requireOrgApi(event);
-	return json(await listProviderSecrets(organizationId));
+	await requireOrgApi(event);
+	return json(await listProviderSecrets());
 };
 
 export const POST: RequestHandler = async (event) => {
-	const { organizationId, userId } = await requirePermission(event, 'providers:manage');
+	const { userId } = await requirePermission(event, 'providers:manage');
 	const body = await event.request.json();
 	if (!body?.provider || !body?.secret) {
 		return json({ error: 'provider and secret are required' }, { status: 400 });
@@ -18,7 +18,7 @@ export const POST: RequestHandler = async (event) => {
 	if (!PROVIDER_IDS.includes(body.provider)) {
 		return json({ error: `unknown provider "${body.provider}"` }, { status: 400 });
 	}
-	const row = await upsertProviderSecret(organizationId, userId, {
+	const row = await upsertProviderSecret(userId, {
 		provider: body.provider,
 		secret: body.secret,
 		label: body.label

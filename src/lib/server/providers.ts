@@ -240,20 +240,19 @@ export function resolvePrice(
 }
 
 /**
- * Estimate a request's USD cost for an organization. Reads the org's effective
- * price map (org overrides layered over platform defaults) from the database
- * via a short-lived in-memory cache, then matches the model by longest prefix.
+ * Estimate a request's USD cost. Reads the instance's effective price map
+ * (custom overrides layered over platform defaults) from the database via a
+ * short-lived in-memory cache, then matches the model by longest prefix.
  * Returns null when the model has no price or no prompt tokens were reported.
  */
 export async function estimateCostUsd(
-	organizationId: string,
 	model: string | undefined,
 	promptTokens: number | undefined,
 	completionTokens: number | undefined
 ): Promise<number | null> {
 	if (!model || promptTokens == null) return null;
 	const { getEffectivePriceMap } = await import('$lib/server/pricing');
-	const prices = await getEffectivePriceMap(organizationId);
+	const prices = await getEffectivePriceMap();
 	const price = resolvePrice(prices, model);
 	if (!price) return null;
 	return costFromPrice(price, promptTokens, completionTokens ?? 0);
