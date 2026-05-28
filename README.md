@@ -85,7 +85,8 @@ docker build -t uprox . && docker run -p 3000:3000 --env-file .env uprox
 
 ## Endpoints
 
-OpenAI-compatible gateway, authenticated with a `Bearer uprox_live_…` token:
+OpenAI-compatible gateway, authenticated with a `Bearer uprox_live_…` token (or
+`api-key: uprox_live_…` for Azure-SDK clients):
 
 | Endpoint                    | Notes                                     |
 | --------------------------- | ----------------------------------------- |
@@ -93,6 +94,24 @@ OpenAI-compatible gateway, authenticated with a `Bearer uprox_live_…` token:
 | `POST /v1/responses`        | OpenAI Responses API; streaming supported |
 | `POST /v1/embeddings`       |                                           |
 | `GET  /v1/models`           | aggregated from your configured providers |
+
+### Azure OpenAI SDK clients
+
+The same gateway is reachable under URLs the Azure OpenAI SDK builds, so you can
+point an existing Azure-style client at uprox by swapping its `AZURE_OPENAI_ENDPOINT`
+for your uprox base URL and its `AZURE_OPENAI_API_KEY` for an `uprox_live_…` token.
+
+| Endpoint                                                  | Equivalent of                     |
+| --------------------------------------------------------- | --------------------------------- |
+| `POST /openai/deployments/{deployment}/chat/completions`  | legacy Azure URL (model from URL) |
+| `POST /openai/deployments/{deployment}/embeddings`        | legacy Azure URL                  |
+| `POST /openai/deployments/{deployment}/responses`         | legacy Azure URL                  |
+| `POST /openai/v1/chat/completions` (and `/embeddings`, …) | newer Azure OpenAI v1 surface     |
+
+The `api-version` query string is accepted and ignored. Model routing is identical
+to `/v1/*` — the deployment name acts as the model id, and uprox proxies to Azure
+when your org has Azure credentials configured (Azure accepts arbitrary deployment
+names; see provider settings).
 
 Everything else (services, tokens, providers, policies, audit) is managed in the dashboard or
 via the session-authenticated REST API under `/api`.

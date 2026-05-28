@@ -117,11 +117,18 @@ async function readSseUsage(stream: ReadableStream<Uint8Array>): Promise<Drained
 	return { usage, raw, complete };
 }
 
-/** Pull the bearer token out of the Authorization header. */
-function bearer(event: RequestEvent): string | null {
+/**
+ * Read the caller's machine token. Accepts either
+ *   `Authorization: Bearer <token>` (OpenAI SDK shape) or
+ *   `api-key: <token>` (Azure OpenAI SDK shape),
+ * so the same uprox endpoint can sit behind clients of both ecosystems.
+ */
+function readApiKey(event: RequestEvent): string | null {
 	const header = event.request.headers.get('authorization') ?? '';
 	const match = /^Bearer\s+(.+)$/i.exec(header);
-	return match ? match[1].trim() : null;
+	if (match) return match[1].trim();
+	const apiKey = event.request.headers.get('api-key')?.trim();
+	return apiKey ? apiKey : null;
 }
 
 export interface GatewayAuth {
@@ -136,7 +143,7 @@ export interface GatewayAuth {
 export async function authenticateGateway(
 	event: RequestEvent
 ): Promise<{ ok: true; auth: GatewayAuth } | { ok: false; response: Response }> {
-	const raw = bearer(event);
+	const raw = readApiKey(event);
 	if (!raw) {
 		return { ok: false, response: gatewayError(401, 'Missing API key', 'authentication_error') };
 	}
@@ -184,6 +191,12 @@ export interface ProxyOptions {
 	path: string;
 	body: unknown;
 	stream: boolean;
+	/**
+	 * Override the provider routed to when both OpenAI and Azure are configured.
+	 * Set from Azure-style URL routes (`/openai/deployments/…`, `/openai/v1/…`)
+	 * so URL-level intent beats the policy's preferredProvider. Optional.
+	 */
+	preferProvider?: string;
 }
 
 /**
@@ -191,18 +204,19 @@ export interface ProxyOptions {
  * key → proxy to the provider → audit. Returns a Response either way.
  */
 export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): Promise<Response> {
-	const { auth, scope, model, path, body, stream } = opts;
+	const { auth, scope, model, path, body, stream, preferProvider } = opts;
 	const started = Date.now();
 	const { token, ip } = auth;
 
 	// Route by model, choosing among the providers this org has configured.
-	// OpenAI and Azure share the model namespace; the policy's preferredProvider
-	// breaks the tie when both are configured (see resolveProvider).
+	// OpenAI and Azure share the model namespace; an explicit `preferProvider`
+	// (set by Azure-style URL routes to signal URL-level intent) wins, otherwise
+	// the policy's preferredProvider breaks the tie. See resolveProvider.
 	const configuredProviders = await loadConfiguredProviders(token.organizationId);
 	const provider: ProviderDef | null = resolveProvider(
 		model,
 		configuredProviders,
-		token.policy?.preferredProvider
+		preferProvider ?? token.policy?.preferredProvider
 	);
 	// The model/deployment name to send upstream and price by — passed through
 	// unchanged (no provider alias to strip).
