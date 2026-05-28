@@ -4,7 +4,7 @@ import { requirePermission } from '$lib/server/org';
 import { updateOrgModelPrice, deleteOrgModelPrice } from '$lib/server/pricing';
 
 export const PATCH: RequestHandler = async (event) => {
-	const { organizationId } = await requirePermission(event, 'pricing:manage');
+	await requirePermission(event, 'pricing:manage');
 	const body = await event.request.json();
 	const patch: { provider?: string | null; inputPerMtok?: number; outputPerMtok?: number } = {};
 	if (body.provider !== undefined) patch.provider = body.provider ? String(body.provider) : null;
@@ -20,13 +20,13 @@ export const PATCH: RequestHandler = async (event) => {
 			return json({ error: 'invalid outputPerMtok' }, { status: 400 });
 		patch.outputPerMtok = n;
 	}
-	const row = await updateOrgModelPrice(organizationId, event.params.id, patch);
+	const row = await updateOrgModelPrice(event.params.id, patch);
 	if (!row) return json({ error: 'Not found' }, { status: 404 });
 	return json(row);
 };
 
 export const DELETE: RequestHandler = async (event) => {
-	const { organizationId } = await requirePermission(event, 'pricing:manage');
-	await deleteOrgModelPrice(organizationId, event.params.id);
+	await requirePermission(event, 'pricing:manage');
+	await deleteOrgModelPrice(event.params.id);
 	return new Response(null, { status: 204 });
 };

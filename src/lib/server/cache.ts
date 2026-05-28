@@ -1,9 +1,9 @@
 /**
  * Exact-match response cache for the gateway. Caching is enabled by a non-zero
- * TTL (org-wide default, overridable per policy) and applies to chat
+ * TTL (instance-wide default, overridable per policy) and applies to chat
  * completions, embeddings, and the Responses API — streamed or buffered.
- * Entries are scoped
- * to an organization and keyed by a hash of the upstream target plus a
+ * Entries are shared
+ * instance-wide and keyed by a hash of the upstream target plus a
  * canonicalized request body, so byte-for-byte identical requests replay the
  * stored upstream response for free.
  *
@@ -86,7 +86,7 @@ export interface CachedResponse {
 }
 
 /** Look up a live (unexpired) cache entry and bump its hit counter. */
-export async function getCached(orgId: string, cacheKey: string): Promise<CachedResponse | null> {
+export async function getCached(cacheKey: string): Promise<CachedResponse | null> {
 	const [row] = await db
 		.select({
 			id: responseCache.id,
@@ -95,13 +95,7 @@ export async function getCached(orgId: string, cacheKey: string): Promise<Cached
 			costUsd: responseCache.costUsd
 		})
 		.from(responseCache)
-		.where(
-			and(
-				eq(responseCache.organizationId, orgId),
-				eq(responseCache.cacheKey, cacheKey),
-				gt(responseCache.expiresAt, new Date())
-			)
-		)
+		.where(and(eq(responseCache.cacheKey, cacheKey), gt(responseCache.expiresAt, new Date())))
 		.limit(1);
 	if (!row) return null;
 
@@ -126,12 +120,11 @@ export async function getCached(orgId: string, cacheKey: string): Promise<Cached
 const MAX_CACHED_BYTES = 1_000_000;
 
 /**
- * Store a successful upstream response. Upserts on (org, key) so a refreshed
+ * Store a successful upstream response. Upserts on the cache key so a refreshed
  * response replaces a stale one and resets the TTL. Never throws — a cache
  * write must not break the request it's recording.
  */
 export async function putCached(opts: {
-	organizationId: string;
 	cacheKey: string;
 	provider: string;
 	model: string | null;
@@ -148,7 +141,6 @@ export async function putCached(opts: {
 		await db
 			.insert(responseCache)
 			.values({
-				organizationId: opts.organizationId,
 				cacheKey: opts.cacheKey,
 				provider: opts.provider,
 				model: opts.model,
@@ -159,7 +151,7 @@ export async function putCached(opts: {
 				expiresAt
 			})
 			.onConflictDoUpdate({
-				target: [responseCache.organizationId, responseCache.cacheKey],
+				target: responseCache.cacheKey,
 				set: { response: opts.response, statusCode: opts.statusCode, costUsd, expiresAt, hits: 0 }
 			});
 	} catch (err) {

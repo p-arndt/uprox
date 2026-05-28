@@ -4,17 +4,14 @@ import { requireOrg, requirePermission } from '$lib/server/org';
 import { listTokens, listServices, createToken, revokeToken } from '$lib/server/data';
 
 export const load: PageServerLoad = async (event) => {
-	const { organizationId } = await requireOrg(event);
-	const [tokens, services] = await Promise.all([
-		listTokens(organizationId),
-		listServices(organizationId)
-	]);
+	await requireOrg(event);
+	const [tokens, services] = await Promise.all([listTokens(), listServices()]);
 	return { tokens, services };
 };
 
 export const actions: Actions = {
 	create: async (event) => {
-		const { organizationId, userId } = await requirePermission(event, 'tokens:manage');
+		const { userId } = await requirePermission(event, 'tokens:manage');
 		const data = await event.request.formData();
 		const serviceId = data.get('serviceId')?.toString();
 		const name = data.get('name')?.toString().trim();
@@ -26,7 +23,7 @@ export const actions: Actions = {
 		const expiresAt = days > 0 ? new Date(Date.now() + days * 86_400_000) : null;
 
 		try {
-			const { plaintext } = await createToken(organizationId, userId, {
+			const { plaintext } = await createToken(userId, {
 				serviceId,
 				name,
 				scopes,
@@ -39,10 +36,10 @@ export const actions: Actions = {
 		}
 	},
 	revoke: async (event) => {
-		const { organizationId } = await requirePermission(event, 'tokens:manage');
+		await requirePermission(event, 'tokens:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
-		if (id) await revokeToken(organizationId, id);
+		if (id) await revokeToken(id);
 		return { success: true };
 	}
 };

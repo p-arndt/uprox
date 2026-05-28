@@ -10,8 +10,8 @@ import {
 import { PROVIDERS, PROVIDER_IDS } from '$lib/server/providers';
 
 export const load: PageServerLoad = async (event) => {
-	const { organizationId } = await requireOrg(event);
-	const secrets = await listProviderSecrets(organizationId);
+	await requireOrg(event);
+	const secrets = await listProviderSecrets();
 	return {
 		secrets,
 		providers: Object.values(PROVIDERS).map((p) => ({
@@ -26,7 +26,7 @@ export const load: PageServerLoad = async (event) => {
 
 export const actions: Actions = {
 	save: async (event) => {
-		const { organizationId, userId } = await requirePermission(event, 'providers:manage');
+		const { userId } = await requirePermission(event, 'providers:manage');
 		const data = await event.request.formData();
 		const provider = data.get('provider')?.toString() ?? '';
 		const secret = data.get('secret')?.toString().trim() ?? '';
@@ -39,7 +39,7 @@ export const actions: Actions = {
 			if (!/^https:\/\//i.test(baseUrl))
 				return fail(400, { message: 'Endpoint must be an https:// URL' });
 		}
-		await upsertProviderSecret(organizationId, userId, {
+		await upsertProviderSecret(userId, {
 			provider,
 			secret,
 			label: data.get('label')?.toString() || undefined,
@@ -48,7 +48,7 @@ export const actions: Actions = {
 		return { success: true };
 	},
 	editMeta: async (event) => {
-		const { organizationId } = await requirePermission(event, 'providers:manage');
+		await requirePermission(event, 'providers:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString() ?? '';
 		const provider = data.get('provider')?.toString() ?? '';
@@ -61,17 +61,17 @@ export const actions: Actions = {
 			if (!/^https:\/\//i.test(baseUrl))
 				return fail(400, { message: 'Endpoint must be an https:// URL' });
 		}
-		await updateProviderSecret(organizationId, id, {
+		await updateProviderSecret(id, {
 			label: label || null,
 			baseUrl: baseUrl || null
 		});
 		return { success: true };
 	},
 	delete: async (event) => {
-		const { organizationId } = await requirePermission(event, 'providers:manage');
+		await requirePermission(event, 'providers:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
-		if (id) await deleteProviderSecret(organizationId, id);
+		if (id) await deleteProviderSecret(id);
 		return { success: true };
 	}
 };

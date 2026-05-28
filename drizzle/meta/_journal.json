@@ -5,29 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1779909891089,
-      "tag": "0000_married_toad",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1779910725643,
-      "tag": "0001_calm_famine",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1779926075415,
-      "tag": "0002_cloudy_the_renegades",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1779926598959,
-      "tag": "0003_flawless_justin_hammer",
+      "when": 1779991213540,
+      "tag": "0000_init",
       "breakpoints": true
     }
   ]

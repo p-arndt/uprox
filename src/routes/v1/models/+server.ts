@@ -1,6 +1,5 @@
 import type { RequestHandler } from './$types';
 import { json } from '@sveltejs/kit';
-import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { providerSecret } from '$lib/server/db/schema';
 import { decrypt } from '$lib/server/crypto';
@@ -17,17 +16,14 @@ interface ModelEntry {
 
 /**
  * OpenAI-compatible model listing. Aggregates models from every provider this
- * organization has credentials for, filtered by the token's policy.
+ * instance has credentials for, filtered by the token's policy.
  */
 export const GET: RequestHandler = async (event) => {
 	const auth = await authenticateGateway(event);
 	if (!auth.ok) return auth.response;
 	const { token, ip } = auth.auth;
 
-	const secrets = await db
-		.select()
-		.from(providerSecret)
-		.where(eq(providerSecret.organizationId, token.organizationId));
+	const secrets = await db.select().from(providerSecret);
 
 	const models: ModelEntry[] = [];
 	const seen = new Set<string>();
@@ -57,7 +53,6 @@ export const GET: RequestHandler = async (event) => {
 	}
 
 	await audit({
-		organizationId: token.organizationId,
 		action: 'gateway.models',
 		status: 'ok',
 		serviceId: token.serviceId,
