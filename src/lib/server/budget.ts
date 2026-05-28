@@ -81,6 +81,29 @@ function startOfUtcMonth(now = new Date()): Date {
 	return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 }
 
+export interface SpendWindows {
+	/** start of the current UTC day / month — the windows budgets reset on */
+	dayStart: Date;
+	monthStart: Date;
+	dailySpent: number;
+	monthlySpent: number;
+}
+
+/**
+ * Current per-service spend for both budget windows plus the window boundaries.
+ * Shared by the budget-alert evaluation (see budget-alerts.ts); intentionally
+ * ignores in-flight reservations since alerts report realized spend.
+ */
+export async function currentSpend(serviceId: string): Promise<SpendWindows> {
+	const dayStart = startOfUtcDay();
+	const monthStart = startOfUtcMonth();
+	const [dailySpent, monthlySpent] = await Promise.all([
+		spendSince(serviceId, dayStart),
+		spendSince(serviceId, monthStart)
+	]);
+	return { dayStart, monthStart, dailySpent, monthlySpent };
+}
+
 /** Sum gateway spend (USD) for a service since `since`. */
 async function spendSince(serviceId: string, since: Date): Promise<number> {
 	const [row] = await db

@@ -5,10 +5,8 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import { Label } from '$lib/components/ui/label/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
+	import PolicyForm, { type PolicyFormValues } from '$lib/components/policy-form.svelte';
 	import { can } from '$lib/permissions';
 	import ShieldHalf from '@lucide/svelte/icons/shield-half';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -29,26 +27,19 @@
 
 	let { data, form } = $props();
 	let open = $state(false);
-	let createPreferredProvider = $state('');
-	let editing = $state<{
-		id: string;
-		name: string;
-		allowedProviders: string[];
-		allowedModels: string;
-		preferredProvider: string;
-		rateLimitPerMinute: number;
-		dailyBudgetUsd: string;
-		monthlyBudgetUsd: string;
-		cacheTtlSeconds: string;
-	} | null>(null);
+	let editing = $state<PolicyFormValues | null>(null);
 
-	// OpenAI and Azure share the "gpt-*"/o-series namespace; a policy can pin which
-	// one serves it. Other providers (e.g. Anthropic) route unambiguously by name.
-	const sharedNamespaceProviders = $derived(
-		data.providers.filter((p) => p.id === 'openai' || p.id === 'azure')
-	);
-	const preferredLabel = (id: string) =>
-		id ? (sharedNamespaceProviders.find((p) => p.id === id)?.label ?? id) : 'No preference';
+	const createValues: PolicyFormValues = {
+		name: '',
+		allowedProviders: [],
+		allowedModels: '',
+		preferredProvider: '',
+		rateLimitPerMinute: 0,
+		dailyBudgetUsd: 0,
+		monthlyBudgetUsd: 0,
+		cacheTtlSeconds: ''
+	};
+
 	const canManage = $derived(can(data.role, 'policies:manage', data.memberPermissions));
 
 	$effect(() => {
@@ -70,131 +61,25 @@
 		</div>
 		{#if canManage}
 			<Dialog.Root bind:open>
-			<Dialog.Trigger>
-				{#snippet child({ props })}
-					<Button {...props}><Plus class="size-4" /> New policy</Button>
-				{/snippet}
-			</Dialog.Trigger>
-			<Dialog.Content>
-				<Dialog.Header>
-					<Dialog.Title>Create policy</Dialog.Title>
-					<Dialog.Description>Attach a policy to a service to enforce it.</Dialog.Description>
-				</Dialog.Header>
-				<form
-					method="post"
-					action="?/create"
-					class="space-y-4"
-					use:enhance={() =>
-						async ({ update }) =>
-							update({ reset: true })}
-				>
-					<div class="space-y-2">
-						<Label for="name">Name</Label>
-						<Input id="name" name="name" placeholder="read-only-openai" required />
-					</div>
-					<div class="space-y-2">
-						<Label>Allowed providers</Label>
-						<div class="flex flex-wrap gap-4">
-							{#each data.providers as p (p.id)}
-								<label class="flex items-center gap-2 text-sm">
-									<input
-										type="checkbox"
-										name="allowedProviders"
-										value={p.id}
-										class="size-4 accent-foreground"
-									/>
-									{p.label}
-								</label>
-							{/each}
-						</div>
-						<p class="text-xs text-muted-foreground">None checked = all providers allowed.</p>
-					</div>
-					<div class="space-y-2">
-						<Label for="allowedModels">Allowed models</Label>
-						<Input
-							id="allowedModels"
-							name="allowedModels"
-							placeholder="gpt-4o*, claude-3-5-sonnet"
-						/>
-						<p class="text-xs text-muted-foreground">
-							Comma-separated. Trailing <code>*</code> matches a prefix. Blank = all models.
-						</p>
-					</div>
-					<div class="space-y-2">
-						<Label for="preferredProvider">Preferred OpenAI backend</Label>
-						<Select.Root type="single" name="preferredProvider" bind:value={createPreferredProvider}>
-							<Select.Trigger id="preferredProvider" class="w-full"
-								>{preferredLabel(createPreferredProvider)}</Select.Trigger
-							>
-							<Select.Content>
-								<Select.Item value="" label="No preference">No preference</Select.Item>
-								{#each sharedNamespaceProviders as p (p.id)}
-									<Select.Item value={p.id} label={p.label}>{p.label}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-						<p class="text-xs text-muted-foreground">
-							When both OpenAI and Azure are configured, which one serves shared models (<code
-								>gpt-*</code
-							>, o-series). With only one configured, that one is used.
-						</p>
-					</div>
-					<div class="space-y-2">
-						<Label for="rateLimitPerMinute">Rate limit (req/min)</Label>
-						<Input
-							id="rateLimitPerMinute"
-							name="rateLimitPerMinute"
-							type="number"
-							min="0"
-							value="0"
-						/>
-						<p class="text-xs text-muted-foreground">0 = unlimited.</p>
-					</div>
-					<div class="grid grid-cols-2 gap-4">
-						<div class="space-y-2">
-							<Label for="dailyBudgetUsd">Daily budget (USD)</Label>
-							<Input
-								id="dailyBudgetUsd"
-								name="dailyBudgetUsd"
-								type="number"
-								min="0"
-								step="0.01"
-								value="0"
-							/>
-						</div>
-						<div class="space-y-2">
-							<Label for="monthlyBudgetUsd">Monthly budget (USD)</Label>
-							<Input
-								id="monthlyBudgetUsd"
-								name="monthlyBudgetUsd"
-								type="number"
-								min="0"
-								step="0.01"
-								value="0"
-							/>
-						</div>
-					</div>
-					<p class="-mt-2 text-xs text-muted-foreground">
-						Per-service spend ceilings (UTC windows). 0 = unlimited.
-					</p>
-					<div class="space-y-2">
-						<Label for="cacheTtlSeconds">Cache TTL (seconds)</Label>
-						<Input
-							id="cacheTtlSeconds"
-							name="cacheTtlSeconds"
-							type="number"
-							min="0"
-							placeholder="inherit org default"
-						/>
-						<p class="text-xs text-muted-foreground">
-							Overrides the org-wide cache setting. Blank = inherit, 0 = force off, &gt;0 = TTL.
-						</p>
-					</div>
-					<Dialog.Footer>
-						<Button type="submit">Create policy</Button>
-					</Dialog.Footer>
-				</form>
-			</Dialog.Content>
+				<Dialog.Trigger>
+					{#snippet child({ props })}
+						<Button {...props}><Plus class="size-4" /> New policy</Button>
+					{/snippet}
+				</Dialog.Trigger>
+				<Dialog.Content>
+					<Dialog.Header>
+						<Dialog.Title>Create policy</Dialog.Title>
+						<Dialog.Description>Attach a policy to a service to enforce it.</Dialog.Description>
+					</Dialog.Header>
+					<PolicyForm
+						providers={data.providers}
+						action="?/create"
+						submitLabel="Create policy"
+						idPrefix="create"
+						values={createValues}
+						resetOnSuccess
+					/>
+				</Dialog.Content>
 			</Dialog.Root>
 		{/if}
 	</div>
@@ -220,65 +105,65 @@
 						</div>
 						{#if canManage}
 							<div class="flex items-center gap-1">
-							<Button
-								variant="ghost"
-								size="icon"
-								class="size-8 text-muted-foreground"
-								title="Edit policy"
-								onclick={() =>
-									(editing = {
-										id: p.id,
-										name: p.name,
-										allowedProviders: [...p.allowedProviders],
-										allowedModels: p.allowedModels.join(', '),
-										preferredProvider: p.preferredProvider ?? '',
-										rateLimitPerMinute: p.rateLimitPerMinute,
-										dailyBudgetUsd: String(Number(p.dailyBudgetUsd)),
-										monthlyBudgetUsd: String(Number(p.monthlyBudgetUsd)),
-										cacheTtlSeconds: p.cacheTtlSeconds == null ? '' : String(p.cacheTtlSeconds)
-									})}
-							>
-								<Pencil class="size-4" />
-							</Button>
-							<AlertDialog.Root>
-								<AlertDialog.Trigger>
-									{#snippet child({ props })}
-										<Button
-											{...props}
-											variant="ghost"
-											size="icon"
-											class="size-8 text-muted-foreground hover:text-destructive"
-											title="Delete policy"
-										>
-											<Trash2 class="size-4" />
-										</Button>
-									{/snippet}
-								</AlertDialog.Trigger>
-								<AlertDialog.Content>
-									<AlertDialog.Header>
-										<AlertDialog.Title>Delete “{p.name}”?</AlertDialog.Title>
-										<AlertDialog.Description>
-											Services assigned to this policy will no longer be governed by it. This can't
-											be undone.
-										</AlertDialog.Description>
-									</AlertDialog.Header>
-									<AlertDialog.Footer>
-										<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-										<form
-											method="post"
-											action="?/delete"
-											use:enhance={() =>
-												async ({ update }) =>
-													update()}
-										>
-											<input type="hidden" name="id" value={p.id} />
-											<AlertDialog.Action type="submit" variant="destructive">
-												Delete policy
-											</AlertDialog.Action>
-										</form>
-									</AlertDialog.Footer>
-								</AlertDialog.Content>
-							</AlertDialog.Root>
+								<Button
+									variant="ghost"
+									size="icon"
+									class="size-8 text-muted-foreground"
+									title="Edit policy"
+									onclick={() =>
+										(editing = {
+											id: p.id,
+											name: p.name,
+											allowedProviders: [...p.allowedProviders],
+											allowedModels: p.allowedModels.join(', '),
+											preferredProvider: p.preferredProvider ?? '',
+											rateLimitPerMinute: p.rateLimitPerMinute,
+											dailyBudgetUsd: String(Number(p.dailyBudgetUsd)),
+											monthlyBudgetUsd: String(Number(p.monthlyBudgetUsd)),
+											cacheTtlSeconds: p.cacheTtlSeconds == null ? '' : String(p.cacheTtlSeconds)
+										})}
+								>
+									<Pencil class="size-4" />
+								</Button>
+								<AlertDialog.Root>
+									<AlertDialog.Trigger>
+										{#snippet child({ props })}
+											<Button
+												{...props}
+												variant="ghost"
+												size="icon"
+												class="size-8 text-muted-foreground hover:text-destructive"
+												title="Delete policy"
+											>
+												<Trash2 class="size-4" />
+											</Button>
+										{/snippet}
+									</AlertDialog.Trigger>
+									<AlertDialog.Content>
+										<AlertDialog.Header>
+											<AlertDialog.Title>Delete “{p.name}”?</AlertDialog.Title>
+											<AlertDialog.Description>
+												Services assigned to this policy will no longer be governed by it. This
+												can't be undone.
+											</AlertDialog.Description>
+										</AlertDialog.Header>
+										<AlertDialog.Footer>
+											<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+											<form
+												method="post"
+												action="?/delete"
+												use:enhance={() =>
+													async ({ update }) =>
+														update()}
+											>
+												<input type="hidden" name="id" value={p.id} />
+												<AlertDialog.Action type="submit" variant="destructive">
+													Delete policy
+												</AlertDialog.Action>
+											</form>
+										</AlertDialog.Footer>
+									</AlertDialog.Content>
+								</AlertDialog.Root>
 							</div>
 						{/if}
 					</Card.Header>
@@ -343,131 +228,15 @@
 			<Dialog.Description>Attach a policy to a service to enforce it.</Dialog.Description>
 		</Dialog.Header>
 		{#if editing}
-			<form
-				method="post"
-				action="?/update"
-				class="space-y-4"
-				use:enhance={() =>
-					async ({ update }) => {
-						await update();
-					}}
-			>
-				<input type="hidden" name="id" value={editing.id} />
-				<div class="space-y-2">
-					<Label for="edit-name">Name</Label>
-					<Input
-						id="edit-name"
-						name="name"
-						placeholder="read-only-openai"
-						value={editing.name}
-						required
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label>Allowed providers</Label>
-					<div class="flex flex-wrap gap-4">
-						{#each data.providers as p (p.id)}
-							<label class="flex items-center gap-2 text-sm">
-								<input
-									type="checkbox"
-									name="allowedProviders"
-									value={p.id}
-									checked={editing.allowedProviders.includes(p.id)}
-									class="size-4 accent-foreground"
-								/>
-								{p.label}
-							</label>
-						{/each}
-					</div>
-					<p class="text-xs text-muted-foreground">None checked = all providers allowed.</p>
-				</div>
-				<div class="space-y-2">
-					<Label for="edit-allowedModels">Allowed models</Label>
-					<Input
-						id="edit-allowedModels"
-						name="allowedModels"
-						placeholder="gpt-4o*, claude-3-5-sonnet"
-						value={editing.allowedModels}
-					/>
-					<p class="text-xs text-muted-foreground">
-						Comma-separated. Trailing <code>*</code> matches a prefix. Blank = all models.
-					</p>
-				</div>
-				<div class="space-y-2">
-					<Label for="edit-preferredProvider">Preferred OpenAI backend</Label>
-					<Select.Root type="single" name="preferredProvider" bind:value={editing.preferredProvider}>
-						<Select.Trigger id="edit-preferredProvider" class="w-full"
-							>{preferredLabel(editing?.preferredProvider ?? '')}</Select.Trigger
-						>
-						<Select.Content>
-							<Select.Item value="" label="No preference">No preference</Select.Item>
-							{#each sharedNamespaceProviders as p (p.id)}
-								<Select.Item value={p.id} label={p.label}>{p.label}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-					<p class="text-xs text-muted-foreground">
-						When both OpenAI and Azure are configured, which one serves shared models (<code
-							>gpt-*</code
-						>, o-series). With only one configured, that one is used.
-					</p>
-				</div>
-				<div class="space-y-2">
-					<Label for="edit-rateLimitPerMinute">Rate limit (req/min)</Label>
-					<Input
-						id="edit-rateLimitPerMinute"
-						name="rateLimitPerMinute"
-						type="number"
-						min="0"
-						value={editing.rateLimitPerMinute}
-					/>
-					<p class="text-xs text-muted-foreground">0 = unlimited.</p>
-				</div>
-				<div class="grid grid-cols-2 gap-4">
-					<div class="space-y-2">
-						<Label for="edit-dailyBudgetUsd">Daily budget (USD)</Label>
-						<Input
-							id="edit-dailyBudgetUsd"
-							name="dailyBudgetUsd"
-							type="number"
-							min="0"
-							step="0.01"
-							value={editing.dailyBudgetUsd}
-						/>
-					</div>
-					<div class="space-y-2">
-						<Label for="edit-monthlyBudgetUsd">Monthly budget (USD)</Label>
-						<Input
-							id="edit-monthlyBudgetUsd"
-							name="monthlyBudgetUsd"
-							type="number"
-							min="0"
-							step="0.01"
-							value={editing.monthlyBudgetUsd}
-						/>
-					</div>
-				</div>
-				<p class="-mt-2 text-xs text-muted-foreground">
-					Per-service spend ceilings (UTC windows). 0 = unlimited.
-				</p>
-				<div class="space-y-2">
-					<Label for="edit-cacheTtlSeconds">Cache TTL (seconds)</Label>
-					<Input
-						id="edit-cacheTtlSeconds"
-						name="cacheTtlSeconds"
-						type="number"
-						min="0"
-						placeholder="inherit org default"
-						value={editing.cacheTtlSeconds}
-					/>
-					<p class="text-xs text-muted-foreground">
-						Overrides the org-wide cache setting. Blank = inherit, 0 = force off, &gt;0 = TTL.
-					</p>
-				</div>
-				<Dialog.Footer>
-					<Button type="submit">Save policy</Button>
-				</Dialog.Footer>
-			</form>
+			{#key editing.id}
+				<PolicyForm
+					providers={data.providers}
+					action="?/update"
+					submitLabel="Save policy"
+					idPrefix="edit"
+					values={editing}
+				/>
+			{/key}
 		{/if}
 	</Dialog.Content>
 </Dialog.Root>

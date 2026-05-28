@@ -339,6 +339,9 @@ export interface OrgSettings {
 	cacheTtlSeconds: number;
 	membersCanManageTokens: boolean;
 	membersCanManageServices: boolean;
+	budgetAlertsEnabled: boolean;
+	budgetAlertThresholdPct: number;
+	budgetAlertEmail: string | null;
 }
 
 /** Read an org's settings, falling back to defaults when no row exists yet. */
@@ -351,7 +354,10 @@ export async function getOrgSettings(orgId: string): Promise<OrgSettings> {
 	return {
 		cacheTtlSeconds: row?.cacheTtlSeconds ?? 0,
 		membersCanManageTokens: row?.membersCanManageTokens ?? false,
-		membersCanManageServices: row?.membersCanManageServices ?? false
+		membersCanManageServices: row?.membersCanManageServices ?? false,
+		budgetAlertsEnabled: row?.budgetAlertsEnabled ?? false,
+		budgetAlertThresholdPct: row?.budgetAlertThresholdPct ?? 80,
+		budgetAlertEmail: row?.budgetAlertEmail ?? null
 	};
 }
 
@@ -370,6 +376,17 @@ export async function updateOrgSettings(orgId: string, input: Partial<OrgSetting
 	}
 	if (input.membersCanManageServices !== undefined) {
 		set.membersCanManageServices = input.membersCanManageServices;
+	}
+	if (input.budgetAlertsEnabled !== undefined) {
+		set.budgetAlertsEnabled = input.budgetAlertsEnabled;
+	}
+	if (input.budgetAlertThresholdPct !== undefined) {
+		// clamp to a sane 1–100% band; out-of-range or NaN falls back to 80
+		const pct = Math.floor(input.budgetAlertThresholdPct);
+		set.budgetAlertThresholdPct = Number.isFinite(pct) ? Math.min(100, Math.max(1, pct)) : 80;
+	}
+	if (input.budgetAlertEmail !== undefined) {
+		set.budgetAlertEmail = input.budgetAlertEmail?.trim() || null;
 	}
 	await db
 		.insert(orgSettings)

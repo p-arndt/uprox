@@ -18,6 +18,7 @@ import {
 import { audit } from '$lib/server/audit';
 import { checkRateLimit } from '$lib/server/ratelimit';
 import { checkBudget, reserve } from '$lib/server/budget';
+import { maybeSendBudgetAlert } from '$lib/server/budget-alerts';
 import { cacheKeyFor, getCached, putCached, isDeterministicRequest } from '$lib/server/cache';
 
 /** OpenAI-style error envelope, so OpenAI SDK clients parse it correctly. */
@@ -373,7 +374,21 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	// the completion/error paths below can call it unconditionally.
 	let releaseReservation: () => void = () => {};
 	if (token.policy) {
+		const hasBudget =
+			Number(token.policy.dailyBudgetUsd ?? 0) > 0 ||
+			Number(token.policy.monthlyBudgetUsd ?? 0) > 0;
 		const budget = await checkBudget(token.serviceId, token.policy);
+		// Fire-and-forget soft-alert evaluation (org-wide threshold; emails admins
+		// once per window/level). Runs on allow and deny alike so an over-budget
+		// request still triggers the "over" alert. Never blocks the request.
+		if (hasBudget) {
+			void maybeSendBudgetAlert(
+				token.organizationId,
+				token.serviceId,
+				token.serviceName,
+				token.policy
+			);
+		}
 		if (!budget.ok) {
 			await audit({
 				organizationId: token.organizationId,
@@ -389,9 +404,6 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 			});
 			return gatewayError(402, `Request denied: ${budget.reason}`, 'insufficient_quota');
 		}
-		const hasBudget =
-			Number(token.policy.dailyBudgetUsd ?? 0) > 0 ||
-			Number(token.policy.monthlyBudgetUsd ?? 0) > 0;
 		if (hasBudget) releaseReservation = reserve(token.serviceId);
 	}
 

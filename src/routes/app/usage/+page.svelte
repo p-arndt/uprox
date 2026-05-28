@@ -49,7 +49,7 @@
 		</div>
 	</div>
 
-	<BudgetAlert statuses={data.budgets} />
+	<BudgetAlert statuses={data.budgets} threshold={data.budgetThreshold} />
 
 	{#if !hasTraffic}
 		<Card.Root>

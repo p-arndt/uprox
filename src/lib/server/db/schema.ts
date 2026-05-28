@@ -199,11 +199,43 @@ export const orgSettings = pgTable('org_settings', {
 	// may perform the corresponding action. Default off = members are read-only.
 	membersCanManageTokens: boolean('members_can_manage_tokens').notNull().default(false),
 	membersCanManageServices: boolean('members_can_manage_services').notNull().default(false),
+	// budget alerts: when on, a service crossing the warn threshold (or its
+	// ceiling) emails the org's owners/admins (plus budgetAlertEmail if set).
+	// Opt-in because it sends mail; threshold is a percentage of the ceiling.
+	budgetAlertsEnabled: boolean('budget_alerts_enabled').notNull().default(false),
+	budgetAlertThresholdPct: integer('budget_alert_threshold_pct').notNull().default(80),
+	// optional extra recipient (e.g. a team distribution list)
+	budgetAlertEmail: text('budget_alert_email'),
 	updatedAt: timestamp('updated_at')
 		.defaultNow()
 		.$onUpdate(() => new Date())
 		.notNull()
 });
+
+/**
+ * Dedup ledger for budget alerts: one row per (service, window) records the
+ * highest alert level already emailed for the *current* spend window. The
+ * gateway evaluates alerts on every budgeted request, so without this a service
+ * past its threshold would email on every call. We re-alert only when the window
+ * rolls over (windowStart changes) or the level escalates (warn → over). See
+ * budget-alerts.ts.
+ */
+export const budgetAlertState = pgTable(
+	'budget_alert_state',
+	{
+		serviceId: uuid('service_id')
+			.notNull()
+			.references(() => service.id, { onDelete: 'cascade' }),
+		// "daily" | "monthly"
+		window: text('window').notNull(),
+		// highest level emailed this window: "warn" | "over"
+		lastLevel: text('last_level').notNull(),
+		// start of the spend window the alert was sent for (UTC)
+		windowStart: timestamp('window_start').notNull(),
+		sentAt: timestamp('sent_at').defaultNow().notNull()
+	},
+	(t) => [uniqueIndex('budget_alert_state_service_window_uidx').on(t.serviceId, t.window)]
+);
 
 /**
  * Per-model token pricing used to estimate request cost for spend tracking and

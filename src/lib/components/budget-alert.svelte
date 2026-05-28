@@ -4,9 +4,11 @@
 	import { formatUsd } from '$lib/format';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 
-	let { statuses }: { statuses: BudgetStatus[] } = $props();
+	// `threshold` (0–1) defaults to the shared warn threshold; pages pass the
+	// org's configured budget-alert threshold so the banner matches the emails.
+	let { statuses, threshold }: { statuses: BudgetStatus[]; threshold?: number } = $props();
 
-	const warnings = $derived(budgetWarnings(statuses));
+	const warnings = $derived(budgetWarnings(statuses, threshold));
 	const anyOver = $derived(warnings.some((w) => w.level === 'over'));
 </script>
 

@@ -30,5 +30,25 @@ export const actions: Actions = {
 			membersCanManageServices
 		});
 		return { success: true };
+	},
+	updateBudgetAlerts: async (event) => {
+		const { organizationId } = await requirePermission(event, 'settings:manage');
+		const data = await event.request.formData();
+		const isOn = (v: FormDataEntryValue | null) => v === 'on' || v === 'true';
+		const enabled = isOn(data.get('budgetAlertsEnabled'));
+		const pct = Number(data.get('budgetAlertThresholdPct'));
+		if (enabled && (!Number.isFinite(pct) || pct < 1 || pct > 100)) {
+			return fail(400, { message: 'Alert threshold must be between 1 and 100' });
+		}
+		const email = String(data.get('budgetAlertEmail') ?? '').trim();
+		if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+			return fail(400, { message: 'Notification email is not a valid address' });
+		}
+		await updateOrgSettings(organizationId, {
+			budgetAlertsEnabled: enabled,
+			budgetAlertThresholdPct: pct,
+			budgetAlertEmail: email
+		});
+		return { success: true };
 	}
 };
