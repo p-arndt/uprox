@@ -24,6 +24,23 @@ export function relativeTime(value: Date | string | null | undefined): string {
 	return formatDateTime(d);
 }
 
+/**
+ * Format an LLM token count compactly (e.g. 1.2M, 47.3K, 812). LLM usage adds
+ * up fast — tens of millions of tokens are routine for a busy service — so the
+ * raw "12,485,201" reads as wall-of-digits in tight UI. Falls back to a plain
+ * locale string below 10k where precision is still useful.
+ */
+export function formatTokens(value: number | string | null | undefined): string {
+	const n = typeof value === 'string' ? Number(value) : (value ?? 0);
+	if (!Number.isFinite(n) || n === 0) return '0';
+	const abs = Math.abs(n);
+	if (abs < 10_000) return n.toLocaleString();
+	return n.toLocaleString(undefined, {
+		notation: 'compact',
+		maximumFractionDigits: 1
+	});
+}
+
 export function formatUsd(value: number | string | null | undefined): string {
 	const n = typeof value === 'string' ? Number(value) : (value ?? 0);
 	const abs = Math.abs(n || 0);
