@@ -101,12 +101,15 @@ The same gateway is reachable under URLs the Azure OpenAI SDK builds, so you can
 point an existing Azure-style client at uprox by swapping its `AZURE_OPENAI_ENDPOINT`
 for your uprox base URL and its `AZURE_OPENAI_API_KEY` for an `uprox_live_…` token.
 
-| Endpoint                                                  | Equivalent of                     |
-| --------------------------------------------------------- | --------------------------------- |
-| `POST /openai/deployments/{deployment}/chat/completions`  | legacy Azure URL (model from URL) |
-| `POST /openai/deployments/{deployment}/embeddings`        | legacy Azure URL                  |
-| `POST /openai/deployments/{deployment}/responses`         | legacy Azure URL                  |
-| `POST /openai/v1/chat/completions` (and `/embeddings`, …) | newer Azure OpenAI v1 surface     |
+| Endpoint                                                  | Equivalent of                                       |
+| --------------------------------------------------------- | --------------------------------------------------- |
+| `POST /openai/deployments/{deployment}/chat/completions`  | legacy per-deployment Azure URL (model from URL)    |
+| `POST /openai/deployments/{deployment}/embeddings`        | legacy per-deployment Azure URL                     |
+| `POST /openai/deployments/{deployment}/responses`         | legacy per-deployment Azure URL                     |
+| `POST /openai/responses`                                  | Responses API on Azure (model from body)            |
+| `POST /openai/chat/completions`, `POST /openai/embeddings`| Azure flat URLs (model from body)                   |
+| `GET  /openai/models`                                     | Azure model listing                                 |
+| `POST /openai/v1/chat/completions` (and `/embeddings`, …) | newer Azure OpenAI v1 surface (`api_version=preview`) |
 
 The `api-version` query string is accepted and ignored. Model routing is identical
 to `/v1/*` — the deployment name acts as the model id, and uprox proxies to Azure
