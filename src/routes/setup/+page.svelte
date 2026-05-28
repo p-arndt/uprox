@@ -119,6 +119,7 @@
 			{#if providers.email}
 				<form
 					method="post"
+					action="?/signUp"
 					use:enhance={() => {
 						loading = true;
 						return async ({ update }) => {

@@ -18,7 +18,7 @@ export const load: PageServerLoad = (event) => {
 };
 
 export const actions: Actions = {
-	default: async (event) => {
+	signUp: async (event) => {
 		const data = await event.request.formData();
 		const name = data.get('name')?.toString().trim() ?? '';
 		const email = data.get('email')?.toString().trim() ?? '';
