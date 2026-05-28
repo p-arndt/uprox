@@ -1,31 +1,31 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { member, user, invitation } from '$lib/server/db/schema';
+import { user, invitation } from '$lib/server/db/schema';
 
 /**
- * List an organization's members joined with their user profile, oldest first.
+ * List all instance members (users), oldest first. Both `id` and `userId` map
+ * to the user's id so callers that access either field keep working.
  */
-export function listMembers(orgId: string) {
+export function listMembers() {
 	return db
 		.select({
-			id: member.id,
-			userId: member.userId,
+			id: user.id,
+			userId: user.id,
 			name: user.name,
 			email: user.email,
-			role: member.role,
-			createdAt: member.createdAt
+			role: user.role,
+			createdAt: user.createdAt
 		})
-		.from(member)
-		.innerJoin(user, eq(user.id, member.userId))
-		.where(eq(member.organizationId, orgId))
-		.orderBy(member.createdAt);
+		.from(user)
+		.orderBy(user.createdAt);
 }
 
 /**
- * List an organization's outstanding (status = 'pending') invitations,
- * newest first.
+ * List outstanding (status = 'pending') invitations for the instance, newest
+ * first. There is no organization scope — invitations provision instance-wide
+ * user accounts.
  */
-export function listPendingInvitations(orgId: string) {
+export function listPendingInvitations() {
 	return db
 		.select({
 			id: invitation.id,
@@ -36,6 +36,6 @@ export function listPendingInvitations(orgId: string) {
 			createdAt: invitation.createdAt
 		})
 		.from(invitation)
-		.where(and(eq(invitation.organizationId, orgId), eq(invitation.status, 'pending')))
+		.where(eq(invitation.status, 'pending'))
 		.orderBy(desc(invitation.createdAt));
 }

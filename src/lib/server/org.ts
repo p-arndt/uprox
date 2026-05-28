@@ -1,42 +1,32 @@
 import { error, redirect, type RequestEvent } from '@sveltejs/kit';
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { member } from '$lib/server/db/schema';
+import { user } from '$lib/server/db/schema';
 import { can, type Capability } from '$lib/permissions';
-import { getOrgSettings } from '$lib/server/data';
+import { getSettings } from '$lib/server/data';
 
+/**
+ * Access context for the current request. The whole self-hosted instance is a
+ * single workspace, so there is no organization to resolve — a user's
+ * instance-wide `role` is the entire access model.
+ */
 export interface OrgContext {
 	userId: string;
-	organizationId: string;
 	role: string;
 }
 
 /**
- * Resolve the caller's active organization and membership role.
- *
- * Prefers the session's `activeOrganizationId` (set by better-auth's
- * organization plugin) and falls back to the user's first membership.
- * Returns null when the user is signed out or has no membership.
+ * Resolve the signed-in user and their instance role. Returns null when the
+ * user is signed out or their account no longer exists.
  */
 export async function getOrgContext(event: RequestEvent): Promise<OrgContext | null> {
-	const user = event.locals.user;
-	if (!user) return null;
+	const u = event.locals.user;
+	if (!u) return null;
 
-	const activeId = (event.locals.session as { activeOrganizationId?: string } | undefined)
-		?.activeOrganizationId;
+	const [row] = await db.select({ role: user.role }).from(user).where(eq(user.id, u.id)).limit(1);
 
-	const where = activeId
-		? and(eq(member.userId, user.id), eq(member.organizationId, activeId))
-		: eq(member.userId, user.id);
-
-	const [m] = await db
-		.select({ organizationId: member.organizationId, role: member.role })
-		.from(member)
-		.where(where)
-		.limit(1);
-
-	if (!m) return null;
-	return { userId: user.id, organizationId: m.organizationId, role: m.role };
+	if (!row) return null;
+	return { userId: u.id, role: row.role };
 }
 
 /** Like {@link getOrgContext} but redirects to /login when signed out. */
@@ -54,26 +44,23 @@ export async function requireOrgApi(event: RequestEvent): Promise<OrgContext> {
 }
 
 /**
- * Require the caller to hold a capability in their active org. Resolves the
- * org context, checks the role against the capability matrix (taking org
- * member-permission settings into account), and throws 401/403 otherwise.
+ * Require the caller to hold a capability. Resolves the access context, checks
+ * the role against the capability matrix (taking the member-permission settings
+ * into account), and throws 401/403 otherwise.
  *
  * Use this in mutating API routes and page actions; use {@link can} in load
  * functions / components to show or hide the corresponding controls.
  */
-export async function requirePermission(
-	event: RequestEvent,
-	cap: Capability
-): Promise<OrgContext> {
+export async function requirePermission(event: RequestEvent, cap: Capability): Promise<OrgContext> {
 	const ctx = await requireOrgApi(event);
-	const settings = await getOrgSettings(ctx.organizationId);
+	const settings = await getSettings();
 	if (!can(ctx.role, cap, settings)) {
 		throw error(403, 'You do not have permission to perform this action');
 	}
 	return ctx;
 }
 
-/** Require the caller's role to be one of `roles` in their active org. */
+/** Require the caller's role to be one of `roles`. */
 export async function requireRole(
 	event: RequestEvent,
 	roles: readonly string[]

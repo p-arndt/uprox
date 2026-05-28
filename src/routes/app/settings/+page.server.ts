@@ -1,38 +1,38 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
-import { getOrgSettings, updateOrgSettings } from '$lib/server/data';
+import { getSettings, updateSettings } from '$lib/server/data';
 
 export const load: PageServerLoad = async (event) => {
-	const { organizationId } = await requireOrg(event);
-	return { settings: await getOrgSettings(organizationId) };
+	await requireOrg(event);
+	return { settings: await getSettings() };
 };
 
 export const actions: Actions = {
 	updateCache: async (event) => {
-		const { organizationId } = await requirePermission(event, 'settings:manage');
+		await requirePermission(event, 'settings:manage');
 		const data = await event.request.formData();
 		const ttl = Number(data.get('cacheTtlSeconds'));
 		if (!Number.isFinite(ttl) || ttl < 0) {
 			return fail(400, { message: 'Cache TTL must be a non-negative number' });
 		}
-		await updateOrgSettings(organizationId, { cacheTtlSeconds: ttl });
+		await updateSettings({ cacheTtlSeconds: ttl });
 		return { success: true };
 	},
 	updateMemberPermissions: async (event) => {
-		const { organizationId } = await requirePermission(event, 'settings:manage');
+		await requirePermission(event, 'settings:manage');
 		const data = await event.request.formData();
 		const isOn = (v: FormDataEntryValue | null) => v === 'on' || v === 'true';
 		const membersCanManageTokens = isOn(data.get('membersCanManageTokens'));
 		const membersCanManageServices = isOn(data.get('membersCanManageServices'));
-		await updateOrgSettings(organizationId, {
+		await updateSettings({
 			membersCanManageTokens,
 			membersCanManageServices
 		});
 		return { success: true };
 	},
 	updateBudgetAlerts: async (event) => {
-		const { organizationId } = await requirePermission(event, 'settings:manage');
+		await requirePermission(event, 'settings:manage');
 		const data = await event.request.formData();
 		const isOn = (v: FormDataEntryValue | null) => v === 'on' || v === 'true';
 		const enabled = isOn(data.get('budgetAlertsEnabled'));
@@ -44,7 +44,7 @@ export const actions: Actions = {
 		if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
 			return fail(400, { message: 'Notification email is not a valid address' });
 		}
-		await updateOrgSettings(organizationId, {
+		await updateSettings({
 			budgetAlertsEnabled: enabled,
 			budgetAlertThresholdPct: pct,
 			budgetAlertEmail: email

@@ -6,7 +6,7 @@ import {
 	providerSecret,
 	policy,
 	auditLog,
-	orgSettings
+	settings
 } from '$lib/server/db/schema';
 import { encrypt } from '$lib/server/crypto';
 import { issueToken } from '$lib/server/tokens';
@@ -15,22 +15,23 @@ import type { BudgetStatus } from '$lib/budget';
 
 /* ----------------------------------- services ----------------------------------- */
 
-export function listServices(orgId: string) {
+export function listServices() {
 	return db
 		.select()
 		.from(service)
-		.where(and(eq(service.organizationId, orgId), isNull(service.deletedAt)))
+		.where(isNull(service.deletedAt))
 		.orderBy(desc(service.createdAt));
 }
 
-export async function createService(
-	orgId: string,
-	input: { name: string; type?: string; description?: string; policyId?: string | null }
-) {
+export async function createService(input: {
+	name: string;
+	type?: string;
+	description?: string;
+	policyId?: string | null;
+}) {
 	const [row] = await db
 		.insert(service)
 		.values({
-			organizationId: orgId,
 			name: input.name,
 			type: input.type || 'app',
 			description: input.description || null,
@@ -41,14 +42,13 @@ export async function createService(
 }
 
 export async function updateService(
-	orgId: string,
 	id: string,
 	patch: { name?: string; type?: string; description?: string | null; policyId?: string | null }
 ) {
 	const [row] = await db
 		.update(service)
 		.set(patch)
-		.where(and(eq(service.id, id), eq(service.organizationId, orgId), isNull(service.deletedAt)))
+		.where(and(eq(service.id, id), isNull(service.deletedAt)))
 		.returning();
 	return row ?? null;
 }
@@ -60,12 +60,12 @@ export async function updateService(
  * longer authenticate — matching the old hard-delete-cascade behaviour where the
  * tokens disappeared. Already-deleted services are left untouched.
  */
-export async function deleteService(orgId: string, id: string) {
+export async function deleteService(id: string) {
 	await db.transaction(async (tx) => {
 		const [row] = await tx
 			.update(service)
 			.set({ deletedAt: new Date() })
-			.where(and(eq(service.id, id), eq(service.organizationId, orgId), isNull(service.deletedAt)))
+			.where(and(eq(service.id, id), isNull(service.deletedAt)))
 			.returning({ id: service.id });
 		if (!row) return;
 		await tx
@@ -77,7 +77,7 @@ export async function deleteService(orgId: string, id: string) {
 
 /* ------------------------------------ tokens ------------------------------------ */
 
-export function listTokens(orgId: string) {
+export function listTokens() {
 	return (
 		db
 			.select({
@@ -95,7 +95,7 @@ export function listTokens(orgId: string) {
 			.from(machineToken)
 			.innerJoin(service, eq(service.id, machineToken.serviceId))
 			// hide tokens belonging to retired (soft-deleted) services
-			.where(and(eq(machineToken.organizationId, orgId), isNull(service.deletedAt)))
+			.where(isNull(service.deletedAt))
 			.orderBy(desc(machineToken.createdAt))
 	);
 }
@@ -105,21 +105,14 @@ export function listTokens(orgId: string) {
  * which is NOT stored anywhere — surface it to the user immediately.
  */
 export async function createToken(
-	orgId: string,
 	userId: string,
 	input: { serviceId: string; name: string; scopes?: string[]; expiresAt?: Date | null }
 ) {
-	// ensure the service belongs to this org and isn't retired
+	// ensure the service exists and isn't retired
 	const [svc] = await db
 		.select()
 		.from(service)
-		.where(
-			and(
-				eq(service.id, input.serviceId),
-				eq(service.organizationId, orgId),
-				isNull(service.deletedAt)
-			)
-		)
+		.where(and(eq(service.id, input.serviceId), isNull(service.deletedAt)))
 		.limit(1);
 	if (!svc) throw new Error('Service not found');
 
@@ -127,7 +120,6 @@ export async function createToken(
 	const [row] = await db
 		.insert(machineToken)
 		.values({
-			organizationId: orgId,
 			serviceId: input.serviceId,
 			name: input.name,
 			display: issued.display,
@@ -139,7 +131,6 @@ export async function createToken(
 		.returning();
 
 	await audit({
-		organizationId: orgId,
 		action: 'token.create',
 		status: 'ok',
 		serviceId: input.serviceId,
@@ -150,15 +141,14 @@ export async function createToken(
 	return { token: row, plaintext: issued.plaintext };
 }
 
-export async function revokeToken(orgId: string, id: string) {
+export async function revokeToken(id: string) {
 	const [row] = await db
 		.update(machineToken)
 		.set({ revokedAt: new Date() })
-		.where(and(eq(machineToken.id, id), eq(machineToken.organizationId, orgId)))
+		.where(eq(machineToken.id, id))
 		.returning();
 	if (row) {
 		await audit({
-			organizationId: orgId,
 			action: 'token.revoke',
 			status: 'ok',
 			serviceId: row.serviceId,
@@ -171,7 +161,7 @@ export async function revokeToken(orgId: string, id: string) {
 
 /* ------------------------------- provider secrets ------------------------------- */
 
-export function listProviderSecrets(orgId: string) {
+export function listProviderSecrets() {
 	return db
 		.select({
 			id: providerSecret.id,
@@ -183,12 +173,10 @@ export function listProviderSecrets(orgId: string) {
 			updatedAt: providerSecret.updatedAt
 		})
 		.from(providerSecret)
-		.where(eq(providerSecret.organizationId, orgId))
 		.orderBy(providerSecret.provider);
 }
 
 export async function upsertProviderSecret(
-	orgId: string,
 	userId: string,
 	input: { provider: string; secret: string; label?: string; baseUrl?: string }
 ) {
@@ -197,7 +185,6 @@ export async function upsertProviderSecret(
 	const [row] = await db
 		.insert(providerSecret)
 		.values({
-			organizationId: orgId,
 			provider: input.provider,
 			label: input.label || null,
 			baseUrl,
@@ -206,7 +193,7 @@ export async function upsertProviderSecret(
 			createdByUserId: userId
 		})
 		.onConflictDoUpdate({
-			target: [providerSecret.organizationId, providerSecret.provider],
+			target: providerSecret.provider,
 			set: {
 				label: input.label || null,
 				baseUrl,
@@ -218,7 +205,6 @@ export async function upsertProviderSecret(
 		.returning({ id: providerSecret.id, provider: providerSecret.provider });
 
 	await audit({
-		organizationId: orgId,
 		action: 'provider.upsert',
 		status: 'ok',
 		provider: input.provider,
@@ -228,7 +214,6 @@ export async function upsertProviderSecret(
 }
 
 export async function updateProviderSecret(
-	orgId: string,
 	id: string,
 	input: { label?: string | null; baseUrl?: string | null }
 ) {
@@ -239,11 +224,10 @@ export async function updateProviderSecret(
 			baseUrl: input.baseUrl?.trim() || null,
 			updatedAt: new Date()
 		})
-		.where(and(eq(providerSecret.id, id), eq(providerSecret.organizationId, orgId)))
+		.where(eq(providerSecret.id, id))
 		.returning({ id: providerSecret.id, provider: providerSecret.provider });
 	if (row) {
 		await audit({
-			organizationId: orgId,
 			action: 'provider.update',
 			status: 'ok',
 			provider: row.provider,
@@ -253,41 +237,31 @@ export async function updateProviderSecret(
 	return row ?? null;
 }
 
-export async function deleteProviderSecret(orgId: string, id: string) {
-	await db
-		.delete(providerSecret)
-		.where(and(eq(providerSecret.id, id), eq(providerSecret.organizationId, orgId)));
+export async function deleteProviderSecret(id: string) {
+	await db.delete(providerSecret).where(eq(providerSecret.id, id));
 }
 
 /* ----------------------------------- policies ----------------------------------- */
 
-export function listPolicies(orgId: string) {
-	return db
-		.select()
-		.from(policy)
-		.where(eq(policy.organizationId, orgId))
-		.orderBy(desc(policy.createdAt));
+export function listPolicies() {
+	return db.select().from(policy).orderBy(desc(policy.createdAt));
 }
 
-export async function createPolicy(
-	orgId: string,
-	input: {
-		name: string;
-		allowedProviders?: string[];
-		allowedModels?: string[];
-		// "openai" | "azure" | null — preferred backend for the shared model namespace
-		preferredProvider?: string | null;
-		rateLimitPerMinute?: number;
-		dailyBudgetUsd?: number;
-		monthlyBudgetUsd?: number;
-		// null = inherit org default, 0 = off, >0 = override
-		cacheTtlSeconds?: number | null;
-	}
-) {
+export async function createPolicy(input: {
+	name: string;
+	allowedProviders?: string[];
+	allowedModels?: string[];
+	// "openai" | "azure" | null — preferred backend for the shared model namespace
+	preferredProvider?: string | null;
+	rateLimitPerMinute?: number;
+	dailyBudgetUsd?: number;
+	monthlyBudgetUsd?: number;
+	// null = inherit instance default, 0 = off, >0 = override
+	cacheTtlSeconds?: number | null;
+}) {
 	const [row] = await db
 		.insert(policy)
 		.values({
-			organizationId: orgId,
 			name: input.name,
 			allowedProviders: input.allowedProviders ?? [],
 			allowedModels: input.allowedModels ?? [],
@@ -302,7 +276,6 @@ export async function createPolicy(
 }
 
 export async function updatePolicy(
-	orgId: string,
 	id: string,
 	patch: {
 		name?: string;
@@ -324,18 +297,18 @@ export async function updatePolicy(
 			...(dailyBudgetUsd !== undefined ? { dailyBudgetUsd: String(dailyBudgetUsd) } : {}),
 			...(monthlyBudgetUsd !== undefined ? { monthlyBudgetUsd: String(monthlyBudgetUsd) } : {})
 		})
-		.where(and(eq(policy.id, id), eq(policy.organizationId, orgId)))
+		.where(eq(policy.id, id))
 		.returning();
 	return row ?? null;
 }
 
-export async function deletePolicy(orgId: string, id: string) {
-	await db.delete(policy).where(and(eq(policy.id, id), eq(policy.organizationId, orgId)));
+export async function deletePolicy(id: string) {
+	await db.delete(policy).where(eq(policy.id, id));
 }
 
-/* -------------------------------- org settings ---------------------------------- */
+/* -------------------------------- instance settings ---------------------------------- */
 
-export interface OrgSettings {
+export interface Settings {
 	cacheTtlSeconds: number;
 	membersCanManageTokens: boolean;
 	membersCanManageServices: boolean;
@@ -344,13 +317,9 @@ export interface OrgSettings {
 	budgetAlertEmail: string | null;
 }
 
-/** Read an org's settings, falling back to defaults when no row exists yet. */
-export async function getOrgSettings(orgId: string): Promise<OrgSettings> {
-	const [row] = await db
-		.select()
-		.from(orgSettings)
-		.where(eq(orgSettings.organizationId, orgId))
-		.limit(1);
+/** Read instance settings, falling back to defaults when no row exists yet. */
+export async function getSettings(): Promise<Settings> {
+	const [row] = await db.select().from(settings).where(eq(settings.id, 1)).limit(1);
 	return {
 		cacheTtlSeconds: row?.cacheTtlSeconds ?? 0,
 		membersCanManageTokens: row?.membersCanManageTokens ?? false,
@@ -362,12 +331,12 @@ export async function getOrgSettings(orgId: string): Promise<OrgSettings> {
 }
 
 /**
- * Upsert an org's gateway settings. Only the fields present in `input` are
+ * Upsert instance gateway settings. Only the fields present in `input` are
  * written, so callers can update the cache TTL and the member-permission
  * toggles independently.
  */
-export async function updateOrgSettings(orgId: string, input: Partial<OrgSettings>) {
-	const set: Partial<typeof orgSettings.$inferInsert> = {};
+export async function updateSettings(input: Partial<Settings>) {
+	const set: Partial<typeof settings.$inferInsert> = {};
 	if (input.cacheTtlSeconds !== undefined) {
 		set.cacheTtlSeconds = Math.max(0, Math.floor(input.cacheTtlSeconds) || 0);
 	}
@@ -389,17 +358,17 @@ export async function updateOrgSettings(orgId: string, input: Partial<OrgSetting
 		set.budgetAlertEmail = input.budgetAlertEmail?.trim() || null;
 	}
 	await db
-		.insert(orgSettings)
-		.values({ organizationId: orgId, ...set })
+		.insert(settings)
+		.values({ id: 1, ...set })
 		.onConflictDoUpdate({
-			target: orgSettings.organizationId,
+			target: settings.id,
 			set
 		});
 }
 
 /* ------------------------------------ audit ------------------------------------- */
 
-export function listAudit(orgId: string, limit = 100) {
+export function listAudit(limit = 100) {
 	return db
 		.select({
 			id: auditLog.id,
@@ -418,29 +387,24 @@ export function listAudit(orgId: string, limit = 100) {
 		})
 		.from(auditLog)
 		.leftJoin(service, eq(service.id, auditLog.serviceId))
-		.where(eq(auditLog.organizationId, orgId))
 		.orderBy(desc(auditLog.createdAt))
 		.limit(limit);
 }
 
 /** Aggregate dashboard stats for the overview page. */
-export async function orgStats(orgId: string) {
+export async function orgStats() {
 	const [counts] = await db
 		.select({
 			services: sql<number>`count(distinct ${service.id})`
 		})
 		.from(service)
-		.where(and(eq(service.organizationId, orgId), isNull(service.deletedAt)));
+		.where(isNull(service.deletedAt));
 
 	const [tokenCount] = await db
 		.select({ active: sql<number>`count(*) filter (where ${machineToken.revokedAt} is null)` })
-		.from(machineToken)
-		.where(eq(machineToken.organizationId, orgId));
+		.from(machineToken);
 
-	const [providerCount] = await db
-		.select({ count: sql<number>`count(*)` })
-		.from(providerSecret)
-		.where(eq(providerSecret.organizationId, orgId));
+	const [providerCount] = await db.select({ count: sql<number>`count(*)` }).from(providerSecret);
 
 	const [reqs] = await db
 		.select({
@@ -455,7 +419,7 @@ export async function orgStats(orgId: string) {
 			providerCachedTokens: sql<number>`coalesce(sum(${auditLog.providerCachedTokens}), 0)`
 		})
 		.from(auditLog)
-		.where(and(eq(auditLog.organizationId, orgId), sql`${auditLog.action} like 'gateway.%'`));
+		.where(sql`${auditLog.action} like 'gateway.%'`);
 
 	const cacheHits = Number(reqs?.cacheHits ?? 0);
 	const total = Number(reqs?.total ?? 0);
@@ -488,7 +452,7 @@ export interface DailyStat {
  * Per-day gateway traffic for the last `days` days, including empty days so the
  * overview sparkline keeps a steady width. Returned oldest-first.
  */
-export async function orgDailyStats(orgId: string, days = 14): Promise<DailyStat[]> {
+export async function orgDailyStats(days = 14): Promise<DailyStat[]> {
 	const rows = await db.execute<{
 		day: string;
 		requests: number;
@@ -507,7 +471,6 @@ export async function orgDailyStats(orgId: string, days = 14): Promise<DailyStat
 		) as d(day)
 		left join ${auditLog}
 			on ${auditLog.createdAt}::date = d.day::date
-			and ${auditLog.organizationId} = ${orgId}
 			and ${auditLog.action} like 'gateway.%'
 		group by d.day
 		order by d.day asc
@@ -540,7 +503,7 @@ export interface ModelUsage {
  * Gateway traffic grouped by model over the last `days` days, busiest first.
  * Powers the "usage by model" breakdown on the usage page.
  */
-export async function orgUsageByModel(orgId: string, days = 30, limit = 50): Promise<ModelUsage[]> {
+export async function orgUsageByModel(days = 30, limit = 50): Promise<ModelUsage[]> {
 	const rows = await db
 		.select({
 			model: auditLog.model,
@@ -553,7 +516,6 @@ export async function orgUsageByModel(orgId: string, days = 30, limit = 50): Pro
 		.from(auditLog)
 		.where(
 			and(
-				eq(auditLog.organizationId, orgId),
 				sql`${auditLog.action} like 'gateway.%'`,
 				sql`${auditLog.model} is not null`,
 				gte(auditLog.createdAt, windowStart(days))
@@ -584,7 +546,7 @@ export interface ServiceUsage {
  * Gateway traffic grouped by the calling service over the last `days` days,
  * busiest first. Requests whose service was since deleted group under a null id.
  */
-export async function orgUsageByService(orgId: string, days = 30): Promise<ServiceUsage[]> {
+export async function orgUsageByService(days = 30): Promise<ServiceUsage[]> {
 	const rows = await db
 		.select({
 			serviceId: auditLog.serviceId,
@@ -596,11 +558,7 @@ export async function orgUsageByService(orgId: string, days = 30): Promise<Servi
 		.from(auditLog)
 		.leftJoin(service, eq(service.id, auditLog.serviceId))
 		.where(
-			and(
-				eq(auditLog.organizationId, orgId),
-				sql`${auditLog.action} like 'gateway.%'`,
-				gte(auditLog.createdAt, windowStart(days))
-			)
+			and(sql`${auditLog.action} like 'gateway.%'`, gte(auditLog.createdAt, windowStart(days)))
 		)
 		.groupBy(auditLog.serviceId)
 		.orderBy(desc(sql`count(*)`));
@@ -623,7 +581,7 @@ export async function orgUsageByService(orgId: string, days = 30): Promise<Servi
  * matches enforcement exactly. Only services actually carrying a ceiling are
  * returned; classifying warn/over from these numbers is left to `budgetWarnings`.
  */
-export async function orgBudgetStatus(orgId: string): Promise<BudgetStatus[]> {
+export async function orgBudgetStatus(): Promise<BudgetStatus[]> {
 	const now = new Date();
 	const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 	const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
@@ -656,7 +614,6 @@ export async function orgBudgetStatus(orgId: string): Promise<BudgetStatus[]> {
 		)
 		.where(
 			and(
-				eq(service.organizationId, orgId),
 				isNull(service.deletedAt),
 				sql`(${policy.dailyBudgetUsd} > 0 or ${policy.monthlyBudgetUsd} > 0)`
 			)

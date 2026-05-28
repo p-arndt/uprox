@@ -95,9 +95,7 @@
 				</div>
 				<div class="grid flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
 					<span class="truncate text-sm font-semibold">uprox</span>
-					<span class="truncate text-xs text-muted-foreground"
-						>{data.org?.name ?? 'Organization'}</span
-					>
+					<span class="truncate text-xs text-muted-foreground">Workspace</span>
 				</div>
 			</div>
 		</Sidebar.Header>

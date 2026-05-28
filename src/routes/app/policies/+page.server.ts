@@ -5,16 +5,16 @@ import { listPolicies, createPolicy, deletePolicy, updatePolicy } from '$lib/ser
 import { PROVIDERS } from '$lib/server/providers';
 
 export const load: PageServerLoad = async (event) => {
-	const { organizationId } = await requireOrg(event);
+	await requireOrg(event);
 	return {
-		policies: await listPolicies(organizationId),
+		policies: await listPolicies(),
 		providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label }))
 	};
 };
 
 export const actions: Actions = {
 	create: async (event) => {
-		const { organizationId } = await requirePermission(event, 'policies:manage');
+		await requirePermission(event, 'policies:manage');
 		const data = await event.request.formData();
 		const name = data.get('name')?.toString().trim();
 		if (!name) return fail(400, { message: 'Name is required' });
@@ -30,7 +30,7 @@ export const actions: Actions = {
 		// blank = no preference (defaults to OpenAI when both backends are configured)
 		const preferredProvider = data.get('preferredProvider')?.toString() || null;
 
-		await createPolicy(organizationId, {
+		await createPolicy({
 			name,
 			allowedProviders,
 			allowedModels,
@@ -43,7 +43,7 @@ export const actions: Actions = {
 		return { success: true };
 	},
 	update: async (event) => {
-		const { organizationId } = await requirePermission(event, 'policies:manage');
+		await requirePermission(event, 'policies:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
 		const name = data.get('name')?.toString().trim();
@@ -60,7 +60,7 @@ export const actions: Actions = {
 		// blank = no preference (defaults to OpenAI when both backends are configured)
 		const preferredProvider = data.get('preferredProvider')?.toString() || null;
 
-		await updatePolicy(organizationId, id!, {
+		await updatePolicy(id!, {
 			name,
 			allowedProviders,
 			allowedModels,
@@ -73,10 +73,10 @@ export const actions: Actions = {
 		return { success: true };
 	},
 	delete: async (event) => {
-		const { organizationId } = await requirePermission(event, 'policies:manage');
+		await requirePermission(event, 'policies:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
-		if (id) await deletePolicy(organizationId, id);
+		if (id) await deletePolicy(id);
 		return { success: true };
 	}
 };

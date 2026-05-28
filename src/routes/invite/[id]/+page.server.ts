@@ -2,6 +2,9 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { auth } from '$lib/server/auth';
 import { APIError } from 'better-auth/api';
+import { eq } from 'drizzle-orm';
+import { db } from '$lib/server/db';
+import { invitation, user } from '$lib/server/db/schema';
 import { getEnabledProviders, getOidcConfig, isEmailAuthEnabled } from '$lib/server/auth-config';
 
 /** Only allow internal, single-slash paths to prevent open redirects. */
@@ -10,41 +13,38 @@ function safeRedirect(target: string | null | undefined): string {
 	return '/app';
 }
 
+/** Fetch our own invitation row by id (the row id doubles as the invite token). */
+async function findInvitation(id: string) {
+	const [row] = await db.select().from(invitation).where(eq(invitation.id, id)).limit(1);
+	return row ?? null;
+}
+
 export const load: PageServerLoad = async (event) => {
-	let invitation;
-	try {
-		invitation = await auth.api.getInvitation({
-			query: { id: event.params.id },
-			headers: event.request.headers
-		});
-	} catch {
+	const inv = await findInvitation(event.params.id);
+
+	if (!inv) {
 		return { invalid: true, reason: 'This invitation could not be found.' };
 	}
 
-	if (!invitation) {
-		return { invalid: true, reason: 'This invitation could not be found.' };
-	}
-
-	if (invitation.status !== 'pending') {
+	if (inv.status !== 'pending') {
 		const reason =
-			invitation.status === 'accepted'
+			inv.status === 'accepted'
 				? 'This invitation has already been accepted.'
-				: invitation.status === 'canceled'
+				: inv.status === 'canceled'
 					? 'This invitation has been cancelled.'
 					: 'This invitation is no longer valid.';
 		return { invalid: true, reason };
 	}
 
-	if (invitation.expiresAt && new Date(invitation.expiresAt).getTime() < Date.now()) {
+	if (inv.expiresAt && new Date(inv.expiresAt).getTime() < Date.now()) {
 		return { invalid: true, reason: 'This invitation has expired.' };
 	}
 
 	return {
 		invitation: {
-			id: invitation.id,
-			email: invitation.email,
-			role: invitation.role,
-			organizationName: invitation.organizationName
+			id: inv.id,
+			email: inv.email,
+			role: inv.role
 		},
 		loggedIn: Boolean(event.locals.user),
 		userEmail: event.locals.user?.email ?? null,
@@ -55,51 +55,50 @@ export const load: PageServerLoad = async (event) => {
 
 /** Re-validate the invitation server-side; returns it or a fail() response. */
 async function loadValidInvitation(event: Parameters<Actions[string]>[0]) {
-	let invitation;
-	try {
-		invitation = await auth.api.getInvitation({
-			query: { id: event.params.id },
-			headers: event.request.headers
-		});
-	} catch {
-		return { error: fail(400, { message: 'This invitation could not be found.' }) };
-	}
-	if (!invitation || invitation.status !== 'pending') {
+	const inv = await findInvitation(event.params.id);
+	if (!inv || inv.status !== 'pending') {
 		return { error: fail(400, { message: 'This invitation is no longer valid.' }) };
 	}
-	if (invitation.expiresAt && new Date(invitation.expiresAt).getTime() < Date.now()) {
+	if (inv.expiresAt && new Date(inv.expiresAt).getTime() < Date.now()) {
 		return { error: fail(400, { message: 'This invitation has expired.' }) };
 	}
-	return { invitation };
+	return { invitation: inv };
 }
 
-/** Accept the invitation and best-effort set it as the active org. */
+/**
+ * Accept the invitation for the signed-in user: set their instance role and
+ * mark the invite accepted. Requires a logged-in user whose email matches the
+ * invited address. Never downgrades an existing owner.
+ */
 async function acceptAndRedirect(event: Parameters<Actions[string]>[0]) {
-	let organizationId: string | undefined;
-	try {
-		const result = await auth.api.acceptInvitation({
-			body: { invitationId: event.params.id },
-			headers: event.request.headers
-		});
-		organizationId = result?.invitation?.organizationId;
-	} catch (error) {
-		if (error instanceof APIError) {
-			return fail(400, { message: error.message || 'Could not accept invitation.' });
-		}
-		return fail(500, { message: 'Unexpected error accepting invitation.' });
+	const current = event.locals.user;
+	if (!current) {
+		return fail(401, { message: 'You must be signed in to accept this invitation.' });
 	}
 
-	// Best-effort: make the joined org the active one for this session.
-	if (organizationId) {
-		try {
-			await auth.api.setActiveOrganization({
-				body: { organizationId },
-				headers: event.request.headers
-			});
-		} catch {
-			// ignore — the dashboard will still resolve an active org.
-		}
+	const { invitation: inv, error } = await loadValidInvitation(event);
+	if (error) return error;
+
+	// Security: only the invited address may accept the invitation.
+	if (current.email.toLowerCase() !== inv.email.toLowerCase()) {
+		return fail(403, {
+			message: 'This invitation was sent to a different email address.'
+		});
 	}
+
+	// Set the user's instance role to the invited role, but never downgrade an
+	// existing owner (the first account stays the owner).
+	const [row] = await db
+		.select({ role: user.role })
+		.from(user)
+		.where(eq(user.id, current.id))
+		.limit(1);
+	if (row?.role !== 'owner') {
+		await db.update(user).set({ role: inv.role }).where(eq(user.id, current.id));
+	}
+
+	// Mark the invitation accepted so the link can't be reused.
+	await db.update(invitation).set({ status: 'accepted' }).where(eq(invitation.id, inv.id));
 
 	redirect(303, '/app');
 }
@@ -117,7 +116,7 @@ export const actions: Actions = {
 			return fail(403, { message: 'Email registration is disabled; sign in with SSO instead.' });
 		}
 
-		const { invitation, error } = await loadValidInvitation(event);
+		const { invitation: inv, error } = await loadValidInvitation(event);
 		if (error) return error;
 
 		const data = await event.request.formData();
@@ -138,7 +137,7 @@ export const actions: Actions = {
 		// Email is taken from the invitation only — never from posted form data.
 		try {
 			await auth.api.signUpEmail({
-				body: { email: invitation.email, password, name },
+				body: { email: inv.email, password, name },
 				headers: event.request.headers
 			});
 		} catch (err) {

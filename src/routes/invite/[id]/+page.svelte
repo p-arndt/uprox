@@ -54,9 +54,7 @@
 					<div class="space-y-2 text-center">
 						<h1 class="text-xl font-semibold tracking-tight">You've been invited</h1>
 						<p class="text-sm text-muted-foreground">
-							Join <span class="font-medium text-foreground"
-								>{data.invitation.organizationName}</span
-							>
+							Join <span class="font-medium text-foreground">uprox</span>
 							as <span class="font-medium text-foreground">{data.invitation.role}</span>.
 						</p>
 					</div>
@@ -103,8 +101,7 @@
 							<div class="space-y-2 text-center">
 								<p class="text-sm text-muted-foreground">
 									Create your account to join
-									<span class="font-medium text-foreground">{data.invitation.organizationName}</span
-									>.
+									<span class="font-medium text-foreground">uprox</span>.
 								</p>
 							</div>
 
