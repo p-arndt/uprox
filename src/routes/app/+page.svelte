@@ -210,8 +210,9 @@
 
 				<Card.Root>
 					<Card.Header class="flex flex-row items-center justify-between space-y-0 pb-2">
-						<Card.Title class="text-sm font-medium text-muted-foreground">Cache hit rate</Card.Title
-						>
+						<Card.Title class="text-sm font-medium text-muted-foreground">
+							Token cache rate
+						</Card.Title>
 						<span
 							class="flex size-8 items-center justify-center rounded-lg bg-accent text-accent-foreground"
 						>
@@ -220,20 +221,25 @@
 					</Card.Header>
 					<Card.Content>
 						<div class="text-3xl font-semibold tabular-nums">
-							{(data.stats.cacheHitRate * 100).toFixed(1)}%
+							{(data.stats.tokenCacheRate * 100).toFixed(1)}%
 						</div>
 						<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
 							<div
 								class="h-full rounded-full bg-accent-foreground transition-all duration-700"
-								style="width: {Math.min(100, data.stats.cacheHitRate * 100)}%"
+								style="width: {Math.min(100, data.stats.tokenCacheRate * 100)}%"
 							></div>
 						</div>
-						<p class="mt-2 text-xs text-muted-foreground">
-							{data.stats.cacheHits.toLocaleString()} hits · {formatUsd(data.stats.cacheSavedUsd)} saved
+						<p class="mt-2 text-xs text-muted-foreground">Input tokens served from a cache layer</p>
+						<p class="mt-1 text-xs text-muted-foreground tabular-nums">
+							{formatTokens(data.stats.savedInputTokens)} uprox · {formatTokens(
+								data.stats.providerCachedTokens
+							)} provider
 						</p>
-						{#if data.stats.providerCachedTokens > 0}
-							<p class="text-xs text-muted-foreground">
-								+ {data.stats.providerCachedTokens.toLocaleString()} input tokens from provider cache
+						{#if data.stats.cacheHits > 0}
+							<p class="text-xs text-muted-foreground tabular-nums">
+								{data.stats.cacheHits.toLocaleString()} replayed responses · {formatUsd(
+									data.stats.cacheSavedUsd
+								)} saved
 							</p>
 						{/if}
 					</Card.Content>
