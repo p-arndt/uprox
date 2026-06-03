@@ -26,13 +26,28 @@ describe('can — member (read-only by default)', () => {
 	});
 
 	it('can be opted into tokens:manage via org settings', () => {
-		expect(can('member', 'tokens:manage', { ...DEFAULT_MEMBER_PERMISSIONS, membersCanManageTokens: true })).toBe(true);
+		expect(
+			can('member', 'tokens:manage', {
+				...DEFAULT_MEMBER_PERMISSIONS,
+				membersCanManageTokens: true
+			})
+		).toBe(true);
 		// the opt-in is scoped to that one capability, nothing else leaks
-		expect(can('member', 'services:manage', { ...DEFAULT_MEMBER_PERMISSIONS, membersCanManageTokens: true })).toBe(false);
+		expect(
+			can('member', 'services:manage', {
+				...DEFAULT_MEMBER_PERMISSIONS,
+				membersCanManageTokens: true
+			})
+		).toBe(false);
 	});
 
 	it('can be opted into services:manage via org settings', () => {
-		expect(can('member', 'services:manage', { ...DEFAULT_MEMBER_PERMISSIONS, membersCanManageServices: true })).toBe(true);
+		expect(
+			can('member', 'services:manage', {
+				...DEFAULT_MEMBER_PERMISSIONS,
+				membersCanManageServices: true
+			})
+		).toBe(true);
 	});
 
 	it('never grants owner-only caps to members even with both toggles on', () => {
@@ -47,6 +62,8 @@ describe('can — member (read-only by default)', () => {
 describe('can — unknown roles', () => {
 	it('treats an unrecognized role as a member', () => {
 		expect(can('guest', 'providers:manage')).toBe(false);
-		expect(can('', 'tokens:manage', { ...DEFAULT_MEMBER_PERMISSIONS, membersCanManageTokens: true })).toBe(true);
+		expect(
+			can('', 'tokens:manage', { ...DEFAULT_MEMBER_PERMISSIONS, membersCanManageTokens: true })
+		).toBe(true);
 	});
 });

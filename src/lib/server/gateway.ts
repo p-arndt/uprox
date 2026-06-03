@@ -11,6 +11,7 @@ import {
 	providerSupports,
 	resolveBaseUrl,
 	authHeaders,
+	selectProviderSecret,
 	PROVIDERS,
 	type Capability,
 	type ProviderDef
@@ -163,19 +164,26 @@ interface ProviderCreds {
 	baseUrl: string | null;
 }
 
-async function loadProviderCreds(provider: string): Promise<ProviderCreds | null> {
-	const [row] = await db
-		.select()
-		.from(providerSecret)
-		.where(eq(providerSecret.provider, provider))
-		.limit(1);
-	if (!row) return null;
-	return { apiKey: decrypt(row.encryptedSecret), baseUrl: row.baseUrl };
+/**
+ * Load the credentials to use for a provider. A provider may hold several
+ * secrets (e.g. multiple Azure OpenAI resources); `preferSecretId` is the
+ * calling service's pinned secret, honoured when it belongs to this provider,
+ * otherwise the provider's highest-priority secret is used. See
+ * selectProviderSecret.
+ */
+async function loadProviderCreds(
+	provider: string,
+	preferSecretId?: string | null
+): Promise<ProviderCreds | null> {
+	const rows = await db.select().from(providerSecret).where(eq(providerSecret.provider, provider));
+	const picked = selectProviderSecret(rows, provider, preferSecretId);
+	if (!picked) return null;
+	return { apiKey: decrypt(picked.encryptedSecret), baseUrl: picked.baseUrl };
 }
 
-/** Provider ids the instance has credentials configured for. */
+/** Distinct provider ids the instance has at least one secret configured for. */
 async function loadConfiguredProviders(): Promise<string[]> {
-	const rows = await db.select({ provider: providerSecret.provider }).from(providerSecret);
+	const rows = await db.selectDistinct({ provider: providerSecret.provider }).from(providerSecret);
 	return rows.map((r) => r.provider);
 }
 
@@ -411,8 +419,9 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		if (hasBudget) releaseReservation = reserve(token.serviceId);
 	}
 
-	// upstream credentials
-	const creds = await loadProviderCreds(provider.id);
+	// upstream credentials — honour the service's pinned secret (e.g. a specific
+	// Azure resource) when it belongs to the resolved provider.
+	const creds = await loadProviderCreds(provider.id, token.providerSecretId);
 	if (!creds) {
 		releaseReservation();
 		await audit({
@@ -649,7 +658,7 @@ export async function proxyRawUpstream(
 	const provider = PROVIDERS[providerId];
 	if (!provider) return gatewayError(500, 'Unknown provider', 'api_error');
 
-	const creds = await loadProviderCreds(providerId);
+	const creds = await loadProviderCreds(providerId, token.providerSecretId);
 	if (!creds) {
 		await audit({
 			action: `gateway.files`,

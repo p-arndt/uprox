@@ -3,11 +3,17 @@ import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
 import {
 	listProviderSecrets,
-	upsertProviderSecret,
+	createProviderSecret,
 	updateProviderSecret,
 	deleteProviderSecret
 } from '$lib/server/data';
 import { PROVIDERS, PROVIDER_IDS } from '$lib/server/providers';
+
+/** Parse a priority form field to a finite integer, defaulting to 0. */
+function parsePriority(raw: FormDataEntryValue | null): number {
+	const n = Number.parseInt(raw?.toString() ?? '', 10);
+	return Number.isFinite(n) ? n : 0;
+}
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
@@ -25,7 +31,9 @@ export const load: PageServerLoad = async (event) => {
 };
 
 export const actions: Actions = {
-	save: async (event) => {
+	// add a new secret for a provider (a provider may hold several, e.g. one per
+	// Azure OpenAI resource)
+	create: async (event) => {
 		const { userId } = await requirePermission(event, 'providers:manage');
 		const data = await event.request.formData();
 		const provider = data.get('provider')?.toString() ?? '';
@@ -39,14 +47,27 @@ export const actions: Actions = {
 			if (!/^https:\/\//i.test(baseUrl))
 				return fail(400, { message: 'Endpoint must be an https:// URL' });
 		}
-		await upsertProviderSecret(userId, {
+		await createProviderSecret(userId, {
 			provider,
 			secret,
 			label: data.get('label')?.toString() || undefined,
-			baseUrl
+			baseUrl,
+			priority: parsePriority(data.get('priority'))
 		});
 		return { success: true };
 	},
+	// rotate the key of an existing secret in place
+	rotate: async (event) => {
+		await requirePermission(event, 'providers:manage');
+		const data = await event.request.formData();
+		const id = data.get('id')?.toString() ?? '';
+		const secret = data.get('secret')?.toString().trim() ?? '';
+		if (!id) return fail(400, { message: 'Missing provider secret id' });
+		if (!secret) return fail(400, { message: 'API key is required' });
+		await updateProviderSecret(id, { secret });
+		return { success: true };
+	},
+	// edit a secret's label / endpoint / priority (the key is left unchanged)
 	editMeta: async (event) => {
 		await requirePermission(event, 'providers:manage');
 		const data = await event.request.formData();
@@ -63,7 +84,8 @@ export const actions: Actions = {
 		}
 		await updateProviderSecret(id, {
 			label: label || null,
-			baseUrl: baseUrl || null
+			baseUrl: baseUrl || null,
+			priority: parsePriority(data.get('priority'))
 		});
 		return { success: true };
 	},

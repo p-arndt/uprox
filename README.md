@@ -88,12 +88,12 @@ docker build -t uprox . && docker run -p 3000:3000 --env-file .env uprox
 OpenAI-compatible gateway, authenticated with a `Bearer uprox_live_…` token (or
 `api-key: uprox_live_…` for Azure-SDK clients):
 
-| Endpoint                    | Notes                                     |
-| --------------------------- | ----------------------------------------- |
-| `POST /v1/chat/completions` | streaming supported                       |
-| `POST /v1/responses`        | OpenAI Responses API; streaming supported |
-| `POST /v1/embeddings`       |                                           |
-| `GET  /v1/models`           | aggregated from your configured providers |
+| Endpoint                                                | Notes                                                                             |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `POST /v1/chat/completions`                             | streaming supported                                                               |
+| `POST /v1/responses`                                    | OpenAI Responses API; streaming supported                                         |
+| `POST /v1/embeddings`                                   |                                                                                   |
+| `GET  /v1/models`                                       | aggregated from your configured providers                                         |
 | `/v1/files`, `/v1/files/{id}`, `/v1/files/{id}/content` | upload/list/retrieve/delete/download — used by SDKs that auto-upload image inputs |
 
 ### Azure OpenAI SDK clients
@@ -102,20 +102,27 @@ The same gateway is reachable under URLs the Azure OpenAI SDK builds, so you can
 point an existing Azure-style client at uprox by swapping its `AZURE_OPENAI_ENDPOINT`
 for your uprox base URL and its `AZURE_OPENAI_API_KEY` for an `uprox_live_…` token.
 
-| Endpoint                                                  | Equivalent of                                       |
-| --------------------------------------------------------- | --------------------------------------------------- |
-| `POST /openai/deployments/{deployment}/chat/completions`  | legacy per-deployment Azure URL (model from URL)    |
-| `POST /openai/deployments/{deployment}/embeddings`        | legacy per-deployment Azure URL                     |
-| `POST /openai/deployments/{deployment}/responses`         | legacy per-deployment Azure URL                     |
-| `POST /openai/responses`                                  | Responses API on Azure (model from body)            |
-| `POST /openai/chat/completions`, `POST /openai/embeddings`| Azure flat URLs (model from body)                   |
-| `GET  /openai/models`                                     | Azure model listing                                 |
-| `POST /openai/v1/chat/completions` (and `/embeddings`, …) | newer Azure OpenAI v1 surface (`api_version=preview`) |
+| Endpoint                                                   | Equivalent of                                         |
+| ---------------------------------------------------------- | ----------------------------------------------------- |
+| `POST /openai/deployments/{deployment}/chat/completions`   | legacy per-deployment Azure URL (model from URL)      |
+| `POST /openai/deployments/{deployment}/embeddings`         | legacy per-deployment Azure URL                       |
+| `POST /openai/deployments/{deployment}/responses`          | legacy per-deployment Azure URL                       |
+| `POST /openai/responses`                                   | Responses API on Azure (model from body)              |
+| `POST /openai/chat/completions`, `POST /openai/embeddings` | Azure flat URLs (model from body)                     |
+| `GET  /openai/models`                                      | Azure model listing                                   |
+| `POST /openai/v1/chat/completions` (and `/embeddings`, …)  | newer Azure OpenAI v1 surface (`api_version=preview`) |
 
 The `api-version` query string is accepted and ignored. Model routing is identical
 to `/v1/*` — the deployment name acts as the model id, and uprox proxies to Azure
 when your org has Azure credentials configured (Azure accepts arbitrary deployment
 names; see provider settings).
+
+**Multiple Azure resources.** A provider can hold several keys — add one per Azure
+resource (each its own endpoint + key + label) on the Providers page. Each service
+then pins which key it uses via the "Upstream key" picker; services left on
+_Automatic_ use the provider's highest-`priority` key. This lets you point different
+services at different Azure resources (regions, quotas, subscriptions) without
+changing any client code.
 
 Everything else (services, tokens, providers, policies, audit) is managed in the dashboard or
 via the session-authenticated REST API under `/api`.

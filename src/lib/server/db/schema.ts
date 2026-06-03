@@ -7,7 +7,8 @@ import {
 	numeric,
 	boolean,
 	uniqueIndex,
-	index
+	index,
+	type AnyPgColumn
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 import { user } from './auth.schema';
@@ -24,6 +25,13 @@ export const service = pgTable('service', {
 	type: text('type').notNull().default('app'),
 	description: text('description'),
 	policyId: uuid('policy_id').references(() => policy.id, { onDelete: 'set null' }),
+	// Pinned upstream credential. When set, the gateway routes this service's
+	// traffic for that secret's provider to this specific secret — e.g. one of
+	// several Azure OpenAI resources. NULL = use the provider's default secret
+	// (highest priority). The FK nulls out automatically if the secret is removed.
+	providerSecretId: uuid('provider_secret_id').references((): AnyPgColumn => providerSecret.id, {
+		onDelete: 'set null'
+	}),
 	createdAt: timestamp('created_at').defaultNow().notNull(),
 	// Soft delete: services are retired, not removed, so historical audit-log
 	// and usage rows keep resolving the service name (a hard delete would null
@@ -63,7 +71,10 @@ export const machineToken = pgTable(
 
 /**
  * Upstream provider API key (OpenAI, Anthropic, …), encrypted at rest with
- * AES-256-GCM. One secret per provider for the whole instance.
+ * AES-256-GCM. A provider may have several secrets — e.g. multiple Azure OpenAI
+ * resources, each its own endpoint + key. A service can pin one of them via
+ * `service.providerSecretId`; otherwise the gateway uses the provider's
+ * highest-`priority` secret (see selectProviderSecret / loadProviderCreds).
  */
 export const providerSecret = pgTable(
 	'provider_secret',
@@ -71,15 +82,18 @@ export const providerSecret = pgTable(
 		id: uuid('id').primaryKey().defaultRandom(),
 		// "openai" | "anthropic" | "azure" | …
 		provider: text('provider').notNull(),
+		// human-readable name to tell several secrets of one provider apart
+		// (e.g. "Azure East US", "Azure Sweden"). Shown in the service picker.
 		label: text('label'),
 		// Upstream endpoint override. Required for providers whose base URL is
 		// deployment-specific (Azure OpenAI's resource endpoint); NULL otherwise,
 		// in which case the provider's static baseUrl is used.
 		baseUrl: text('base_url'),
-		// Routing priority among the providers that share a model namespace
-		// (OpenAI vs Azure both serve "gpt-*"). Higher wins; ties fall back to a
-		// fixed provider order. Default 0, so adding Azure doesn't displace an
-		// existing OpenAI secret unless its priority is raised. See resolveProvider.
+		// Default-selection priority among several secrets of the SAME provider.
+		// When a service hasn't pinned a specific secret, the highest-priority one
+		// for the resolved provider is used (oldest breaks ties). Default 0. See
+		// selectProviderSecret. (Routing *between* providers for a shared model
+		// namespace — OpenAI vs Azure — is the policy's preferredProvider, not this.)
 		priority: integer('priority').notNull().default(0),
 		// AES-256-GCM payload: iv:authTag:ciphertext (all base64)
 		encryptedSecret: text('encrypted_secret').notNull(),
@@ -92,7 +106,9 @@ export const providerSecret = pgTable(
 			.$onUpdate(() => new Date())
 			.notNull()
 	},
-	(t) => [uniqueIndex('provider_secret_provider_uidx').on(t.provider)]
+	// Non-unique: a provider may hold several secrets (e.g. many Azure resources).
+	// The index keeps the by-provider lookup in loadProviderCreds fast.
+	(t) => [index('provider_secret_provider_idx').on(t.provider)]
 );
 
 /**

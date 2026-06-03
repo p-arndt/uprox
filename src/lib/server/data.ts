@@ -28,6 +28,7 @@ export async function createService(input: {
 	type?: string;
 	description?: string;
 	policyId?: string | null;
+	providerSecretId?: string | null;
 }) {
 	const [row] = await db
 		.insert(service)
@@ -35,7 +36,8 @@ export async function createService(input: {
 			name: input.name,
 			type: input.type || 'app',
 			description: input.description || null,
-			policyId: input.policyId || null
+			policyId: input.policyId || null,
+			providerSecretId: input.providerSecretId || null
 		})
 		.returning();
 	return row;
@@ -43,7 +45,13 @@ export async function createService(input: {
 
 export async function updateService(
 	id: string,
-	patch: { name?: string; type?: string; description?: string | null; policyId?: string | null }
+	patch: {
+		name?: string;
+		type?: string;
+		description?: string | null;
+		policyId?: string | null;
+		providerSecretId?: string | null;
+	}
 ) {
 	const [row] = await db
 		.update(service)
@@ -162,23 +170,32 @@ export async function revokeToken(id: string) {
 /* ------------------------------- provider secrets ------------------------------- */
 
 export function listProviderSecrets() {
-	return db
-		.select({
-			id: providerSecret.id,
-			provider: providerSecret.provider,
-			label: providerSecret.label,
-			baseUrl: providerSecret.baseUrl,
-			hint: providerSecret.hint,
-			createdAt: providerSecret.createdAt,
-			updatedAt: providerSecret.updatedAt
-		})
-		.from(providerSecret)
-		.orderBy(providerSecret.provider);
+	return (
+		db
+			.select({
+				id: providerSecret.id,
+				provider: providerSecret.provider,
+				label: providerSecret.label,
+				baseUrl: providerSecret.baseUrl,
+				priority: providerSecret.priority,
+				hint: providerSecret.hint,
+				createdAt: providerSecret.createdAt,
+				updatedAt: providerSecret.updatedAt
+			})
+			.from(providerSecret)
+			// group a provider's secrets together, highest priority first
+			.orderBy(providerSecret.provider, desc(providerSecret.priority), providerSecret.createdAt)
+	);
 }
 
-export async function upsertProviderSecret(
+/**
+ * Add a provider secret. A provider may hold several (e.g. one per Azure OpenAI
+ * resource), so this always inserts a new row — services pick among them via
+ * their pinned secret, and the default is the highest-priority one.
+ */
+export async function createProviderSecret(
 	userId: string,
-	input: { provider: string; secret: string; label?: string; baseUrl?: string }
+	input: { provider: string; secret: string; label?: string; baseUrl?: string; priority?: number }
 ) {
 	const hint = input.secret.slice(-4);
 	const baseUrl = input.baseUrl?.trim() || null;
@@ -188,47 +205,47 @@ export async function upsertProviderSecret(
 			provider: input.provider,
 			label: input.label || null,
 			baseUrl,
+			priority: input.priority ?? 0,
 			encryptedSecret: encrypt(input.secret),
 			hint,
 			createdByUserId: userId
 		})
-		.onConflictDoUpdate({
-			target: providerSecret.provider,
-			set: {
-				label: input.label || null,
-				baseUrl,
-				encryptedSecret: encrypt(input.secret),
-				hint,
-				updatedAt: new Date()
-			}
-		})
 		.returning({ id: providerSecret.id, provider: providerSecret.provider });
 
 	await audit({
-		action: 'provider.upsert',
+		action: 'provider.create',
 		status: 'ok',
 		provider: input.provider,
-		detail: input.provider
+		detail: input.label || input.provider
 	});
 	return row;
 }
 
+/**
+ * Update a provider secret in place. Only the fields present in `input` are
+ * written, so the label/endpoint/priority can be edited independently of
+ * rotating the key (pass `secret` to rotate; the hint follows it).
+ */
 export async function updateProviderSecret(
 	id: string,
-	input: { label?: string | null; baseUrl?: string | null }
+	input: { label?: string | null; baseUrl?: string | null; priority?: number; secret?: string }
 ) {
+	const set: Partial<typeof providerSecret.$inferInsert> = { updatedAt: new Date() };
+	if (input.label !== undefined) set.label = input.label || null;
+	if (input.baseUrl !== undefined) set.baseUrl = input.baseUrl?.trim() || null;
+	if (input.priority !== undefined) set.priority = input.priority;
+	if (input.secret) {
+		set.encryptedSecret = encrypt(input.secret);
+		set.hint = input.secret.slice(-4);
+	}
 	const [row] = await db
 		.update(providerSecret)
-		.set({
-			label: input.label ?? null,
-			baseUrl: input.baseUrl?.trim() || null,
-			updatedAt: new Date()
-		})
+		.set(set)
 		.where(eq(providerSecret.id, id))
 		.returning({ id: providerSecret.id, provider: providerSecret.provider });
 	if (row) {
 		await audit({
-			action: 'provider.update',
+			action: input.secret ? 'provider.rotate' : 'provider.update',
 			status: 'ok',
 			provider: row.provider,
 			detail: row.provider

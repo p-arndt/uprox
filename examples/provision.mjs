@@ -10,7 +10,8 @@ async function api(method, path, body) {
 		headers,
 		body: body ? JSON.stringify(body) : undefined
 	});
-	for (const c of res.headers.getSetCookie?.() ?? []) cookie += (cookie ? '; ' : '') + c.split(';')[0];
+	for (const c of res.headers.getSetCookie?.() ?? [])
+		cookie += (cookie ? '; ' : '') + c.split(';')[0];
 	const text = await res.text();
 	try {
 		return { status: res.status, json: JSON.parse(text) };

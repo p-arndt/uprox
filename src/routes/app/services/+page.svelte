@@ -20,12 +20,14 @@
 	let open = $state(false);
 	let createType = $state('app');
 	let createPolicyId = $state('');
+	let createProviderSecretId = $state('');
 	let editing = $state<{
 		id: string;
 		name: string;
 		type: string;
 		description: string;
 		policyId: string;
+		providerSecretId: string;
 	} | null>(null);
 
 	const policyName = $derived(new Map(data.policies.map((p) => [p.id, p.name] as const)));
@@ -36,6 +38,17 @@
 	];
 	const policyLabel = (id: string) => (id ? (policyName.get(id) ?? id) : 'No policy (allow all)');
 	const canManage = $derived(can(data.role, 'services:manage', data.memberPermissions));
+
+	// per-service upstream-key picker — only present when some provider has >1 key
+	const secretOptions = $derived(data.providerSecrets ?? []);
+	const secretName = $derived(
+		new Map(
+			secretOptions.map(
+				(s) => [s.id, `${s.providerLabel} — ${s.label || `••••${s.hint}`}`] as const
+			)
+		)
+	);
+	const secretLabel = (id: string) => (id ? (secretName.get(id) ?? id) : 'Automatic (default key)');
 </script>
 
 <div class="mx-auto max-w-5xl space-y-6">
@@ -48,68 +61,99 @@
 		</div>
 		{#if canManage}
 			<Dialog.Root bind:open>
-			<Dialog.Trigger>
-				{#snippet child({ props })}
-					<Button {...props}><Plus class="size-4" /> New service</Button>
-				{/snippet}
-			</Dialog.Trigger>
-			<Dialog.Content>
-				<Dialog.Header>
-					<Dialog.Title>Create service</Dialog.Title>
-					<Dialog.Description>A service represents one machine identity.</Dialog.Description>
-				</Dialog.Header>
-				<form
-					method="post"
-					action="?/create"
-					class="space-y-4"
-					use:enhance={() => {
-						return async ({ result, update }) => {
-							await update({ reset: true });
-							if (result.type === 'success') {
-								open = false;
-								await invalidateAll();
-							}
-						};
-					}}
-				>
-					<div class="space-y-2">
-						<Label for="name">Name</Label>
-						<Input id="name" name="name" placeholder="support-agent" required />
-					</div>
-					<div class="space-y-2">
-						<Label for="type">Type</Label>
-						<Select.Root type="single" name="type" bind:value={createType}>
-							<Select.Trigger id="type" class="w-full">
-								{typeOptions.find((o) => o.value === createType)?.label}
-							</Select.Trigger>
-							<Select.Content>
-								{#each typeOptions as o (o.value)}
-									<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
-					<div class="space-y-2">
-						<Label for="policyId">Policy</Label>
-						<Select.Root type="single" name="policyId" bind:value={createPolicyId}>
-							<Select.Trigger id="policyId" class="w-full">{policyLabel(createPolicyId)}</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="" label="No policy (allow all)">No policy (allow all)</Select.Item>
-								{#each data.policies as p (p.id)}
-									<Select.Item value={p.id} label={p.name}>{p.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
-					<div class="space-y-2">
-						<Label for="description">Description</Label>
-						<Input id="description" name="description" placeholder="Optional" />
-					</div>
-					<Dialog.Footer>
-						<Button type="submit">Create service</Button>
-					</Dialog.Footer>
-				</form>
-			</Dialog.Content>
+				<Dialog.Trigger>
+					{#snippet child({ props })}
+						<Button {...props}><Plus class="size-4" /> New service</Button>
+					{/snippet}
+				</Dialog.Trigger>
+				<Dialog.Content>
+					<Dialog.Header>
+						<Dialog.Title>Create service</Dialog.Title>
+						<Dialog.Description>A service represents one machine identity.</Dialog.Description>
+					</Dialog.Header>
+					<form
+						method="post"
+						action="?/create"
+						class="space-y-4"
+						use:enhance={() => {
+							return async ({ result, update }) => {
+								await update({ reset: true });
+								if (result.type === 'success') {
+									open = false;
+									await invalidateAll();
+								}
+							};
+						}}
+					>
+						<div class="space-y-2">
+							<Label for="name">Name</Label>
+							<Input id="name" name="name" placeholder="support-agent" required />
+						</div>
+						<div class="space-y-2">
+							<Label for="type">Type</Label>
+							<Select.Root type="single" name="type" bind:value={createType}>
+								<Select.Trigger id="type" class="w-full">
+									{typeOptions.find((o) => o.value === createType)?.label}
+								</Select.Trigger>
+								<Select.Content>
+									{#each typeOptions as o (o.value)}
+										<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
+						<div class="space-y-2">
+							<Label for="policyId">Policy</Label>
+							<Select.Root type="single" name="policyId" bind:value={createPolicyId}>
+								<Select.Trigger id="policyId" class="w-full"
+									>{policyLabel(createPolicyId)}</Select.Trigger
+								>
+								<Select.Content>
+									<Select.Item value="" label="No policy (allow all)"
+										>No policy (allow all)</Select.Item
+									>
+									{#each data.policies as p (p.id)}
+										<Select.Item value={p.id} label={p.name}>{p.name}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
+						{#if secretOptions.length > 0}
+							<div class="space-y-2">
+								<Label for="providerSecretId">Upstream key</Label>
+								<Select.Root
+									type="single"
+									name="providerSecretId"
+									bind:value={createProviderSecretId}
+								>
+									<Select.Trigger id="providerSecretId" class="w-full">
+										{secretLabel(createProviderSecretId)}
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="" label="Automatic (default key)">
+											Automatic (default key)
+										</Select.Item>
+										{#each secretOptions as s (s.id)}
+											<Select.Item value={s.id} label={secretName.get(s.id) ?? s.id}>
+												{secretName.get(s.id) ?? s.id}
+											</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+								<p class="text-xs text-muted-foreground">
+									Pin which provider key this service uses — e.g. a specific Azure resource.
+								</p>
+							</div>
+						{/if}
+						<div class="space-y-2">
+							<Label for="description">Description</Label>
+							<Input id="description" name="description" placeholder="Optional" />
+						</div>
+						<Dialog.Footer>
+							<Button type="submit">Create service</Button>
+						</Dialog.Footer>
+					</form>
+				</Dialog.Content>
 			</Dialog.Root>
 		{/if}
 	</div>
@@ -151,61 +195,62 @@
 							<Table.Cell>
 								{#if canManage}
 									<div class="flex items-center gap-1">
-									<Button
-										variant="ghost"
-										size="icon"
-										class="size-8 text-muted-foreground hover:text-foreground"
-										title="Edit service"
-										onclick={() =>
-											(editing = {
-												id: s.id,
-												name: s.name,
-												type: s.type,
-												description: s.description ?? '',
-												policyId: s.policyId ?? ''
-											})}
-									>
-										<Pencil class="size-4" />
-									</Button>
-									<AlertDialog.Root>
-										<AlertDialog.Trigger>
-											{#snippet child({ props })}
-												<Button
-													{...props}
-													variant="ghost"
-													size="icon"
-													class="size-8 text-muted-foreground hover:text-destructive"
-													title="Delete service"
-												>
-													<Trash2 class="size-4" />
-												</Button>
-											{/snippet}
-										</AlertDialog.Trigger>
-										<AlertDialog.Content>
-											<AlertDialog.Header>
-												<AlertDialog.Title>Delete “{s.name}”?</AlertDialog.Title>
-												<AlertDialog.Description>
-													Any tokens issued to this service stop working immediately. This can't be
-													undone.
-												</AlertDialog.Description>
-											</AlertDialog.Header>
-											<AlertDialog.Footer>
-												<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-												<form
-													method="post"
-													action="?/delete"
-													use:enhance={() =>
-														async ({ update }) =>
-															update()}
-												>
-													<input type="hidden" name="id" value={s.id} />
-													<AlertDialog.Action type="submit" variant="destructive">
-														Delete service
-													</AlertDialog.Action>
-												</form>
-											</AlertDialog.Footer>
-										</AlertDialog.Content>
-									</AlertDialog.Root>
+										<Button
+											variant="ghost"
+											size="icon"
+											class="size-8 text-muted-foreground hover:text-foreground"
+											title="Edit service"
+											onclick={() =>
+												(editing = {
+													id: s.id,
+													name: s.name,
+													type: s.type,
+													description: s.description ?? '',
+													policyId: s.policyId ?? '',
+													providerSecretId: s.providerSecretId ?? ''
+												})}
+										>
+											<Pencil class="size-4" />
+										</Button>
+										<AlertDialog.Root>
+											<AlertDialog.Trigger>
+												{#snippet child({ props })}
+													<Button
+														{...props}
+														variant="ghost"
+														size="icon"
+														class="size-8 text-muted-foreground hover:text-destructive"
+														title="Delete service"
+													>
+														<Trash2 class="size-4" />
+													</Button>
+												{/snippet}
+											</AlertDialog.Trigger>
+											<AlertDialog.Content>
+												<AlertDialog.Header>
+													<AlertDialog.Title>Delete “{s.name}”?</AlertDialog.Title>
+													<AlertDialog.Description>
+														Any tokens issued to this service stop working immediately. This can't
+														be undone.
+													</AlertDialog.Description>
+												</AlertDialog.Header>
+												<AlertDialog.Footer>
+													<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+													<form
+														method="post"
+														action="?/delete"
+														use:enhance={() =>
+															async ({ update }) =>
+																update()}
+													>
+														<input type="hidden" name="id" value={s.id} />
+														<AlertDialog.Action type="submit" variant="destructive">
+															Delete service
+														</AlertDialog.Action>
+													</form>
+												</AlertDialog.Footer>
+											</AlertDialog.Content>
+										</AlertDialog.Root>
 									</div>
 								{/if}
 							</Table.Cell>
@@ -274,13 +319,41 @@
 							>{policyLabel(editing?.policyId ?? '')}</Select.Trigger
 						>
 						<Select.Content>
-							<Select.Item value="" label="No policy (allow all)">No policy (allow all)</Select.Item>
+							<Select.Item value="" label="No policy (allow all)">No policy (allow all)</Select.Item
+							>
 							{#each data.policies as p (p.id)}
 								<Select.Item value={p.id} label={p.name}>{p.name}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
 				</div>
+				{#if secretOptions.length > 0}
+					<div class="space-y-2">
+						<Label for="edit-providerSecretId">Upstream key</Label>
+						<Select.Root
+							type="single"
+							name="providerSecretId"
+							bind:value={editing.providerSecretId}
+						>
+							<Select.Trigger id="edit-providerSecretId" class="w-full">
+								{secretLabel(editing?.providerSecretId ?? '')}
+							</Select.Trigger>
+							<Select.Content>
+								<Select.Item value="" label="Automatic (default key)">
+									Automatic (default key)
+								</Select.Item>
+								{#each secretOptions as s (s.id)}
+									<Select.Item value={s.id} label={secretName.get(s.id) ?? s.id}>
+										{secretName.get(s.id) ?? s.id}
+									</Select.Item>
+								{/each}
+							</Select.Content>
+						</Select.Root>
+						<p class="text-xs text-muted-foreground">
+							Pin which provider key this service uses — e.g. a specific Azure resource.
+						</p>
+					</div>
+				{/if}
 				<div class="space-y-2">
 					<Label for="edit-description">Description</Label>
 					<Input

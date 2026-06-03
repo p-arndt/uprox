@@ -9,6 +9,7 @@ function token(over: Partial<ResolvedToken> = {}): ResolvedToken {
 		serviceId: 'svc1',
 		serviceName: 'svc',
 		scopes: [],
+		providerSecretId: null,
 		policy: null,
 		defaultCacheTtlSeconds: 0,
 		...over
