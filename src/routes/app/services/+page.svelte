@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
@@ -182,7 +183,12 @@
 					{#each data.services as s (s.id)}
 						<Table.Row>
 							<Table.Cell>
-								<div class="font-medium">{s.name}</div>
+								<a
+									href={resolve('/app/services/[id]', { id: s.id })}
+									class="font-medium hover:underline"
+								>
+									{s.name}
+								</a>
 								{#if s.description}
 									<div class="text-xs text-muted-foreground">{s.description}</div>
 								{/if}

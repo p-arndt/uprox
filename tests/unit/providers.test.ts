@@ -8,7 +8,8 @@ import {
 	resolveProvider,
 	selectProviderSecret,
 	costFromPrice,
-	resolvePrice
+	resolvePrice,
+	DEFAULT_MODEL_PRICES
 } from '$lib/server/providers';
 
 describe('providerSupports', () => {
@@ -161,6 +162,19 @@ describe('costFromPrice', () => {
 		const nano = { in: 0.2, out: 1.25 };
 		// 10 input tokens → 10 * 0.2 / 1e6 = 0.000002 → preserved at 8 decimals
 		expect(costFromPrice(nano, 10, 0)).toBe(0.000002);
+	});
+});
+
+describe('embedding default prices', () => {
+	it('ships defaults for the two current OpenAI embedding models', () => {
+		expect(DEFAULT_MODEL_PRICES['text-embedding-3-small']).toEqual({ in: 0.02, out: 0 });
+		expect(DEFAULT_MODEL_PRICES['text-embedding-3-large']).toEqual({ in: 0.13, out: 0 });
+	});
+
+	it('prices an embedding request on its input tokens only (no output cost)', () => {
+		const small = DEFAULT_MODEL_PRICES['text-embedding-3-small'];
+		// 1M input tokens @ $0.02; embeddings report 0 completion tokens
+		expect(costFromPrice(small, 1_000_000, 0)).toBe(0.02);
 	});
 });
 

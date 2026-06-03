@@ -4,30 +4,30 @@ import {
 	orgUsageByModel,
 	orgUsageByService,
 	orgUsageByToken,
+	orgUsageTotals,
 	orgBudgetStatus,
 	getSettings
 } from '$lib/server/data';
-
-/** Selectable rolling windows for the breakdowns, in days. */
-const RANGES = [7, 30, 90];
+import { USAGE_RANGES, resolveUsageRange } from '$lib/usage-range';
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
-	const requested = Number(event.url.searchParams.get('days'));
-	const days = RANGES.includes(requested) ? requested : 30;
+	const range = resolveUsageRange(event.url.searchParams.get('range'));
 
-	const [byModel, byService, byToken, budgets, settings] = await Promise.all([
-		orgUsageByModel(days),
-		orgUsageByService(days),
-		orgUsageByToken(days),
-		// budgets always reflect the current UTC day/month window, not `days`
+	const [totals, byModel, byService, byToken, budgets, settings] = await Promise.all([
+		orgUsageTotals(range),
+		orgUsageByModel(range),
+		orgUsageByService(range),
+		orgUsageByToken(range),
+		// budgets always reflect the current UTC day/month window, not the selected range
 		orgBudgetStatus(),
 		getSettings()
 	]);
 
 	return {
-		days,
-		ranges: RANGES,
+		range: range.key,
+		ranges: USAGE_RANGES,
+		totals,
 		byModel,
 		byService,
 		byToken,

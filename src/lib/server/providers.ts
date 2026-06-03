@@ -234,6 +234,9 @@ export const DEFAULT_MODEL_PRICES: Record<string, { in: number; out: number }> =
 	'gpt-4.1': { in: 2, out: 8 },
 	'gpt-4.1-mini': { in: 0.4, out: 1.6 },
 	o3: { in: 2, out: 8 },
+	// OpenAI — embeddings (input-only; embeddings produce no output tokens, so out = 0)
+	'text-embedding-3-small': { in: 0.02, out: 0 },
+	'text-embedding-3-large': { in: 0.13, out: 0 },
 	// Anthropic — current Claude 4.x series
 	'claude-opus-4-7': { in: 5, out: 25 },
 	'claude-opus-4-6': { in: 5, out: 25 },
