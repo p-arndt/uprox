@@ -62,7 +62,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 		label: 'OpenAI',
 		baseUrl: 'https://api.openai.com/v1',
 		modelPrefixes: OPENAI_MODEL_PREFIXES,
-		capabilities: ['chat', 'responses', 'embeddings', 'models']
+		capabilities: ['chat', 'responses', 'embeddings', 'models', 'images']
 	},
 	anthropic: {
 		id: 'anthropic',
@@ -87,7 +87,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 		// as the preferred backend for them, and accepts arbitrary names too, since
 		// Azure deployment names are operator-chosen. See `resolveProvider`.
 		modelPrefixes: OPENAI_MODEL_PREFIXES,
-		capabilities: ['chat', 'responses', 'embeddings', 'models'],
+		capabilities: ['chat', 'responses', 'embeddings', 'models', 'images'],
 		authScheme: 'api-key',
 		requiresEndpoint: true,
 		acceptsAnyModel: true

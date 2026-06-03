@@ -1,6 +1,7 @@
 import { building } from '$app/environment';
 import { auth } from '$lib/server/auth';
 import { db } from '$lib/server/db';
+import { gatewayError } from '$lib/server/gateway';
 import { seedDefaultModelPrices } from '$lib/server/pricing';
 import { isSetupComplete } from '$lib/server/setup';
 import { redirect, type Handle } from '@sveltejs/kit';
@@ -82,4 +83,35 @@ const handleAccessLog: Handle = async ({ event, resolve }) => {
 	return response;
 };
 
-export const handle: Handle = sequence(handleAccessLog, handleSetup, handleBetterAuth);
+/**
+ * Gateway proxy surface — the API-shaped route prefixes. An unmatched path under
+ * one of these is an API client hitting a missing/misspelled endpoint, so it
+ * should get a machine-readable JSON error, not SvelteKit's HTML 404 page.
+ */
+const GATEWAY_PREFIXES = ['/v1/', '/openai/'];
+
+/**
+ * Turn SvelteKit's generic HTML 404 into an OpenAI-style JSON error for the
+ * gateway surface. SvelteKit answers an unmatched route with a 404 whose body is
+ * the fallback error HTML; for `/v1/*` and `/openai/*` an SDK expects JSON, so we
+ * replace it with the same error envelope the gateway uses for every other
+ * failure. Routes that do exist return their own (non-404) responses untouched.
+ */
+const handleGatewayNotFound: Handle = async ({ event, resolve }) => {
+	const response = await resolve(event);
+	if (response.status !== 404) return response;
+	const path = event.url.pathname;
+	if (!GATEWAY_PREFIXES.some((p) => path.startsWith(p))) return response;
+	return gatewayError(
+		404,
+		`No such gateway route: ${event.request.method} ${path}. This uprox proxy does not implement this endpoint.`,
+		'not_found_error'
+	);
+};
+
+export const handle: Handle = sequence(
+	handleAccessLog,
+	handleGatewayNotFound,
+	handleSetup,
+	handleBetterAuth
+);

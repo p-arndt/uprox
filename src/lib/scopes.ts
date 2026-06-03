@@ -6,6 +6,6 @@
  *
  * Kept outside `$lib/server` so the client (token creation form) can import it.
  */
-export const GATEWAY_SCOPES = ['chat', 'responses', 'embeddings', 'models'] as const;
+export const GATEWAY_SCOPES = ['chat', 'responses', 'embeddings', 'models', 'images'] as const;
 
 export type Capability = (typeof GATEWAY_SCOPES)[number];
