@@ -6,19 +6,19 @@
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
+	import TokenForm, { type TokenFormValues } from '$lib/components/token-form.svelte';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
-	import { GATEWAY_SCOPES } from '$lib/scopes';
 	import Plus from '@lucide/svelte/icons/plus';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import Copy from '@lucide/svelte/icons/copy';
 	import Ban from '@lucide/svelte/icons/ban';
+	import Pencil from '@lucide/svelte/icons/pencil';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 
 	let { data, form } = $props();
@@ -32,8 +32,15 @@
 		{ value: '365', label: 'In 1 year' }
 	];
 	let secret = $state<{ name: string; plaintext: string } | null>(null);
+	let editing = $state<TokenFormValues | null>(null);
 
-	const allScopes = GATEWAY_SCOPES;
+	const createValues: TokenFormValues = {
+		name: '',
+		scopes: [],
+		allowedModels: '',
+		policyId: ''
+	};
+
 	const canManage = $derived(can(data.role, 'tokens:manage', data.memberPermissions));
 
 	// When the create action returns a fresh secret, reveal it once.
@@ -41,6 +48,14 @@
 		if (form?.created) {
 			secret = form.created;
 			createOpen = false;
+		}
+	});
+
+	// Close the edit dialog once an update succeeds.
+	$effect(() => {
+		if (form?.success) {
+			editing = null;
+			invalidateAll();
 		}
 	});
 
@@ -91,6 +106,16 @@
 	const visibleTokens = $derived(
 		showRevoked ? data.tokens : data.tokens.filter((t) => !t.revokedAt)
 	);
+
+	function startEdit(t: (typeof data.tokens)[number]) {
+		editing = {
+			id: t.id,
+			name: t.name,
+			scopes: [...t.scopes],
+			allowedModels: t.allowedModels.join(', '),
+			policyId: t.policyId ?? ''
+		};
+	}
 </script>
 
 <div class="mx-auto max-w-5xl space-y-6">
@@ -115,68 +140,48 @@
 						<Dialog.Title>Create machine token</Dialog.Title>
 						<Dialog.Description>The secret is shown once — store it safely.</Dialog.Description>
 					</Dialog.Header>
-					<form
-						method="post"
+					<TokenForm
 						action="?/create"
-						class="space-y-4"
-						use:enhance={() =>
-							async ({ update }) =>
-								update({ reset: true })}
+						submitLabel="Create token"
+						idPrefix="create"
+						values={createValues}
+						policies={data.policies}
+						resetOnSuccess
 					>
-						<div class="space-y-2">
-							<Label for="serviceId">Service</Label>
-							<Select.Root type="single" name="serviceId" required bind:value={serviceId}>
-								<Select.Trigger id="serviceId" class="w-full">
-									{data.services.find((s) => s.id === serviceId)?.name ?? 'Select a service'}
-								</Select.Trigger>
-								<Select.Content>
-									{#each data.services as s (s.id)}
-										<Select.Item value={s.id} label={s.name}>{s.name}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</div>
-						<div class="space-y-2">
-							<Label for="name">Token name</Label>
-							<Input id="name" name="name" placeholder="production" required />
-						</div>
-						<div class="space-y-2">
-							<Label>Scopes</Label>
-							<div class="flex flex-wrap gap-4">
-								{#each allScopes as scope (scope)}
-									<label class="flex items-center gap-2 text-sm">
-										<input
-											type="checkbox"
-											name="scopes"
-											value={scope}
-											class="size-4 accent-foreground"
-										/>
-										{scope}
-									</label>
-								{/each}
+						{#snippet topFields()}
+							<div class="space-y-2">
+								<Label for="serviceId">Service</Label>
+								<Select.Root type="single" name="serviceId" required bind:value={serviceId}>
+									<Select.Trigger id="serviceId" class="w-full">
+										{data.services.find((s) => s.id === serviceId)?.name ?? 'Select a service'}
+									</Select.Trigger>
+									<Select.Content>
+										{#each data.services as s (s.id)}
+											<Select.Item value={s.id} label={s.name}>{s.name}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
 							</div>
-							<p class="text-xs text-muted-foreground">Leave all unchecked to grant every scope.</p>
-						</div>
-						<div class="space-y-2">
-							<Label for="expiresInDays">Expires</Label>
-							<Select.Root type="single" name="expiresInDays" bind:value={expiresInDays}>
-								<Select.Trigger id="expiresInDays" class="w-full">
-									{expiryOptions.find((o) => o.value === expiresInDays)?.label}
-								</Select.Trigger>
-								<Select.Content>
-									{#each expiryOptions as o (o.value)}
-										<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</div>
-						{#if form?.message}
-							<p class="text-sm text-destructive">{form.message}</p>
-						{/if}
-						<Dialog.Footer>
-							<Button type="submit">Create token</Button>
-						</Dialog.Footer>
-					</form>
+						{/snippet}
+						{#snippet bottomFields()}
+							<div class="space-y-2">
+								<Label for="expiresInDays">Expires</Label>
+								<Select.Root type="single" name="expiresInDays" bind:value={expiresInDays}>
+									<Select.Trigger id="expiresInDays" class="w-full">
+										{expiryOptions.find((o) => o.value === expiresInDays)?.label}
+									</Select.Trigger>
+									<Select.Content>
+										{#each expiryOptions as o (o.value)}
+											<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							</div>
+							{#if form?.message}
+								<p class="text-sm text-destructive">{form.message}</p>
+							{/if}
+						{/snippet}
+					</TokenForm>
 				</Dialog.Content>
 			</Dialog.Root>
 		{/if}
@@ -239,6 +244,7 @@
 						<Table.Head>Token</Table.Head>
 						<Table.Head>Service</Table.Head>
 						<Table.Head>Scopes</Table.Head>
+						<Table.Head>Policy / Models</Table.Head>
 						<Table.Head>Last used</Table.Head>
 						<Table.Head>Status</Table.Head>
 						<Table.Head class="w-10"></Table.Head>
@@ -247,7 +253,7 @@
 				<Table.Body>
 					{#if visibleTokens.length === 0}
 						<Table.Row class="hover:bg-transparent">
-							<Table.Cell colspan={7} class="py-8 text-center text-sm text-muted-foreground">
+							<Table.Cell colspan={8} class="py-8 text-center text-sm text-muted-foreground">
 								All tokens are revoked. Toggle “Show revoked” to view them.
 							</Table.Cell>
 						</Table.Row>
@@ -274,6 +280,20 @@
 									</div>
 								{/if}
 							</Table.Cell>
+							<Table.Cell>
+								{#if t.policyId}
+									<Badge variant="secondary">{t.policyName}</Badge>
+								{:else}
+									<span class="text-xs text-muted-foreground">service policy</span>
+								{/if}
+								{#if t.allowedModels.length > 0}
+									<div class="mt-1 flex flex-wrap gap-1">
+										{#each t.allowedModels as m (m)}
+											<Badge variant="outline" class="font-mono text-[10px]">{m}</Badge>
+										{/each}
+									</div>
+								{/if}
+							</Table.Cell>
 							<Table.Cell class="text-muted-foreground">{relativeTime(t.lastUsedAt)}</Table.Cell>
 							<Table.Cell>
 								<span class="inline-flex items-center gap-1.5 text-sm capitalize">
@@ -283,45 +303,56 @@
 							</Table.Cell>
 							<Table.Cell>
 								{#if !t.revokedAt && canManage}
-									<AlertDialog.Root>
-										<AlertDialog.Trigger>
-											{#snippet child({ props })}
-												<Button
-													{...props}
-													variant="ghost"
-													size="icon"
-													class="size-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 hover:text-destructive"
-													title="Revoke token"
-												>
-													<Ban class="size-4" />
-												</Button>
-											{/snippet}
-										</AlertDialog.Trigger>
-										<AlertDialog.Content>
-											<AlertDialog.Header>
-												<AlertDialog.Title>Revoke “{t.name}”?</AlertDialog.Title>
-												<AlertDialog.Description>
-													Any service still using this token will immediately fail to authenticate.
-													This can't be undone.
-												</AlertDialog.Description>
-											</AlertDialog.Header>
-											<AlertDialog.Footer>
-												<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-												<form
-													method="post"
-													action="?/revoke"
-													use:enhance={() =>
-														async ({ update }) =>
-															update()}
-												>
-													<input type="hidden" name="id" value={t.id} />
-													<AlertDialog.Action type="submit" variant="destructive">
-														Revoke token
-													</AlertDialog.Action>
-												</form>
-											</AlertDialog.Footer>
-										</AlertDialog.Content>
-									</AlertDialog.Root>
+									<div class="flex items-center justify-end gap-0.5">
+										<Button
+											variant="ghost"
+											size="icon"
+											class="size-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+											title="Edit token"
+											onclick={() => startEdit(t)}
+										>
+											<Pencil class="size-4" />
+										</Button>
+										<AlertDialog.Root>
+											<AlertDialog.Trigger>
+												{#snippet child({ props })}
+													<Button
+														{...props}
+														variant="ghost"
+														size="icon"
+														class="size-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 hover:text-destructive"
+														title="Revoke token"
+													>
+														<Ban class="size-4" />
+													</Button>
+												{/snippet}
+											</AlertDialog.Trigger>
+											<AlertDialog.Content>
+												<AlertDialog.Header>
+													<AlertDialog.Title>Revoke “{t.name}”?</AlertDialog.Title>
+													<AlertDialog.Description>
+														Any service still using this token will immediately fail to
+														authenticate. This can't be undone.
+													</AlertDialog.Description>
+												</AlertDialog.Header>
+												<AlertDialog.Footer>
+													<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+													<form
+														method="post"
+														action="?/revoke"
+														use:enhance={() =>
+															async ({ update }) =>
+																update()}
+													>
+														<input type="hidden" name="id" value={t.id} />
+														<AlertDialog.Action type="submit" variant="destructive">
+															Revoke token
+														</AlertDialog.Action>
+													</form>
+												</AlertDialog.Footer>
+											</AlertDialog.Content>
+										</AlertDialog.Root>
+									</div>
 								{/if}
 							</Table.Cell>
 						</Table.Row>
@@ -331,6 +362,40 @@
 		</div>
 	{/if}
 </div>
+
+<!-- edit token: change its policy, model allowlist, scopes, and name in place -->
+<Dialog.Root
+	open={editing !== null}
+	onOpenChange={(v) => {
+		if (!v) editing = null;
+	}}
+>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>Edit token</Dialog.Title>
+			<Dialog.Description>
+				Adjust this token's access. The secret itself never changes.
+			</Dialog.Description>
+		</Dialog.Header>
+		{#if editing}
+			{#key editing.id}
+				<TokenForm
+					action="?/update"
+					submitLabel="Save token"
+					idPrefix="edit"
+					values={editing}
+					policies={data.policies}
+				>
+					{#snippet bottomFields()}
+						{#if form?.message}
+							<p class="text-sm text-destructive">{form.message}</p>
+						{/if}
+					{/snippet}
+				</TokenForm>
+			{/key}
+		{/if}
+	</Dialog.Content>
+</Dialog.Root>
 
 <!-- one-time secret reveal -->
 <Dialog.Root

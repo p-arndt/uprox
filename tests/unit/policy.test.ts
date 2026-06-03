@@ -9,6 +9,7 @@ function token(over: Partial<ResolvedToken> = {}): ResolvedToken {
 		serviceId: 'svc1',
 		serviceName: 'svc',
 		scopes: [],
+		allowedModels: [],
 		providerSecretId: null,
 		policy: null,
 		defaultCacheTtlSeconds: 0,
@@ -106,6 +107,58 @@ describe('model allowlist', () => {
 		// a non-matching model is still denied
 		const res = evaluatePolicy(exact, { ...chat, model: 'GPT-4o-mini' });
 		expect(res.allow).toBe(false);
+	});
+});
+
+describe('per-token model allowlist', () => {
+	it('allows a model the token lists', () => {
+		const t = token({ allowedModels: ['gpt-4o'] });
+		expect(evaluatePolicy(t, chat)).toEqual({ allow: true });
+	});
+
+	it('denies a model the token does not list (even with no policy)', () => {
+		const t = token({ allowedModels: ['gpt-4o-mini'] });
+		const res = evaluatePolicy(t, chat);
+		expect(res.allow).toBe(false);
+		expect(res).toMatchObject({ reason: expect.stringContaining('token forbids') });
+	});
+
+	it('supports trailing "*" prefix globs, matched case-insensitively', () => {
+		const t = token({ allowedModels: ['gpt-4o*'] });
+		expect(evaluatePolicy(t, { ...chat, model: 'GPT-4o-mini' })).toEqual({ allow: true });
+		expect(evaluatePolicy(t, { ...chat, model: 'claude-opus-4-7' }).allow).toBe(false);
+	});
+
+	it('narrows the policy (intersection): both the token and policy must allow', () => {
+		// policy permits the gpt-4o family, the token narrows to mini only
+		const t = token({
+			allowedModels: ['gpt-4o-mini'],
+			policy: policy({ allowedModels: ['gpt-4o*'] })
+		});
+		expect(evaluatePolicy(t, { ...chat, model: 'gpt-4o-mini' })).toEqual({ allow: true });
+		// gpt-4o passes the policy but the token forbids it
+		const res = evaluatePolicy(t, { ...chat, model: 'gpt-4o' });
+		expect(res.allow).toBe(false);
+		expect(res).toMatchObject({ reason: expect.stringContaining('token forbids') });
+	});
+
+	it('cannot widen the policy: a token can only further restrict', () => {
+		// the policy forbids the model; the token "allowing" it changes nothing
+		const t = token({
+			allowedModels: ['claude-opus-4-7'],
+			policy: policy({ allowedModels: ['gpt-4o'] })
+		});
+		const res = evaluatePolicy(t, { ...chat, model: 'claude-opus-4-7' });
+		expect(res.allow).toBe(false);
+		expect(res).toMatchObject({ reason: expect.stringContaining('policy forbids') });
+	});
+
+	it('skips model rules for an empty model (the /v1/models provider probe)', () => {
+		// a token restricted to one model still lists its allowed providers
+		const t = token({ allowedModels: ['gpt-4o'], scopes: ['models'] });
+		expect(evaluatePolicy(t, { provider: 'openai', model: '', scope: 'models' })).toEqual({
+			allow: true
+		});
 	});
 });
 

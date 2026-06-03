@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { db } from '$lib/server/db';
 import { machineToken, service, policy, settings } from '$lib/server/db/schema';
 import { sha256 } from '$lib/server/crypto';
@@ -34,8 +35,17 @@ export interface ResolvedToken {
 	serviceId: string;
 	serviceName: string;
 	scopes: string[];
+	/**
+	 * Per-token model allowlist that narrows the effective policy (intersection —
+	 * a model must satisfy both this and the policy). Empty = no extra restriction.
+	 */
+	allowedModels: string[];
 	/** the upstream secret this service is pinned to, or null for the default */
 	providerSecretId: string | null;
+	/**
+	 * The policy in force for this token: the token's own policy when it has one
+	 * (it replaces the service policy), otherwise the service's policy, or null.
+	 */
 	policy: typeof policy.$inferSelect | null;
 	/** instance-wide default cache TTL (seconds); policy.cacheTtlSeconds overrides it */
 	defaultCacheTtlSeconds: number;
@@ -50,15 +60,20 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 	if (!plaintext.startsWith(TOKEN_PREFIX)) return null;
 	const hashed = sha256(plaintext);
 
+	// Two policy joins: the service's policy and the token's own policy. The
+	// token's policy, when set, replaces the service's for this request.
+	const tokenPolicy = alias(policy, 'token_policy');
 	const rows = await db
 		.select({
 			token: machineToken,
 			service: service,
-			policy: policy
+			servicePolicy: policy,
+			tokenPolicy: tokenPolicy
 		})
 		.from(machineToken)
 		.innerJoin(service, eq(service.id, machineToken.serviceId))
 		.leftJoin(policy, eq(policy.id, service.policyId))
+		.leftJoin(tokenPolicy, eq(tokenPolicy.id, machineToken.policyId))
 		// reject tokens of a retired (soft-deleted) service, even if a token row
 		// somehow outlived deleteService's revoke step
 		.where(
@@ -92,8 +107,10 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 		serviceId: row.service.id,
 		serviceName: row.service.name,
 		scopes: row.token.scopes ?? [],
+		allowedModels: row.token.allowedModels ?? [],
 		providerSecretId: row.service.providerSecretId,
-		policy: row.policy,
+		// the token's own policy wins; fall back to the service's policy
+		policy: row.tokenPolicy ?? row.servicePolicy,
 		defaultCacheTtlSeconds: settingsRow?.cacheTtlSeconds ?? 0
 	};
 }

@@ -19,6 +19,8 @@ export const POST: RequestHandler = async (event) => {
 			serviceId: body.serviceId,
 			name: body.name,
 			scopes: Array.isArray(body.scopes) ? body.scopes : [],
+			allowedModels: Array.isArray(body.allowedModels) ? body.allowedModels : [],
+			policyId: body.policyId || null,
 			expiresAt: body.expiresAt ? new Date(body.expiresAt) : null
 		});
 		// `token` (the plaintext) is returned exactly once and never persisted.
