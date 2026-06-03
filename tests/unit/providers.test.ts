@@ -18,6 +18,10 @@ describe('providerSupports', () => {
 		expect(providerSupports(PROVIDERS.anthropic, 'chat')).toBe(true);
 		expect(providerSupports(PROVIDERS.anthropic, 'responses')).toBe(false);
 		expect(providerSupports(PROVIDERS.anthropic, 'embeddings')).toBe(false);
+		// image generation: OpenAI and Azure serve it; Anthropic does not
+		expect(providerSupports(PROVIDERS.openai, 'images')).toBe(true);
+		expect(providerSupports(PROVIDERS.azure, 'images')).toBe(true);
+		expect(providerSupports(PROVIDERS.anthropic, 'images')).toBe(false);
 	});
 });
 
