@@ -31,28 +31,62 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 	return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+/** Token usage from an upstream response, normalized across provider shapes. */
+interface NormalizedUsage {
+	/**
+	 * Total input volume *including* any cache read/write tokens. OpenAI's
+	 * `prompt_tokens` already is total; Anthropic reports cache counts separately
+	 * from `input_tokens`, so we fold them in here for one consistent figure.
+	 */
+	input: number | null;
+	output: number | null;
+	/** input tokens served from the provider's prompt cache (cache read) */
+	cacheRead: number | null;
+	/** input tokens written to the provider's prompt cache (Anthropic only) */
+	cacheWrite: number | null;
+}
+
 /**
- * Input tokens the upstream provider served from its *own* prompt cache, read
- * from a usage object. Spans the chat shape
- * (`prompt_tokens_details.cached_tokens`), the Responses shape
- * (`input_tokens_details.cached_tokens`), and Anthropic's
- * (`cache_read_input_tokens`). Returns null when no cache usage is reported.
- * This is the provider's discount on repeated input — unrelated to uprox's own
- * exact-match response cache.
+ * Read and normalize token usage from an upstream usage object. Spans the chat
+ * shape (`prompt_tokens` + `prompt_tokens_details.cached_tokens`), the Responses
+ * shape (`input_tokens` + `input_tokens_details.cached_tokens`), and Anthropic's
+ * (`input_tokens` + top-level `cache_read_input_tokens` / `cache_creation_input_tokens`).
+ *
+ * The key difference: OpenAI's cached tokens are a subset already counted in
+ * `prompt_tokens`, whereas Anthropic's `input_tokens` *excludes* its cache
+ * counts. We resolve both to `input` = full input volume, with `cacheRead` /
+ * `cacheWrite` as the cache subsets priced separately by the cost calc. Cache
+ * traffic is the provider's discount on repeated input — unrelated to uprox's
+ * own exact-match response cache. Returns null when no usage is reported.
  */
-function providerCachedTokens(usage: unknown): number | null {
+function normalizeUsage(usage: unknown): NormalizedUsage | null {
 	if (!isRecord(usage)) return null;
-	const fromDetails = (d: unknown) =>
-		isRecord(d) && typeof d.cached_tokens === 'number' ? d.cached_tokens : null;
-	return (
-		fromDetails(usage.prompt_tokens_details) ??
-		fromDetails(usage.input_tokens_details) ??
-		(typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : null)
-	);
+	const n = (v: unknown) => (typeof v === 'number' ? v : null);
+	const rawInput = n(usage.prompt_tokens) ?? n(usage.input_tokens);
+	const output = n(usage.completion_tokens) ?? n(usage.output_tokens);
+	const details = isRecord(usage.prompt_tokens_details)
+		? usage.prompt_tokens_details
+		: isRecord(usage.input_tokens_details)
+			? usage.input_tokens_details
+			: null;
+	const detailCached = details ? n(details.cached_tokens) : null;
+	// OpenAI nests cached tokens in *_tokens_details (already in rawInput);
+	// Anthropic reports them top-level, separate from input_tokens.
+	const inputIncludesCache = detailCached != null;
+	const cacheRead = detailCached ?? n(usage.cache_read_input_tokens);
+	const cacheWrite = n(usage.cache_creation_input_tokens);
+	const input =
+		rawInput == null
+			? null
+			: inputIncludesCache
+				? rawInput
+				: rawInput + (cacheRead ?? 0) + (cacheWrite ?? 0);
+	if (input == null && output == null && cacheRead == null && cacheWrite == null) return null;
+	return { input, output, cacheRead, cacheWrite };
 }
 
 interface DrainedSse {
-	usage: { input?: number; output?: number; cachedInput?: number | null } | null;
+	usage: NormalizedUsage | null;
 	/** the verbatim SSE body, reassembled — used to cache a streamed response */
 	raw: string;
 	/** false if the stream errored/aborted before completing (don't cache) */
@@ -70,7 +104,7 @@ async function readSseUsage(stream: ReadableStream<Uint8Array>): Promise<Drained
 	const decoder = new TextDecoder();
 	let buffer = '';
 	let raw = '';
-	let usage: { input?: number; output?: number; cachedInput?: number | null } | null = null;
+	let usage: NormalizedUsage | null = null;
 	let complete = false;
 
 	const take = (line: string) => {
@@ -82,12 +116,8 @@ async function readSseUsage(stream: ReadableStream<Uint8Array>): Promise<Drained
 				(isRecord(obj.usage) && obj.usage) ||
 				(isRecord(obj.response) && isRecord(obj.response.usage) && obj.response.usage);
 			if (u) {
-				const rec = u as Record<string, unknown>;
-				const input = (rec.prompt_tokens ?? rec.input_tokens) as number | undefined;
-				const output = (rec.completion_tokens ?? rec.output_tokens) as number | undefined;
-				const cachedInput = providerCachedTokens(rec);
-				if (input != null || output != null || cachedInput != null)
-					usage = { input, output, cachedInput };
+				const norm = normalizeUsage(u);
+				if (norm) usage = norm;
 			}
 		} catch {
 			// ignore non-JSON keepalive/comment lines
@@ -511,7 +541,15 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 			try {
 				const { usage, raw, complete } = await readSseUsage(costBranch);
 				const { estimateCostUsd } = await import('$lib/server/providers');
-				const cost = usage ? await estimateCostUsd(sendModel, usage.input, usage.output) : null;
+				const cost = usage
+					? await estimateCostUsd(
+							sendModel,
+							usage.input ?? undefined,
+							usage.output ?? undefined,
+							usage.cacheRead ?? 0,
+							usage.cacheWrite ?? 0
+						)
+					: null;
 				await audit({
 					action: `gateway.${scope}`,
 					status: 'ok',
@@ -523,7 +561,8 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 					costUsd: cost,
 					inputTokens: usage?.input ?? null,
 					outputTokens: usage?.output ?? null,
-					providerCachedTokens: usage?.cachedInput ?? null,
+					providerCachedTokens: usage?.cacheRead ?? null,
+					cacheWriteTokens: usage?.cacheWrite ?? null,
 					latencyMs: Date.now() - started,
 					ip,
 					detail: 'stream'
@@ -561,24 +600,24 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	const text = await upstream.text();
 	let cost: number | null = null;
 	let cachedTokens: number | null = null;
+	let cacheWriteTokens: number | null = null;
 	let inputTokens: number | null = null;
 	let outputTokens: number | null = null;
 	try {
-		const parsed = JSON.parse(text) as {
-			usage?: {
-				// chat/completions & embeddings
-				prompt_tokens?: number;
-				completion_tokens?: number;
-				// responses api
-				input_tokens?: number;
-				output_tokens?: number;
-			};
-		};
+		const parsed = JSON.parse(text) as { usage?: unknown };
+		const usage = normalizeUsage(parsed.usage);
 		const { estimateCostUsd } = await import('$lib/server/providers');
-		inputTokens = parsed.usage?.prompt_tokens ?? parsed.usage?.input_tokens ?? null;
-		outputTokens = parsed.usage?.completion_tokens ?? parsed.usage?.output_tokens ?? null;
-		cost = await estimateCostUsd(sendModel, inputTokens ?? undefined, outputTokens ?? undefined);
-		cachedTokens = providerCachedTokens(parsed.usage);
+		inputTokens = usage?.input ?? null;
+		outputTokens = usage?.output ?? null;
+		cachedTokens = usage?.cacheRead ?? null;
+		cacheWriteTokens = usage?.cacheWrite ?? null;
+		cost = await estimateCostUsd(
+			sendModel,
+			inputTokens ?? undefined,
+			outputTokens ?? undefined,
+			cachedTokens ?? 0,
+			cacheWriteTokens ?? 0
+		);
 	} catch {
 		// non-JSON or no usage; leave cost null
 	}
@@ -595,6 +634,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		inputTokens,
 		outputTokens,
 		providerCachedTokens: cachedTokens,
+		cacheWriteTokens,
 		latencyMs: Date.now() - started,
 		ip
 	});

@@ -271,6 +271,14 @@ export const modelPrice = pgTable(
 		// USD per 1,000,000 tokens
 		inputPerMtok: numeric('input_per_mtok', { precision: 12, scale: 4 }).notNull(),
 		outputPerMtok: numeric('output_per_mtok', { precision: 12, scale: 4 }).notNull(),
+		// USD per 1,000,000 tokens for provider prompt-cache traffic, distinct from
+		// the full input price. Both nullable: a NULL falls back to a multiplier of
+		// the input price in the cost calc (read 0.1×, write 1.25×), so old default
+		// rows and custom rows without explicit cache prices still price caching
+		// sensibly. cacheWrite applies to Anthropic only (OpenAI/Azure charge nothing
+		// to write a cache entry).
+		cacheReadPerMtok: numeric('cache_read_per_mtok', { precision: 12, scale: 4 }),
+		cacheWritePerMtok: numeric('cache_write_per_mtok', { precision: 12, scale: 4 }),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
 		updatedAt: timestamp('updated_at')
 			.defaultNow()
@@ -320,8 +328,14 @@ export const auditLog = pgTable(
 		savedOutputTokens: integer('saved_output_tokens'),
 		// input tokens the *upstream provider* served from its own prompt cache
 		// (OpenAI/Anthropic prompt caching) — distinct from uprox's exact-match
-		// response cache. NULL when the response reported no cache usage.
+		// response cache. This is the cache *read* count. NULL when the response
+		// reported no cache usage.
 		providerCachedTokens: integer('provider_cached_tokens'),
+		// input tokens written to the upstream provider's prompt cache this request
+		// (Anthropic `cache_creation_input_tokens`). Billed at a premium over normal
+		// input. NULL when the response reported no cache-write usage; always NULL
+		// for OpenAI/Azure, which don't charge for cache writes.
+		cacheWriteTokens: integer('cache_write_tokens'),
 		latencyMs: integer('latency_ms'),
 		ip: text('ip'),
 		detail: text('detail'),

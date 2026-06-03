@@ -178,6 +178,52 @@ describe('embedding default prices', () => {
 	});
 });
 
+describe('costFromPrice with cache tokens', () => {
+	it('discounts OpenAI cached reads within the total input (gpt-4o, 0.5×)', () => {
+		const price = { in: 2.5, out: 10, cacheRead: 1.25 };
+		// prompt_tokens already includes cached_tokens: 1M total, 800k cached.
+		// full-price = 200k @ $2.5 + 800k @ $1.25 = 0.5 + 1.0 = $1.5
+		expect(costFromPrice(price, 1_000_000, 0, 800_000, 0)).toBe(1.5);
+	});
+
+	it('adds Anthropic cache read + write on top of base input', () => {
+		const price = { in: 3, out: 15, cacheRead: 0.3, cacheWrite: 3.75 };
+		// gateway folds Anthropic counts into the total: 100 base + 5000 read + 2000 write.
+		// 100 @ $3 + 5000 @ $0.3 + 2000 @ $3.75 = 300 + 1500 + 7500 = $0.0093 per 1M
+		expect(costFromPrice(price, 7100, 0, 5000, 2000)).toBe(0.0093);
+	});
+
+	it('falls back to input-price multipliers when cache rates are unset', () => {
+		const price = { in: 3, out: 15 };
+		// read fallback 0.1×: 1M cached read @ $0.3 = $0.3
+		expect(costFromPrice(price, 1_000_000, 0, 1_000_000, 0)).toBe(0.3);
+		// write fallback 1.25×: 1M cache write @ $3.75 = $3.75
+		expect(costFromPrice(price, 1_000_000, 0, 0, 1_000_000)).toBe(3.75);
+	});
+
+	it('clamps the full-price portion to zero if cache tokens exceed input', () => {
+		const price = { in: 3, out: 15, cacheRead: 0.3, cacheWrite: 3.75 };
+		// defensive: never bills negative full-price input
+		expect(costFromPrice(price, 1000, 0, 800, 800)).toBe((800 * 0.3 + 800 * 3.75) / 1e6);
+	});
+});
+
+describe('cache default prices', () => {
+	it('seeds Anthropic cache reads at 0.1× and writes at 1.25× input', () => {
+		expect(DEFAULT_MODEL_PRICES['claude-sonnet-4-6']).toEqual({
+			in: 3,
+			out: 15,
+			cacheRead: 0.3,
+			cacheWrite: 3.75
+		});
+	});
+
+	it('seeds OpenAI cache reads with no write cost (GPT-5 0.1×, GPT-4o 0.5×)', () => {
+		expect(DEFAULT_MODEL_PRICES['gpt-5.4']).toEqual({ in: 2.5, out: 15, cacheRead: 0.25 });
+		expect(DEFAULT_MODEL_PRICES['gpt-4o']).toEqual({ in: 2.5, out: 10, cacheRead: 1.25 });
+	});
+});
+
 describe('resolvePrice', () => {
 	const prices = {
 		'gpt-5.4': { in: 2.5, out: 15 },

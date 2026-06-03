@@ -12,9 +12,9 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { modelPrice } from '$lib/server/db/schema';
 import { audit } from '$lib/server/audit';
-import { DEFAULT_MODEL_PRICES, providerForModel } from '$lib/server/providers';
+import { DEFAULT_MODEL_PRICES, providerForModel, type ModelPrice } from '$lib/server/providers';
 
-type PriceMap = Record<string, { in: number; out: number }>;
+type PriceMap = Record<string, ModelPrice>;
 
 const CACHE_TTL_MS = 30_000;
 
@@ -37,7 +37,9 @@ export async function seedDefaultModelPrices(): Promise<void> {
 		model,
 		provider: providerForModel(model)?.id ?? null,
 		inputPerMtok: String(p.in),
-		outputPerMtok: String(p.out)
+		outputPerMtok: String(p.out),
+		cacheReadPerMtok: p.cacheRead != null ? String(p.cacheRead) : null,
+		cacheWritePerMtok: p.cacheWrite != null ? String(p.cacheWrite) : null
 	}));
 	if (rows.length === 0) return;
 	// ON CONFLICT DO NOTHING against the default partial unique index (model
@@ -59,13 +61,19 @@ export async function getEffectivePriceMap(): Promise<PriceMap> {
 	if (cachedEntry && cachedEntry.expires > Date.now()) return cachedEntry.map;
 
 	const rows = await selectVisible();
+	const toPrice = (r: (typeof rows)[number]): ModelPrice => ({
+		in: Number(r.inputPerMtok),
+		out: Number(r.outputPerMtok),
+		...(r.cacheReadPerMtok != null ? { cacheRead: Number(r.cacheReadPerMtok) } : {}),
+		...(r.cacheWritePerMtok != null ? { cacheWrite: Number(r.cacheWritePerMtok) } : {})
+	});
 	const map: PriceMap = {};
 	// defaults first, then custom rows override any matching model
 	for (const r of rows) {
-		if (r.isDefault) map[r.model] = { in: Number(r.inputPerMtok), out: Number(r.outputPerMtok) };
+		if (r.isDefault) map[r.model] = toPrice(r);
 	}
 	for (const r of rows) {
-		if (!r.isDefault) map[r.model] = { in: Number(r.inputPerMtok), out: Number(r.outputPerMtok) };
+		if (!r.isDefault) map[r.model] = toPrice(r);
 	}
 
 	cachedEntry = { map, expires: Date.now() + CACHE_TTL_MS };
@@ -79,11 +87,16 @@ export interface EffectiveModelPrice {
 	provider: string | null;
 	inputPerMtok: number;
 	outputPerMtok: number;
+	/** provider prompt-cache rates; null when this row leaves them to the fallback */
+	cacheReadPerMtok: number | null;
+	cacheWritePerMtok: number | null;
 	/** 'custom' when the instance has its own row, else 'default' */
 	source: 'default' | 'custom';
 	/** the platform default beneath an override, if one exists */
 	defaultInputPerMtok: number | null;
 	defaultOutputPerMtok: number | null;
+	defaultCacheReadPerMtok: number | null;
+	defaultCacheWritePerMtok: number | null;
 }
 
 /**
@@ -106,15 +119,20 @@ export async function listEffectiveModelPrices(): Promise<EffectiveModelPrice[]>
 		const o = customRows.get(model);
 		const d = defaults.get(model);
 		const eff = o ?? d!;
+		const num = (v: string | null | undefined) => (v != null ? Number(v) : null);
 		return {
 			id: o?.id ?? null,
 			model,
 			provider: eff.provider,
 			inputPerMtok: Number(eff.inputPerMtok),
 			outputPerMtok: Number(eff.outputPerMtok),
+			cacheReadPerMtok: num(eff.cacheReadPerMtok),
+			cacheWritePerMtok: num(eff.cacheWritePerMtok),
 			source: o ? 'custom' : 'default',
 			defaultInputPerMtok: d ? Number(d.inputPerMtok) : null,
-			defaultOutputPerMtok: d ? Number(d.outputPerMtok) : null
+			defaultOutputPerMtok: d ? Number(d.outputPerMtok) : null,
+			defaultCacheReadPerMtok: d ? num(d.cacheReadPerMtok) : null,
+			defaultCacheWritePerMtok: d ? num(d.cacheWritePerMtok) : null
 		};
 	});
 }
@@ -124,6 +142,14 @@ export interface ModelPriceInput {
 	provider?: string | null;
 	inputPerMtok: number;
 	outputPerMtok: number;
+	/** optional provider prompt-cache rates; omit/null to leave the fallback in charge */
+	cacheReadPerMtok?: number | null;
+	cacheWritePerMtok?: number | null;
+}
+
+/** Serialize an optional numeric price to the DB's string|null column shape. */
+function priceStr(v: number | null | undefined): string | null {
+	return v != null ? String(v) : null;
 }
 
 /**
@@ -139,7 +165,9 @@ export async function createOrgModelPrice(input: ModelPriceInput) {
 			model,
 			provider: input.provider?.trim() || null,
 			inputPerMtok: String(input.inputPerMtok),
-			outputPerMtok: String(input.outputPerMtok)
+			outputPerMtok: String(input.outputPerMtok),
+			cacheReadPerMtok: priceStr(input.cacheReadPerMtok),
+			cacheWritePerMtok: priceStr(input.cacheWritePerMtok)
 		})
 		.onConflictDoUpdate({
 			target: modelPrice.model,
@@ -149,6 +177,8 @@ export async function createOrgModelPrice(input: ModelPriceInput) {
 				provider: input.provider?.trim() || null,
 				inputPerMtok: String(input.inputPerMtok),
 				outputPerMtok: String(input.outputPerMtok),
+				cacheReadPerMtok: priceStr(input.cacheReadPerMtok),
+				cacheWritePerMtok: priceStr(input.cacheWritePerMtok),
 				updatedAt: new Date()
 			}
 		})
@@ -167,7 +197,13 @@ export async function createOrgModelPrice(input: ModelPriceInput) {
 /** Update one of the instance's custom price rows by id. Returns null if not found. */
 export async function updateOrgModelPrice(
 	id: string,
-	patch: { provider?: string | null; inputPerMtok?: number; outputPerMtok?: number }
+	patch: {
+		provider?: string | null;
+		inputPerMtok?: number;
+		outputPerMtok?: number;
+		cacheReadPerMtok?: number | null;
+		cacheWritePerMtok?: number | null;
+	}
 ) {
 	const [row] = await db
 		.update(modelPrice)
@@ -175,6 +211,12 @@ export async function updateOrgModelPrice(
 			...(patch.provider !== undefined ? { provider: patch.provider?.trim() || null } : {}),
 			...(patch.inputPerMtok !== undefined ? { inputPerMtok: String(patch.inputPerMtok) } : {}),
 			...(patch.outputPerMtok !== undefined ? { outputPerMtok: String(patch.outputPerMtok) } : {}),
+			...(patch.cacheReadPerMtok !== undefined
+				? { cacheReadPerMtok: priceStr(patch.cacheReadPerMtok) }
+				: {}),
+			...(patch.cacheWritePerMtok !== undefined
+				? { cacheWritePerMtok: priceStr(patch.cacheWritePerMtok) }
+				: {}),
 			updatedAt: new Date()
 		})
 		.where(and(eq(modelPrice.id, id), eq(modelPrice.isDefault, false)))

@@ -24,11 +24,27 @@ export const POST: RequestHandler = async (event) => {
 			{ error: 'inputPerMtok and outputPerMtok must be non-negative numbers' },
 			{ status: 400 }
 		);
+	// Optional provider prompt-cache rates: omitted/null leaves the input-price
+	// multiplier fallback in charge; a present value must be a non-negative number.
+	const parseOptional = (v: unknown): number | null | undefined => {
+		if (v === undefined || v === null || v === '') return undefined;
+		const n = Number(v);
+		return Number.isFinite(n) && n >= 0 ? n : null;
+	};
+	const cacheReadPerMtok = parseOptional(body.cacheReadPerMtok);
+	const cacheWritePerMtok = parseOptional(body.cacheWritePerMtok);
+	if (cacheReadPerMtok === null || cacheWritePerMtok === null)
+		return json(
+			{ error: 'cacheReadPerMtok and cacheWritePerMtok must be non-negative numbers' },
+			{ status: 400 }
+		);
 	const row = await createOrgModelPrice({
 		model: String(body.model),
 		provider: body.provider ? String(body.provider) : null,
 		inputPerMtok,
-		outputPerMtok
+		outputPerMtok,
+		cacheReadPerMtok,
+		cacheWritePerMtok
 	});
 	return json(row, { status: 201 });
 };

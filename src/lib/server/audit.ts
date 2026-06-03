@@ -17,8 +17,10 @@ export interface AuditEntry {
 	/** for cache hits: tokens the original (miss) request consumed — saved by replay */
 	savedInputTokens?: number | null;
 	savedOutputTokens?: number | null;
-	/** input tokens the upstream provider served from its own prompt cache */
+	/** input tokens the upstream provider served from its own prompt cache (cache read) */
 	providerCachedTokens?: number | null;
+	/** input tokens written to the provider's prompt cache (Anthropic cache creation) */
+	cacheWriteTokens?: number | null;
 	latencyMs?: number | null;
 	ip?: string | null;
 	detail?: string | null;
@@ -45,6 +47,7 @@ export async function audit(entry: AuditEntry): Promise<void> {
 			savedInputTokens: entry.savedInputTokens ?? null,
 			savedOutputTokens: entry.savedOutputTokens ?? null,
 			providerCachedTokens: entry.providerCachedTokens ?? null,
+			cacheWriteTokens: entry.cacheWriteTokens ?? null,
 			latencyMs: entry.latencyMs ?? null,
 			ip: entry.ip ?? null,
 			detail: entry.detail ?? null
