@@ -220,44 +220,100 @@ export function resolveProvider(
  * defaults (NULL-org rows) on first migration; see `getDefaultModelPrices`.
  * Prices are intentionally approximate — good enough for spend tracking.
  */
-export const DEFAULT_MODEL_PRICES: Record<string, { in: number; out: number }> = {
+/**
+ * A resolved per-1M-token price. `cacheRead`/`cacheWrite` are the provider
+ * prompt-cache rates; when absent they fall back to multipliers of `in` (read
+ * 0.1×, write 1.25×) inside {@link costFromPrice}. cacheWrite is meaningful only
+ * for Anthropic — OpenAI/Azure don't charge to write a cache entry, so their
+ * requests carry zero cache-write tokens and the rate is never applied.
+ */
+export interface ModelPrice {
+	in: number;
+	out: number;
+	cacheRead?: number;
+	cacheWrite?: number;
+}
+
+function round4(n: number): number {
+	return Math.round(n * 1e4) / 1e4;
+}
+// Anthropic prices cache traffic as fixed multiples of the input price: reads at
+// 0.1×, 5-minute writes at 1.25×. Seed those explicitly so the dashboard shows
+// real numbers; the same ratios back the NULL fallback in costFromPrice.
+const anthropic = (input: number, out: number): ModelPrice => ({
+	in: input,
+	out,
+	cacheRead: round4(input * 0.1),
+	cacheWrite: round4(input * 1.25)
+});
+// OpenAI/Azure charge only a read discount (no write cost). The discount varies
+// by family: the GPT-5 series caches at 0.1× input, GPT-4.x/o-series at ~0.5×.
+const openai = (input: number, out: number, readRatio: number): ModelPrice => ({
+	in: input,
+	out,
+	cacheRead: round4(input * readRatio)
+});
+
+export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	// OpenAI — current GPT-5 series (most specific keys first, see lookup note below)
-	'gpt-5.5-pro': { in: 30, out: 180 },
-	'gpt-5.5': { in: 5, out: 30 },
-	'gpt-5.4-pro': { in: 30, out: 180 },
-	'gpt-5.4-mini': { in: 0.75, out: 4.5 },
-	'gpt-5.4-nano': { in: 0.2, out: 1.25 },
-	'gpt-5.4': { in: 2.5, out: 15 },
-	// OpenAI — older models
-	'gpt-4o': { in: 2.5, out: 10 },
-	'gpt-4o-mini': { in: 0.15, out: 0.6 },
-	'gpt-4.1': { in: 2, out: 8 },
-	'gpt-4.1-mini': { in: 0.4, out: 1.6 },
-	o3: { in: 2, out: 8 },
-	// OpenAI — embeddings (input-only; embeddings produce no output tokens, so out = 0)
+	'gpt-5.5-pro': openai(30, 180, 0.1),
+	'gpt-5.5': openai(5, 30, 0.1),
+	'gpt-5.4-pro': openai(30, 180, 0.1),
+	'gpt-5.4-mini': openai(0.75, 4.5, 0.1),
+	'gpt-5.4-nano': openai(0.2, 1.25, 0.1),
+	'gpt-5.4': openai(2.5, 15, 0.1),
+	// OpenAI — older models (GPT-4.x / o-series cache reads at ~0.5× input)
+	'gpt-4o': openai(2.5, 10, 0.5),
+	'gpt-4o-mini': openai(0.15, 0.6, 0.5),
+	'gpt-4.1': openai(2, 8, 0.5),
+	'gpt-4.1-mini': openai(0.4, 1.6, 0.5),
+	o3: openai(2, 8, 0.5),
+	// OpenAI — embeddings (input-only; no output tokens and no prompt caching)
 	'text-embedding-3-small': { in: 0.02, out: 0 },
 	'text-embedding-3-large': { in: 0.13, out: 0 },
 	// Anthropic — current Claude 4.x series
-	'claude-opus-4-7': { in: 5, out: 25 },
-	'claude-opus-4-6': { in: 5, out: 25 },
-	'claude-opus-4-5': { in: 5, out: 25 },
-	'claude-opus-4-1': { in: 15, out: 75 },
-	'claude-sonnet-4-6': { in: 3, out: 15 },
-	'claude-sonnet-4-5': { in: 3, out: 15 },
-	'claude-haiku-4-5': { in: 1, out: 5 },
+	'claude-opus-4-7': anthropic(5, 25),
+	'claude-opus-4-6': anthropic(5, 25),
+	'claude-opus-4-5': anthropic(5, 25),
+	'claude-opus-4-1': anthropic(15, 75),
+	'claude-sonnet-4-6': anthropic(3, 15),
+	'claude-sonnet-4-5': anthropic(3, 15),
+	'claude-haiku-4-5': anthropic(1, 5),
 	// Anthropic — older models
-	'claude-3-5-sonnet': { in: 3, out: 15 },
-	'claude-3-5-haiku': { in: 0.8, out: 4 },
-	'claude-sonnet-4': { in: 3, out: 15 }
+	'claude-3-5-sonnet': anthropic(3, 15),
+	'claude-3-5-haiku': anthropic(0.8, 4),
+	'claude-sonnet-4': anthropic(3, 15)
 };
 
-/** Compute USD cost from a resolved per-1M-token price and token counts. */
+/** Fallback cache-rate multipliers of the input price when a price is unset. */
+const FALLBACK_CACHE_READ_MULT = 0.1;
+const FALLBACK_CACHE_WRITE_MULT = 1.25;
+
+/**
+ * Compute USD cost from a resolved per-1M-token price and token counts.
+ *
+ * `promptTokens` is the *total* input volume including any cache read/write
+ * tokens (OpenAI's `prompt_tokens` already is; the gateway folds Anthropic's
+ * separate cache counts into it). The full-price portion is what's left after
+ * subtracting the cache tokens, which are billed at their own rates. When a
+ * cache rate is unset it falls back to a multiple of the input price.
+ */
 export function costFromPrice(
-	price: { in: number; out: number },
+	price: ModelPrice,
 	promptTokens: number,
-	completionTokens: number | undefined
+	completionTokens: number | undefined,
+	cacheReadTokens = 0,
+	cacheWriteTokens = 0
 ): number {
-	const cost = (promptTokens * price.in + (completionTokens ?? 0) * price.out) / 1_000_000;
+	const cacheReadRate = price.cacheRead ?? price.in * FALLBACK_CACHE_READ_MULT;
+	const cacheWriteRate = price.cacheWrite ?? price.in * FALLBACK_CACHE_WRITE_MULT;
+	const fullPriceInput = Math.max(0, promptTokens - cacheReadTokens - cacheWriteTokens);
+	const cost =
+		(fullPriceInput * price.in +
+			cacheReadTokens * cacheReadRate +
+			cacheWriteTokens * cacheWriteRate +
+			(completionTokens ?? 0) * price.out) /
+		1_000_000;
 	// Round to 8 decimals: rounding to 1e-6 floored cheap models (e.g. gpt-5.4-nano)
 	// to 0 on small requests, since their per-token cost is well below a micro-dollar.
 	return Math.round(cost * 1e8) / 1e8;
@@ -267,10 +323,7 @@ export function costFromPrice(
  * Resolve the longest-prefix price for a model from a price map, matching the
  * legacy lookup: e.g. "gpt-5.4-mini" wins over "gpt-5.4".
  */
-export function resolvePrice(
-	prices: Record<string, { in: number; out: number }>,
-	model: string
-): { in: number; out: number } | null {
+export function resolvePrice(prices: Record<string, ModelPrice>, model: string): ModelPrice | null {
 	const m = model.toLowerCase();
 	const key = Object.keys(prices)
 		.sort((a, b) => b.length - a.length)
@@ -282,17 +335,27 @@ export function resolvePrice(
  * Estimate a request's USD cost. Reads the instance's effective price map
  * (custom overrides layered over platform defaults) from the database via a
  * short-lived in-memory cache, then matches the model by longest prefix.
- * Returns null when the model has no price or no prompt tokens were reported.
+ * `promptTokens` is the total input volume; `cacheReadTokens`/`cacheWriteTokens`
+ * are the cache subsets within it, priced separately. Returns null when the
+ * model has no price or no prompt tokens were reported.
  */
 export async function estimateCostUsd(
 	model: string | undefined,
 	promptTokens: number | undefined,
-	completionTokens: number | undefined
+	completionTokens: number | undefined,
+	cacheReadTokens = 0,
+	cacheWriteTokens = 0
 ): Promise<number | null> {
 	if (!model || promptTokens == null) return null;
 	const { getEffectivePriceMap } = await import('$lib/server/pricing');
 	const prices = await getEffectivePriceMap();
 	const price = resolvePrice(prices, model);
 	if (!price) return null;
-	return costFromPrice(price, promptTokens, completionTokens ?? 0);
+	return costFromPrice(
+		price,
+		promptTokens,
+		completionTokens ?? 0,
+		cacheReadTokens,
+		cacheWriteTokens
+	);
 }

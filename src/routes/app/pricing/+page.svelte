@@ -72,7 +72,9 @@
 
 	let providerFilter = $state('all');
 	let query = $state('');
-	let sortKey = $state<'model' | 'inputPerMtok' | 'outputPerMtok'>('model');
+	let sortKey = $state<
+		'model' | 'inputPerMtok' | 'outputPerMtok' | 'cacheReadPerMtok' | 'cacheWritePerMtok'
+	>('model');
 	let sortDir = $state<'asc' | 'desc'>('asc');
 
 	function toggleSort(key: typeof sortKey) {
@@ -93,7 +95,8 @@
 		const dir = sortDir === 'asc' ? 1 : -1;
 		out = [...out].sort((a, b) => {
 			if (sortKey === 'model') return a.model.localeCompare(b.model) * dir;
-			return ((a[sortKey] as number) - (b[sortKey] as number)) * dir;
+			// cache prices can be null (fall back to the input multiplier); sort those last
+			return (((a[sortKey] as number | null) ?? 0) - ((b[sortKey] as number | null) ?? 0)) * dir;
 		});
 		return out;
 	});
@@ -109,11 +112,15 @@
 	let editRow = $state<string | null>(null);
 	let draftIn = $state('');
 	let draftOut = $state('');
+	let draftCacheRead = $state('');
+	let draftCacheWrite = $state('');
 
 	function startEdit(p: Price) {
 		editRow = p.model;
 		draftIn = String(p.inputPerMtok);
 		draftOut = String(p.outputPerMtok);
+		draftCacheRead = p.cacheReadPerMtok != null ? String(p.cacheReadPerMtok) : '';
+		draftCacheWrite = p.cacheWritePerMtok != null ? String(p.cacheWritePerMtok) : '';
 	}
 	const inlineFormId = (model: string) => `edit-${model.replace(/[^a-z0-9]+/gi, '-')}`;
 
@@ -228,6 +235,12 @@
 						<Table.Head class="text-right">
 							{@render sortHead('Output / 1M', 'outputPerMtok', 'right')}
 						</Table.Head>
+						<Table.Head class="text-right">
+							{@render sortHead('Cache read / 1M', 'cacheReadPerMtok', 'right')}
+						</Table.Head>
+						<Table.Head class="text-right">
+							{@render sortHead('Cache write / 1M', 'cacheWritePerMtok', 'right')}
+						</Table.Head>
 						<Table.Head class="w-[1%]">Source</Table.Head>
 						<Table.Head class="w-[1%]"></Table.Head>
 					</Table.Row>
@@ -283,6 +296,44 @@
 											{formatUsd(p.defaultOutputPerMtok)}
 										</div>
 									{/if}
+								{/if}
+							</Table.Cell>
+							<Table.Cell class="text-right tabular-nums">
+								{#if isEditing}
+									<Input
+										form={fid}
+										name="cacheReadPerMtok"
+										type="number"
+										step="0.0001"
+										min="0"
+										placeholder="auto"
+										bind:value={draftCacheRead}
+										aria-label="Cache read price per 1M tokens"
+										class="ml-auto h-8 w-28 text-right"
+									/>
+								{:else if p.cacheReadPerMtok !== null}
+									{formatUsd(p.cacheReadPerMtok)}
+								{:else}
+									<span class="text-muted-foreground">—</span>
+								{/if}
+							</Table.Cell>
+							<Table.Cell class="text-right tabular-nums">
+								{#if isEditing}
+									<Input
+										form={fid}
+										name="cacheWritePerMtok"
+										type="number"
+										step="0.0001"
+										min="0"
+										placeholder="auto"
+										bind:value={draftCacheWrite}
+										aria-label="Cache write price per 1M tokens"
+										class="ml-auto h-8 w-28 text-right"
+									/>
+								{:else if p.cacheWritePerMtok !== null}
+									{formatUsd(p.cacheWritePerMtok)}
+								{:else}
+									<span class="text-muted-foreground">—</span>
 								{/if}
 							</Table.Cell>
 							<Table.Cell>
@@ -480,6 +531,35 @@
 					/>
 				</div>
 			</div>
+			<div class="grid grid-cols-2 gap-4">
+				<div class="space-y-2">
+					<Label for="cacheReadPerMtok">Cache read $ / 1M</Label>
+					<Input
+						id="cacheReadPerMtok"
+						name="cacheReadPerMtok"
+						type="number"
+						step="0.0001"
+						min="0"
+						placeholder="auto (0.1× input)"
+					/>
+				</div>
+				<div class="space-y-2">
+					<Label for="cacheWritePerMtok">Cache write $ / 1M</Label>
+					<Input
+						id="cacheWritePerMtok"
+						name="cacheWritePerMtok"
+						type="number"
+						step="0.0001"
+						min="0"
+						placeholder="auto (1.25× input)"
+					/>
+				</div>
+			</div>
+			<p class="text-xs text-muted-foreground">
+				Cache prices are optional — leave blank to fall back to a multiple of the input price (read
+				0.1×, write 1.25×). Cache writes apply to Anthropic only; OpenAI/Azure don't charge to write
+				a cache entry.
+			</p>
 			{#if form?.message}
 				<p class="text-sm text-destructive">{form.message}</p>
 			{/if}

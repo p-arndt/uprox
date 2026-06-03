@@ -22,6 +22,18 @@ function parsePrice(value: FormDataEntryValue | null): number | null {
 	return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+/**
+ * Parse an optional price field: `undefined` when left blank (leave it unset and
+ * fall back to the input-price multiplier), a number when valid, or `null` when
+ * present but not a non-negative number (a validation error).
+ */
+function parseOptionalPrice(value: FormDataEntryValue | null): number | null | undefined {
+	const s = value?.toString().trim();
+	if (!s) return undefined;
+	const n = Number(s);
+	return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
 export const actions: Actions = {
 	create: async (event) => {
 		await requirePermission(event, 'pricing:manage');
@@ -32,12 +44,18 @@ export const actions: Actions = {
 		const outputPerMtok = parsePrice(data.get('outputPerMtok'));
 		if (inputPerMtok === null || outputPerMtok === null)
 			return fail(400, { message: 'Prices must be non-negative numbers' });
+		const cacheReadPerMtok = parseOptionalPrice(data.get('cacheReadPerMtok'));
+		const cacheWritePerMtok = parseOptionalPrice(data.get('cacheWritePerMtok'));
+		if (cacheReadPerMtok === null || cacheWritePerMtok === null)
+			return fail(400, { message: 'Cache prices must be non-negative numbers' });
 
 		await createOrgModelPrice({
 			model,
 			provider: data.get('provider')?.toString() || null,
 			inputPerMtok,
-			outputPerMtok
+			outputPerMtok,
+			cacheReadPerMtok,
+			cacheWritePerMtok
 		});
 		return { success: true };
 	},
@@ -50,11 +68,17 @@ export const actions: Actions = {
 		const outputPerMtok = parsePrice(data.get('outputPerMtok'));
 		if (inputPerMtok === null || outputPerMtok === null)
 			return fail(400, { message: 'Prices must be non-negative numbers' });
+		const cacheReadPerMtok = parseOptionalPrice(data.get('cacheReadPerMtok'));
+		const cacheWritePerMtok = parseOptionalPrice(data.get('cacheWritePerMtok'));
+		if (cacheReadPerMtok === null || cacheWritePerMtok === null)
+			return fail(400, { message: 'Cache prices must be non-negative numbers' });
 
 		const row = await updateOrgModelPrice(id, {
 			provider: data.get('provider')?.toString() || null,
 			inputPerMtok,
-			outputPerMtok
+			outputPerMtok,
+			cacheReadPerMtok,
+			cacheWritePerMtok
 		});
 		if (!row) return fail(404, { message: 'Not found' });
 		return { success: true };
