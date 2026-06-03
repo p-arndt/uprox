@@ -60,6 +60,19 @@ export const machineToken = pgTable(
 			.array()
 			.notNull()
 			.default(sql`'{}'::text[]`),
+		// Per-token model allowlist. NARROWS the effective policy's models — a model
+		// must satisfy both this list and the policy to be reachable (intersection,
+		// the token can only restrict, never widen). Empty = no extra restriction.
+		// Same matching as policy.allowedModels (trailing "*" prefix glob).
+		allowedModels: text('allowed_models')
+			.array()
+			.notNull()
+			.default(sql`'{}'::text[]`),
+		// Optional per-token policy. When set it REPLACES the service's policy for
+		// requests made with this token (providers, models, rate limit, budget,
+		// cache). NULL = inherit the service's policy. The FK nulls out if the
+		// policy is deleted, reverting the token to its service policy.
+		policyId: uuid('policy_id').references(() => policy.id, { onDelete: 'set null' }),
 		lastUsedAt: timestamp('last_used_at'),
 		expiresAt: timestamp('expires_at'),
 		revokedAt: timestamp('revoked_at'),
@@ -323,11 +336,13 @@ export const serviceRelations = relations(service, ({ one, many }) => ({
 }));
 
 export const machineTokenRelations = relations(machineToken, ({ one }) => ({
-	service: one(service, { fields: [machineToken.serviceId], references: [service.id] })
+	service: one(service, { fields: [machineToken.serviceId], references: [service.id] }),
+	policy: one(policy, { fields: [machineToken.policyId], references: [policy.id] })
 }));
 
 export const policyRelations = relations(policy, ({ many }) => ({
-	services: many(service)
+	services: many(service),
+	tokens: many(machineToken)
 }));
 
 export * from './auth.schema';

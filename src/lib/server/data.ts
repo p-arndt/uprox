@@ -93,8 +93,12 @@ export function listTokens() {
 				name: machineToken.name,
 				display: machineToken.display,
 				scopes: machineToken.scopes,
+				allowedModels: machineToken.allowedModels,
 				serviceId: machineToken.serviceId,
 				serviceName: service.name,
+				// the token's own policy (overrides the service policy when set)
+				policyId: machineToken.policyId,
+				policyName: policy.name,
 				lastUsedAt: machineToken.lastUsedAt,
 				expiresAt: machineToken.expiresAt,
 				revokedAt: machineToken.revokedAt,
@@ -102,6 +106,7 @@ export function listTokens() {
 			})
 			.from(machineToken)
 			.innerJoin(service, eq(service.id, machineToken.serviceId))
+			.leftJoin(policy, eq(policy.id, machineToken.policyId))
 			// hide tokens belonging to retired (soft-deleted) services
 			.where(isNull(service.deletedAt))
 			.orderBy(desc(machineToken.createdAt))
@@ -114,7 +119,16 @@ export function listTokens() {
  */
 export async function createToken(
 	userId: string,
-	input: { serviceId: string; name: string; scopes?: string[]; expiresAt?: Date | null }
+	input: {
+		serviceId: string;
+		name: string;
+		scopes?: string[];
+		// per-token model allowlist (narrows the policy); empty = no extra restriction
+		allowedModels?: string[];
+		// per-token policy that replaces the service policy; null = inherit service
+		policyId?: string | null;
+		expiresAt?: Date | null;
+	}
 ) {
 	// ensure the service exists and isn't retired
 	const [svc] = await db
@@ -133,6 +147,8 @@ export async function createToken(
 			display: issued.display,
 			hashedToken: issued.hashedToken,
 			scopes: input.scopes ?? [],
+			allowedModels: input.allowedModels ?? [],
+			policyId: input.policyId ?? null,
 			expiresAt: input.expiresAt ?? null,
 			createdByUserId: userId
 		})
@@ -147,6 +163,45 @@ export async function createToken(
 	});
 
 	return { token: row, plaintext: issued.plaintext };
+}
+
+/**
+ * Edit a live token in place. Tokens are long-lived and their secret can't be
+ * regenerated, so the access controls (scopes, model allowlist, policy) and the
+ * display name are editable without reissuing. Only the fields present in
+ * `patch` are written. Revoked tokens are left untouched.
+ */
+export async function updateToken(
+	id: string,
+	patch: {
+		name?: string;
+		scopes?: string[];
+		allowedModels?: string[];
+		policyId?: string | null;
+	}
+) {
+	const set: Partial<typeof machineToken.$inferInsert> = {};
+	if (patch.name !== undefined) set.name = patch.name;
+	if (patch.scopes !== undefined) set.scopes = patch.scopes;
+	if (patch.allowedModels !== undefined) set.allowedModels = patch.allowedModels;
+	if (patch.policyId !== undefined) set.policyId = patch.policyId;
+	if (Object.keys(set).length === 0) return null;
+
+	const [row] = await db
+		.update(machineToken)
+		.set(set)
+		.where(and(eq(machineToken.id, id), isNull(machineToken.revokedAt)))
+		.returning();
+	if (row) {
+		await audit({
+			action: 'token.update',
+			status: 'ok',
+			serviceId: row.serviceId,
+			tokenId: row.id,
+			detail: row.name
+		});
+	}
+	return row ?? null;
 }
 
 export async function revokeToken(id: string) {

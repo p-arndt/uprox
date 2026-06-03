@@ -10,11 +10,30 @@ export interface PolicyRequest {
 export type PolicyResult = { allow: true } | { allow: false; reason: string };
 
 /**
+ * Match a model name against an allowlist of patterns. A trailing "*" is a
+ * prefix glob (e.g. "gpt-4o*"); everything else is an exact match. Comparison is
+ * case-insensitive, consistent with model routing which lowercases.
+ */
+export function modelAllowed(patterns: string[], model: string): boolean {
+	const m = model.toLowerCase();
+	return patterns.some((pattern) => {
+		const p = pattern.toLowerCase();
+		if (p.endsWith('*')) return m.startsWith(p.slice(0, -1));
+		return p === m;
+	});
+}
+
+/**
  * The policy engine. Decides whether a resolved token may perform a given
  * gateway request. Rules, in order:
  *   1. token scopes — empty means "all scopes"
- *   2. policy.allowedProviders — empty means "all providers"
- *   3. policy.allowedModels — empty means "all models", supports `*` suffix globs
+ *   2. token.allowedModels — empty means "no extra restriction"; when set it
+ *      narrows the policy (the model must satisfy this list too)
+ *   3. policy.allowedProviders — empty means "all providers"
+ *   4. policy.allowedModels — empty means "all models", supports `*` suffix globs
+ *
+ * An empty `req.model` (e.g. the provider-only probe the /v1/models listing
+ * makes) skips the model rules — there is no model to constrain.
  */
 export function evaluatePolicy(token: ResolvedToken, req: PolicyRequest): PolicyResult {
 	// 1. scope check
@@ -22,24 +41,30 @@ export function evaluatePolicy(token: ResolvedToken, req: PolicyRequest): Policy
 		return { allow: false, reason: `token is not scoped for "${req.scope}"` };
 	}
 
+	// 2. per-token model allowlist — narrows whatever policy applies (intersection)
+	if (
+		req.model &&
+		token.allowedModels.length > 0 &&
+		!modelAllowed(token.allowedModels, req.model)
+	) {
+		return { allow: false, reason: `token forbids model "${req.model}"` };
+	}
+
 	const policy = token.policy;
 	if (!policy) return { allow: true };
 
-	// 2. provider check
+	// 3. provider check
 	if (policy.allowedProviders.length > 0 && !policy.allowedProviders.includes(req.provider)) {
 		return { allow: false, reason: `policy forbids provider "${req.provider}"` };
 	}
 
-	// 3. model check (supports trailing "*" wildcard, e.g. "gpt-4o*")
-	//    matched case-insensitively, consistent with model routing which lowercases.
-	if (policy.allowedModels.length > 0) {
-		const model = req.model.toLowerCase();
-		const ok = policy.allowedModels.some((pattern) => {
-			const p = pattern.toLowerCase();
-			if (p.endsWith('*')) return model.startsWith(p.slice(0, -1));
-			return p === model;
-		});
-		if (!ok) return { allow: false, reason: `policy forbids model "${req.model}"` };
+	// 4. model check (supports trailing "*" wildcard, e.g. "gpt-4o*")
+	if (
+		req.model &&
+		policy.allowedModels.length > 0 &&
+		!modelAllowed(policy.allowedModels, req.model)
+	) {
+		return { allow: false, reason: `policy forbids model "${req.model}"` };
 	}
 
 	return { allow: true };

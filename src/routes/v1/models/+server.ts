@@ -30,7 +30,9 @@ export const GET: RequestHandler = async (event) => {
 	for (const secret of secrets) {
 		const def = PROVIDERS[secret.provider];
 		if (!def) continue;
-		// only list providers this token's policy allows
+		// provider-level gate: skip a provider the token can't reach at all (empty
+		// model = provider/scope check only, model allowlists are evaluated per id
+		// below). Saves the upstream call for a fully-disallowed provider.
 		if (!evaluatePolicy(token, { provider: def.id, model: '', scope: 'models' }).allow) continue;
 		const base = resolveBaseUrl(def, secret.baseUrl);
 		if (!base) continue;
@@ -44,6 +46,10 @@ export const GET: RequestHandler = async (event) => {
 				// Model ids are callable as-is (no provider alias). OpenAI and Azure
 				// share the namespace, so dedupe ids when both are configured.
 				if (seen.has(m.id)) continue;
+				// hide models this token's policy / per-token allowlist forbids, so the
+				// catalog reflects exactly what the token can actually call.
+				if (!evaluatePolicy(token, { provider: def.id, model: m.id, scope: 'models' }).allow)
+					continue;
 				seen.add(m.id);
 				models.push({ id: m.id, object: 'model', owned_by: def.id });
 			}
