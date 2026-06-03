@@ -2,11 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { auth } from '$lib/server/auth';
 import { APIError } from 'better-auth/api';
-import {
-	getEnabledProviders,
-	getOidcConfig,
-	isEmailAuthEnabled
-} from '$lib/server/auth-config';
+import { getEnabledProviders, getOidcConfig, isEmailAuthEnabled } from '$lib/server/auth-config';
 import { markSetupComplete } from '$lib/server/setup';
 
 export const load: PageServerLoad = (event) => {

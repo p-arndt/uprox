@@ -99,6 +99,42 @@ export function providerSupports(provider: ProviderDef, capability: Capability):
 	return provider.capabilities.includes(capability);
 }
 
+/** The fields of a stored provider secret that drive credential selection. */
+export interface SelectableSecret {
+	id: string;
+	provider: string;
+	priority: number;
+	createdAt: Date;
+}
+
+/**
+ * Pick which stored secret to use for a resolved provider. A provider may hold
+ * several secrets (e.g. multiple Azure OpenAI resources). A service that pins a
+ * specific secret (`preferSecretId`) wins, but only when that secret belongs to
+ * the resolved provider — a pin to an Azure resource must not hijack an OpenAI
+ * request. Otherwise the highest-`priority` secret is used, oldest first to
+ * break ties so selection is stable as priorities change. Returns null when the
+ * provider has no secret configured.
+ */
+export function selectProviderSecret<T extends SelectableSecret>(
+	secrets: T[],
+	provider: string,
+	preferSecretId?: string | null
+): T | null {
+	const candidates = secrets.filter((s) => s.provider === provider);
+	if (preferSecretId) {
+		const pinned = candidates.find((s) => s.id === preferSecretId);
+		if (pinned) return pinned;
+	}
+	return (
+		candidates
+			.slice()
+			.sort(
+				(a, b) => b.priority - a.priority || a.createdAt.getTime() - b.createdAt.getTime()
+			)[0] ?? null
+	);
+}
+
 /**
  * The effective OpenAI-compatible base URL for a provider. Providers without
  * `requiresEndpoint` use their static `baseUrl`. Endpoint-based providers

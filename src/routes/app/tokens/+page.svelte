@@ -103,81 +103,81 @@
 		</div>
 		{#if canManage}
 			<Dialog.Root bind:open={createOpen}>
-			<Dialog.Trigger>
-				{#snippet child({ props })}
-					<Button {...props} disabled={data.services.length === 0}>
-						<Plus class="size-4" /> New token
-					</Button>
-				{/snippet}
-			</Dialog.Trigger>
-			<Dialog.Content>
-				<Dialog.Header>
-					<Dialog.Title>Create machine token</Dialog.Title>
-					<Dialog.Description>The secret is shown once — store it safely.</Dialog.Description>
-				</Dialog.Header>
-				<form
-					method="post"
-					action="?/create"
-					class="space-y-4"
-					use:enhance={() =>
-						async ({ update }) =>
-							update({ reset: true })}
-				>
-					<div class="space-y-2">
-						<Label for="serviceId">Service</Label>
-						<Select.Root type="single" name="serviceId" required bind:value={serviceId}>
-							<Select.Trigger id="serviceId" class="w-full">
-								{data.services.find((s) => s.id === serviceId)?.name ?? 'Select a service'}
-							</Select.Trigger>
-							<Select.Content>
-								{#each data.services as s (s.id)}
-									<Select.Item value={s.id} label={s.name}>{s.name}</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
-					<div class="space-y-2">
-						<Label for="name">Token name</Label>
-						<Input id="name" name="name" placeholder="production" required />
-					</div>
-					<div class="space-y-2">
-						<Label>Scopes</Label>
-						<div class="flex flex-wrap gap-4">
-							{#each allScopes as scope (scope)}
-								<label class="flex items-center gap-2 text-sm">
-									<input
-										type="checkbox"
-										name="scopes"
-										value={scope}
-										class="size-4 accent-foreground"
-									/>
-									{scope}
-								</label>
-							{/each}
+				<Dialog.Trigger>
+					{#snippet child({ props })}
+						<Button {...props} disabled={data.services.length === 0}>
+							<Plus class="size-4" /> New token
+						</Button>
+					{/snippet}
+				</Dialog.Trigger>
+				<Dialog.Content>
+					<Dialog.Header>
+						<Dialog.Title>Create machine token</Dialog.Title>
+						<Dialog.Description>The secret is shown once — store it safely.</Dialog.Description>
+					</Dialog.Header>
+					<form
+						method="post"
+						action="?/create"
+						class="space-y-4"
+						use:enhance={() =>
+							async ({ update }) =>
+								update({ reset: true })}
+					>
+						<div class="space-y-2">
+							<Label for="serviceId">Service</Label>
+							<Select.Root type="single" name="serviceId" required bind:value={serviceId}>
+								<Select.Trigger id="serviceId" class="w-full">
+									{data.services.find((s) => s.id === serviceId)?.name ?? 'Select a service'}
+								</Select.Trigger>
+								<Select.Content>
+									{#each data.services as s (s.id)}
+										<Select.Item value={s.id} label={s.name}>{s.name}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
 						</div>
-						<p class="text-xs text-muted-foreground">Leave all unchecked to grant every scope.</p>
-					</div>
-					<div class="space-y-2">
-						<Label for="expiresInDays">Expires</Label>
-						<Select.Root type="single" name="expiresInDays" bind:value={expiresInDays}>
-							<Select.Trigger id="expiresInDays" class="w-full">
-								{expiryOptions.find((o) => o.value === expiresInDays)?.label}
-							</Select.Trigger>
-							<Select.Content>
-								{#each expiryOptions as o (o.value)}
-									<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+						<div class="space-y-2">
+							<Label for="name">Token name</Label>
+							<Input id="name" name="name" placeholder="production" required />
+						</div>
+						<div class="space-y-2">
+							<Label>Scopes</Label>
+							<div class="flex flex-wrap gap-4">
+								{#each allScopes as scope (scope)}
+									<label class="flex items-center gap-2 text-sm">
+										<input
+											type="checkbox"
+											name="scopes"
+											value={scope}
+											class="size-4 accent-foreground"
+										/>
+										{scope}
+									</label>
 								{/each}
-							</Select.Content>
-						</Select.Root>
-					</div>
-					{#if form?.message}
-						<p class="text-sm text-destructive">{form.message}</p>
-					{/if}
-					<Dialog.Footer>
-						<Button type="submit">Create token</Button>
-					</Dialog.Footer>
-				</form>
-			</Dialog.Content>
+							</div>
+							<p class="text-xs text-muted-foreground">Leave all unchecked to grant every scope.</p>
+						</div>
+						<div class="space-y-2">
+							<Label for="expiresInDays">Expires</Label>
+							<Select.Root type="single" name="expiresInDays" bind:value={expiresInDays}>
+								<Select.Trigger id="expiresInDays" class="w-full">
+									{expiryOptions.find((o) => o.value === expiresInDays)?.label}
+								</Select.Trigger>
+								<Select.Content>
+									{#each expiryOptions as o (o.value)}
+										<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+									{/each}
+								</Select.Content>
+							</Select.Root>
+						</div>
+						{#if form?.message}
+							<p class="text-sm text-destructive">{form.message}</p>
+						{/if}
+						<Dialog.Footer>
+							<Button type="submit">Create token</Button>
+						</Dialog.Footer>
+					</form>
+				</Dialog.Content>
 			</Dialog.Root>
 		{/if}
 	</div>
@@ -210,7 +210,9 @@
 			</div>
 			<div class="rounded-xl border bg-card p-4">
 				<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Inactive</p>
-				<p class="mt-1 text-2xl font-semibold text-muted-foreground tabular-nums">{stats.inactive}</p>
+				<p class="mt-1 text-2xl font-semibold text-muted-foreground tabular-nums">
+					{stats.inactive}
+				</p>
 			</div>
 			<div class="rounded-xl border bg-card p-4">
 				<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Last used</p>

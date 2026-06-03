@@ -34,6 +34,8 @@ export interface ResolvedToken {
 	serviceId: string;
 	serviceName: string;
 	scopes: string[];
+	/** the upstream secret this service is pinned to, or null for the default */
+	providerSecretId: string | null;
 	policy: typeof policy.$inferSelect | null;
 	/** instance-wide default cache TTL (seconds); policy.cacheTtlSeconds overrides it */
 	defaultCacheTtlSeconds: number;
@@ -90,6 +92,7 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 		serviceId: row.service.id,
 		serviceName: row.service.name,
 		scopes: row.token.scopes ?? [],
+		providerSecretId: row.service.providerSecretId,
 		policy: row.policy,
 		defaultCacheTtlSeconds: settingsRow?.cacheTtlSeconds ?? 0
 	};

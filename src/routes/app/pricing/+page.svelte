@@ -295,98 +295,98 @@
 							<Table.Cell class="text-right whitespace-nowrap">
 								{#if canManage}
 									{#if isEditing}
-									<form
-										id={fid}
-										method="post"
-										action={p.id ? '?/update' : '?/create'}
-										class="flex justify-end gap-1"
-										use:enhance={() =>
-											async ({ update }) =>
-												update()}
-									>
-										{#if p.id}
-											<input type="hidden" name="id" value={p.id} />
-										{:else}
-											<input type="hidden" name="model" value={p.model} />
-										{/if}
-										<input type="hidden" name="provider" value={p.provider ?? ''} />
-										<Button type="submit" variant="ghost" size="icon" class="size-8" title="Save">
-											<Check class="size-4 text-primary" />
-										</Button>
-										<Button
-											type="button"
-											variant="ghost"
-											size="icon"
-											class="size-8 text-muted-foreground"
-											title="Cancel"
-											onclick={() => (editRow = null)}
+										<form
+											id={fid}
+											method="post"
+											action={p.id ? '?/update' : '?/create'}
+											class="flex justify-end gap-1"
+											use:enhance={() =>
+												async ({ update }) =>
+													update()}
 										>
-											<X class="size-4" />
-										</Button>
-									</form>
-								{:else}
-									<div
-										class="flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
-									>
-										<Button
-											variant="ghost"
-											size="icon"
-											class="size-8"
-											title={p.source === 'custom' ? 'Edit price' : 'Override default'}
-											onclick={() => startEdit(p)}
+											{#if p.id}
+												<input type="hidden" name="id" value={p.id} />
+											{:else}
+												<input type="hidden" name="model" value={p.model} />
+											{/if}
+											<input type="hidden" name="provider" value={p.provider ?? ''} />
+											<Button type="submit" variant="ghost" size="icon" class="size-8" title="Save">
+												<Check class="size-4 text-primary" />
+											</Button>
+											<Button
+												type="button"
+												variant="ghost"
+												size="icon"
+												class="size-8 text-muted-foreground"
+												title="Cancel"
+												onclick={() => (editRow = null)}
+											>
+												<X class="size-4" />
+											</Button>
+										</form>
+									{:else}
+										<div
+											class="flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
 										>
-											<Pencil class="size-4" />
-										</Button>
-										{#if p.source === 'custom'}
-											<AlertDialog.Root>
-												<AlertDialog.Trigger>
-													{#snippet child({ props })}
-														<Button
-															{...props}
-															variant="ghost"
-															size="icon"
-															class="size-8 text-muted-foreground hover:text-destructive"
-															title={p.defaultInputPerMtok !== null
-																? 'Reset to platform default'
-																: 'Remove price'}
-														>
-															<RotateCcw class="size-4" />
-														</Button>
-													{/snippet}
-												</AlertDialog.Trigger>
-												<AlertDialog.Content>
-													<AlertDialog.Header>
-														<AlertDialog.Title>
-															{p.defaultInputPerMtok !== null
-																? 'Reset to platform default?'
-																: 'Remove this price?'}
-														</AlertDialog.Title>
-														<AlertDialog.Description>
-															{p.defaultInputPerMtok !== null
-																? 'Your custom price is discarded and the platform default is restored.'
-																: 'The custom price is deleted. Requests for this model may be rejected until a price exists.'}
-														</AlertDialog.Description>
-													</AlertDialog.Header>
-													<AlertDialog.Footer>
-														<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-														<form
-															method="post"
-															action="?/delete"
-															class="inline"
-															use:enhance={() =>
-																async ({ update }) =>
-																	update()}
-														>
-															<input type="hidden" name="id" value={p.id} />
-															<AlertDialog.Action type="submit" variant="destructive">
-																{p.defaultInputPerMtok !== null ? 'Reset' : 'Remove'}
-															</AlertDialog.Action>
-														</form>
-													</AlertDialog.Footer>
-												</AlertDialog.Content>
-											</AlertDialog.Root>
-										{/if}
-									</div>
+											<Button
+												variant="ghost"
+												size="icon"
+												class="size-8"
+												title={p.source === 'custom' ? 'Edit price' : 'Override default'}
+												onclick={() => startEdit(p)}
+											>
+												<Pencil class="size-4" />
+											</Button>
+											{#if p.source === 'custom'}
+												<AlertDialog.Root>
+													<AlertDialog.Trigger>
+														{#snippet child({ props })}
+															<Button
+																{...props}
+																variant="ghost"
+																size="icon"
+																class="size-8 text-muted-foreground hover:text-destructive"
+																title={p.defaultInputPerMtok !== null
+																	? 'Reset to platform default'
+																	: 'Remove price'}
+															>
+																<RotateCcw class="size-4" />
+															</Button>
+														{/snippet}
+													</AlertDialog.Trigger>
+													<AlertDialog.Content>
+														<AlertDialog.Header>
+															<AlertDialog.Title>
+																{p.defaultInputPerMtok !== null
+																	? 'Reset to platform default?'
+																	: 'Remove this price?'}
+															</AlertDialog.Title>
+															<AlertDialog.Description>
+																{p.defaultInputPerMtok !== null
+																	? 'Your custom price is discarded and the platform default is restored.'
+																	: 'The custom price is deleted. Requests for this model may be rejected until a price exists.'}
+															</AlertDialog.Description>
+														</AlertDialog.Header>
+														<AlertDialog.Footer>
+															<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+															<form
+																method="post"
+																action="?/delete"
+																class="inline"
+																use:enhance={() =>
+																	async ({ update }) =>
+																		update()}
+															>
+																<input type="hidden" name="id" value={p.id} />
+																<AlertDialog.Action type="submit" variant="destructive">
+																	{p.defaultInputPerMtok !== null ? 'Reset' : 'Remove'}
+																</AlertDialog.Action>
+															</form>
+														</AlertDialog.Footer>
+													</AlertDialog.Content>
+												</AlertDialog.Root>
+											{/if}
+										</div>
 									{/if}
 								{/if}
 							</Table.Cell>

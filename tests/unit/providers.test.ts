@@ -6,6 +6,7 @@ import {
 	authHeaders,
 	providerForModel,
 	resolveProvider,
+	selectProviderSecret,
 	costFromPrice,
 	resolvePrice
 } from '$lib/server/providers';
@@ -29,7 +30,9 @@ describe('resolveBaseUrl', () => {
 	it('returns the static base URL for non-endpoint providers', () => {
 		expect(resolveBaseUrl(PROVIDERS.openai, null)).toBe('https://api.openai.com/v1');
 		// an endpoint passed to a static provider is ignored
-		expect(resolveBaseUrl(PROVIDERS.anthropic, 'https://ignored')).toBe('https://api.anthropic.com/v1');
+		expect(resolveBaseUrl(PROVIDERS.anthropic, 'https://ignored')).toBe(
+			'https://api.anthropic.com/v1'
+		);
 	});
 
 	it('requires an endpoint for Azure and normalizes it to the /openai/v1 surface', () => {
@@ -105,6 +108,40 @@ describe('resolveProvider', () => {
 	it('does not route a claude model to a configured OpenAI-only org, but Azure catches it', () => {
 		expect(resolveProvider('claude-opus-4-7', ['openai'])).toBeNull();
 		expect(resolveProvider('claude-opus-4-7', ['azure'])?.id).toBe('azure');
+	});
+});
+
+describe('selectProviderSecret', () => {
+	const d = (s: string) => new Date(s);
+	const secrets = [
+		{ id: 'az-eu', provider: 'azure', priority: 10, createdAt: d('2026-01-01') },
+		{ id: 'az-us', provider: 'azure', priority: 5, createdAt: d('2026-01-02') },
+		{ id: 'az-old', provider: 'azure', priority: 10, createdAt: d('2025-12-01') },
+		{ id: 'oai', provider: 'openai', priority: 0, createdAt: d('2026-01-03') }
+	];
+
+	it('returns null when the provider has no secret', () => {
+		expect(selectProviderSecret(secrets, 'anthropic')).toBeNull();
+		expect(selectProviderSecret([], 'azure')).toBeNull();
+	});
+
+	it('picks the highest-priority secret for the provider, oldest breaking ties', () => {
+		// az-eu and az-old both priority 10; az-old is older, so it wins the tie
+		expect(selectProviderSecret(secrets, 'azure')?.id).toBe('az-old');
+		expect(selectProviderSecret(secrets, 'openai')?.id).toBe('oai');
+	});
+
+	it('honours a pinned secret that belongs to the provider', () => {
+		expect(selectProviderSecret(secrets, 'azure', 'az-us')?.id).toBe('az-us');
+	});
+
+	it('ignores a pin to another provider and falls back to the default', () => {
+		// pinning the OpenAI secret must not hijack an Azure request
+		expect(selectProviderSecret(secrets, 'azure', 'oai')?.id).toBe('az-old');
+	});
+
+	it('ignores a pin to a deleted/unknown secret and falls back to the default', () => {
+		expect(selectProviderSecret(secrets, 'azure', 'gone')?.id).toBe('az-old');
 	});
 });
 
