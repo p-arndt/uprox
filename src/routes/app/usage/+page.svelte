@@ -1,6 +1,8 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
 	import BudgetAlert from '$lib/components/budget-alert.svelte';
+	import { Switch } from '$lib/components/ui/switch/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
 	import { resolve } from '$app/paths';
 	import { formatUsd, formatTokens } from '$lib/format';
 	import Boxes from '@lucide/svelte/icons/boxes';
@@ -13,7 +15,13 @@
 
 	let { data } = $props();
 
-	const rangeLabel: Record<number, string> = { 7: '7 days', 30: '30 days', 90: '90 days' };
+	const rangeLabel = $derived(data.ranges.find((r) => r.key === data.range)?.label ?? data.range);
+
+	// Embeddings are very high-volume but cheap, so they dominate the token count
+	// while barely moving cost. Let the operator drop them from the headline for a
+	// clearer view of chat/completion consumption. Only affects the cards below;
+	// the breakdowns keep showing embedding models.
+	let excludeEmbeddings = $state(false);
 
 	// Share bars are weighted by spend, falling back to request count when the
 	// whole window billed $0 (e.g. only cache hits or denials), so the bars still
@@ -25,20 +33,26 @@
 	const tokenCostTotal = $derived(data.byToken.reduce((s, r) => s + r.costUsd, 0));
 	const tokenReqTotal = $derived(data.byToken.reduce((s, r) => s + r.requests, 0));
 
-	// Window-wide token totals — surface them above the breakdowns so the user
-	// sees the consumption headline before drilling into per-service detail.
-	const inputTokenTotal = $derived(data.byService.reduce((s, r) => s + r.inputTokens, 0));
-	const outputTokenTotal = $derived(data.byService.reduce((s, r) => s + r.outputTokens, 0));
+	// Window-wide token totals come straight from the totals aggregate, so they
+	// stay exact even past the per-breakdown row limits. The toggle subtracts the
+	// embedding subset from the input/total cards.
+	const totals = $derived(data.totals);
+	const embeddingTokens = $derived(totals.embeddingInputTokens + totals.embeddingOutputTokens);
+	const inputTokenTotal = $derived(
+		excludeEmbeddings ? totals.inputTokens - totals.embeddingInputTokens : totals.inputTokens
+	);
+	const outputTokenTotal = $derived(
+		excludeEmbeddings ? totals.outputTokens - totals.embeddingOutputTokens : totals.outputTokens
+	);
 	const totalTokens = $derived(inputTokenTotal + outputTokenTotal);
 	// Saved by either uprox's response cache (replayed entire request) or the
-	// upstream provider's prompt cache (discounted subset of input). The rate
-	// is computed on input tokens only — the provider cache discount applies to
-	// input, so mixing in output would inflate the headline meaninglessly.
-	const savedInputTotal = $derived(data.byService.reduce((s, r) => s + r.savedInputTokens, 0));
-	const providerCachedTotal = $derived(
-		data.byService.reduce((s, r) => s + r.providerCachedTokens, 0)
-	);
-	const cacheableInput = $derived(inputTokenTotal + savedInputTotal);
+	// upstream provider's prompt cache (discounted subset of input). The rate is
+	// computed on actual input tokens only (always the full figure, regardless of
+	// the embedding toggle) — the provider cache discount applies to input, so
+	// mixing in output would inflate the headline meaninglessly.
+	const savedInputTotal = $derived(totals.savedInputTokens);
+	const providerCachedTotal = $derived(totals.providerCachedTokens);
+	const cacheableInput = $derived(totals.inputTokens + savedInputTotal);
 	const cachedInput = $derived(savedInputTotal + providerCachedTotal);
 	const tokenCacheRate = $derived(cacheableInput > 0 ? cachedInput / cacheableInput : 0);
 
@@ -51,27 +65,43 @@
 </script>
 
 <div class="mx-auto max-w-6xl space-y-6">
-	<div class="flex flex-wrap items-center justify-between gap-3">
+	<div class="space-y-4">
 		<div>
 			<h2 class="text-lg font-semibold">Usage</h2>
 			<p class="text-sm text-muted-foreground">
-				Spend, requests, and token volume by service, model, and machine token over the last {rangeLabel[
-					data.days
-				]}.
+				Spend, requests, and token volume by service, model, and machine token.
 			</p>
 		</div>
-		<div class="flex rounded-lg border p-0.5">
-			{#each data.ranges as n (n)}
-				<a
-					href="{resolve('/app/usage')}?days={n}"
-					data-sveltekit-noscroll
-					class="rounded-md px-3 py-1 text-sm font-medium transition-colors {n === data.days
-						? 'bg-accent text-accent-foreground'
-						: 'text-muted-foreground hover:text-foreground'}"
-				>
-					{rangeLabel[n]}
-				</a>
-			{/each}
+		<!-- Controls on their own row so the range buttons never reflow as the
+		     heading text changes width. -->
+		<div class="flex flex-wrap items-center justify-between gap-3">
+			<div class="flex shrink-0 flex-wrap gap-1 rounded-lg border p-0.5">
+				{#each data.ranges as r (r.key)}
+					<a
+						href="{resolve('/app/usage')}?range={r.key}"
+						data-sveltekit-noscroll
+						class="rounded-md px-3 py-1 text-sm font-medium transition-colors {r.key === data.range
+							? 'bg-accent text-accent-foreground'
+							: 'text-muted-foreground hover:text-foreground'}"
+					>
+						{r.label}
+					</a>
+				{/each}
+			</div>
+			{#if hasTraffic}
+				<div class="flex items-center gap-2">
+					<Switch
+						id="exclude-embeddings"
+						size="sm"
+						bind:checked={excludeEmbeddings}
+						disabled={embeddingTokens === 0}
+					/>
+					<Label for="exclude-embeddings" class="text-sm font-normal text-muted-foreground">
+						Exclude embedding tokens{#if embeddingTokens === 0}
+							<span class="opacity-60">(none in range)</span>{/if}
+					</Label>
+				</div>
+			{/if}
 		</div>
 	</div>
 
@@ -80,7 +110,7 @@
 	{#if !hasTraffic}
 		<Card.Root>
 			<Card.Content class="py-16 text-center text-sm text-muted-foreground">
-				No gateway traffic in the last {rangeLabel[data.days]}.
+				No gateway traffic for {rangeLabel}.
 			</Card.Content>
 		</Card.Root>
 	{:else}
@@ -93,7 +123,11 @@
 				</Card.Header>
 				<Card.Content>
 					<div class="text-2xl font-semibold tabular-nums">{formatTokens(totalTokens)}</div>
-					<p class="text-xs text-muted-foreground">prompt + completion combined</p>
+					<p class="text-xs text-muted-foreground">
+						{excludeEmbeddings
+							? `excludes ${formatTokens(embeddingTokens)} embedding`
+							: 'prompt + completion combined'}
+					</p>
 				</Card.Content>
 			</Card.Root>
 			<Card.Root>
@@ -103,7 +137,9 @@
 				</Card.Header>
 				<Card.Content>
 					<div class="text-2xl font-semibold tabular-nums">{formatTokens(inputTokenTotal)}</div>
-					<p class="text-xs text-muted-foreground">sent to the upstream model</p>
+					<p class="text-xs text-muted-foreground">
+						{excludeEmbeddings ? 'embeddings excluded' : 'sent to the upstream model'}
+					</p>
 				</Card.Content>
 			</Card.Root>
 			<Card.Root>
@@ -150,9 +186,16 @@
 					{#each data.byService as row (row.serviceId ?? 'deleted')}
 						<div>
 							<div class="flex items-baseline justify-between gap-2 text-sm">
-								<span class="truncate font-medium">
-									{row.serviceName ?? 'Deleted service'}
-								</span>
+								{#if row.serviceId}
+									<a
+										href={resolve('/app/services/[id]', { id: row.serviceId })}
+										class="truncate font-medium hover:underline"
+									>
+										{row.serviceName ?? 'Unnamed service'}
+									</a>
+								{:else}
+									<span class="truncate font-medium text-muted-foreground">Deleted service</span>
+								{/if}
 								<span class="shrink-0 tabular-nums">{formatUsd(row.costUsd)}</span>
 							</div>
 							<div class="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">

@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
 	service,
@@ -12,6 +12,7 @@ import { encrypt } from '$lib/server/crypto';
 import { issueToken } from '$lib/server/tokens';
 import { audit } from '$lib/server/audit';
 import type { BudgetStatus } from '$lib/budget';
+import type { ResolvedRange } from '$lib/usage-range';
 
 /* ----------------------------------- services ----------------------------------- */
 
@@ -81,6 +82,16 @@ export async function deleteService(id: string) {
 			.set({ revokedAt: new Date() })
 			.where(and(eq(machineToken.serviceId, id), isNull(machineToken.revokedAt)));
 	});
+}
+
+/** A single non-deleted service by id, or null. Powers the service detail page. */
+export async function getService(id: string) {
+	const [row] = await db
+		.select()
+		.from(service)
+		.where(and(eq(service.id, id), isNull(service.deletedAt)))
+		.limit(1);
+	return row ?? null;
 }
 
 /* ------------------------------------ tokens ------------------------------------ */
@@ -591,9 +602,19 @@ export async function orgDailyStats(days = 14): Promise<DailyStat[]> {
 
 /* ----------------------------------- usage -------------------------------------- */
 
-/** Start of `days`-day rolling window for the usage breakdowns. */
-function windowStart(days: number): Date {
-	return new Date(Date.now() - Math.max(1, days) * 86_400_000);
+/**
+ * The shared filter for the usage breakdowns: gateway traffic inside a resolved
+ * time window, optionally narrowed to one service. Rolling windows carry no
+ * `end`; calendar buckets bound the upper edge exclusively. Pass the result to
+ * `and(...)` — `undefined` legs are ignored by drizzle.
+ */
+function usageConds(range: ResolvedRange, serviceId?: string) {
+	return [
+		sql`${auditLog.action} like 'gateway.%'`,
+		gte(auditLog.createdAt, range.start),
+		range.end ? lt(auditLog.createdAt, range.end) : undefined,
+		serviceId ? eq(auditLog.serviceId, serviceId) : undefined
+	];
 }
 
 export interface ModelUsage {
@@ -607,10 +628,14 @@ export interface ModelUsage {
 }
 
 /**
- * Gateway traffic grouped by model over the last `days` days, busiest first.
- * Powers the "usage by model" breakdown on the usage page.
+ * Gateway traffic grouped by model over the window, busiest first. Powers the
+ * "usage by model" breakdown on the usage page and (with `serviceId`) the
+ * per-service detail page.
  */
-export async function orgUsageByModel(days = 30, limit = 50): Promise<ModelUsage[]> {
+export async function orgUsageByModel(
+	range: ResolvedRange,
+	opts: { serviceId?: string; limit?: number } = {}
+): Promise<ModelUsage[]> {
 	const rows = await db
 		.select({
 			model: auditLog.model,
@@ -623,16 +648,10 @@ export async function orgUsageByModel(days = 30, limit = 50): Promise<ModelUsage
 			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`
 		})
 		.from(auditLog)
-		.where(
-			and(
-				sql`${auditLog.action} like 'gateway.%'`,
-				sql`${auditLog.model} is not null`,
-				gte(auditLog.createdAt, windowStart(days))
-			)
-		)
+		.where(and(sql`${auditLog.model} is not null`, ...usageConds(range, opts.serviceId)))
 		.groupBy(auditLog.model)
 		.orderBy(desc(sql`count(*)`))
-		.limit(limit);
+		.limit(opts.limit ?? 50);
 
 	return rows.map((r) => ({
 		model: r.model as string,
@@ -660,10 +679,10 @@ export interface ServiceUsage {
 }
 
 /**
- * Gateway traffic grouped by the calling service over the last `days` days,
- * busiest first. Requests whose service was since deleted group under a null id.
+ * Gateway traffic grouped by the calling service over the window, busiest first.
+ * Requests whose service was since deleted group under a null id.
  */
-export async function orgUsageByService(days = 30): Promise<ServiceUsage[]> {
+export async function orgUsageByService(range: ResolvedRange): Promise<ServiceUsage[]> {
 	const rows = await db
 		.select({
 			serviceId: auditLog.serviceId,
@@ -679,9 +698,7 @@ export async function orgUsageByService(days = 30): Promise<ServiceUsage[]> {
 		})
 		.from(auditLog)
 		.leftJoin(service, eq(service.id, auditLog.serviceId))
-		.where(
-			and(sql`${auditLog.action} like 'gateway.%'`, gte(auditLog.createdAt, windowStart(days)))
-		)
+		.where(and(...usageConds(range)))
 		.groupBy(auditLog.serviceId)
 		.orderBy(desc(sql`count(*)`));
 
@@ -712,13 +729,17 @@ export interface TokenUsage {
 }
 
 /**
- * Gateway traffic grouped by the calling machine token over the last `days`
- * days, busiest first. Lets operators see which individual API key is driving
- * spend (a service can carry multiple tokens; a leaked one would stand out
- * here long before the per-service total looks unusual). Revoked tokens are
- * still surfaced so historical activity remains attributable.
+ * Gateway traffic grouped by the calling machine token over the window, busiest
+ * first. Lets operators see which individual API key is driving spend (a service
+ * can carry multiple tokens; a leaked one would stand out here long before the
+ * per-service total looks unusual). Revoked tokens are still surfaced so
+ * historical activity remains attributable. With `serviceId`, scopes to the
+ * tokens of one service for the detail page.
  */
-export async function orgUsageByToken(days = 30, limit = 50): Promise<TokenUsage[]> {
+export async function orgUsageByToken(
+	range: ResolvedRange,
+	opts: { serviceId?: string; limit?: number } = {}
+): Promise<TokenUsage[]> {
 	const rows = await db
 		.select({
 			tokenId: auditLog.tokenId,
@@ -734,16 +755,10 @@ export async function orgUsageByToken(days = 30, limit = 50): Promise<TokenUsage
 		.from(auditLog)
 		.leftJoin(machineToken, eq(machineToken.id, auditLog.tokenId))
 		.leftJoin(service, eq(service.id, machineToken.serviceId))
-		.where(
-			and(
-				sql`${auditLog.action} like 'gateway.%'`,
-				sql`${auditLog.tokenId} is not null`,
-				gte(auditLog.createdAt, windowStart(days))
-			)
-		)
+		.where(and(sql`${auditLog.tokenId} is not null`, ...usageConds(range, opts.serviceId)))
 		.groupBy(auditLog.tokenId)
 		.orderBy(desc(sql`count(*)`))
-		.limit(limit);
+		.limit(opts.limit ?? 50);
 
 	return rows.map((r) => ({
 		tokenId: r.tokenId,
@@ -756,6 +771,56 @@ export async function orgUsageByToken(days = 30, limit = 50): Promise<TokenUsage
 		inputTokens: Number(r.inputTokens ?? 0),
 		outputTokens: Number(r.outputTokens ?? 0)
 	}));
+}
+
+export interface UsageTotals {
+	requests: number;
+	costUsd: number;
+	inputTokens: number;
+	outputTokens: number;
+	savedInputTokens: number;
+	providerCachedTokens: number;
+	/** subset of input/output tokens attributable to embedding models */
+	embeddingInputTokens: number;
+	embeddingOutputTokens: number;
+}
+
+/**
+ * Headline aggregates for the whole org (or one service, with `serviceId`) over
+ * the window — the single source for the token/cost cards. Computed in one query
+ * rather than summing a breakdown so the figures are exact even past the top-N
+ * row limits. The embedding subset is broken out so the page can offer a toggle
+ * to exclude high-volume, low-cost embedding tokens from the headline.
+ */
+export async function orgUsageTotals(
+	range: ResolvedRange,
+	opts: { serviceId?: string } = {}
+): Promise<UsageTotals> {
+	const embedding = sql`${auditLog.model} ilike '%embedding%'`;
+	const [row] = await db
+		.select({
+			requests: sql<number>`count(*)::int`,
+			cost: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)::text`,
+			inputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}), 0)::bigint`,
+			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`,
+			savedInputTokens: sql<number>`coalesce(sum(${auditLog.savedInputTokens}), 0)::bigint`,
+			providerCachedTokens: sql<number>`coalesce(sum(${auditLog.providerCachedTokens}), 0)::bigint`,
+			embeddingInputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}) filter (where ${embedding}), 0)::bigint`,
+			embeddingOutputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}) filter (where ${embedding}), 0)::bigint`
+		})
+		.from(auditLog)
+		.where(and(...usageConds(range, opts.serviceId)));
+
+	return {
+		requests: Number(row?.requests ?? 0),
+		costUsd: Number(row?.cost ?? 0),
+		inputTokens: Number(row?.inputTokens ?? 0),
+		outputTokens: Number(row?.outputTokens ?? 0),
+		savedInputTokens: Number(row?.savedInputTokens ?? 0),
+		providerCachedTokens: Number(row?.providerCachedTokens ?? 0),
+		embeddingInputTokens: Number(row?.embeddingInputTokens ?? 0),
+		embeddingOutputTokens: Number(row?.embeddingOutputTokens ?? 0)
+	};
 }
 
 /**
