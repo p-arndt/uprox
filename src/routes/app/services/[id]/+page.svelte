@@ -1,7 +1,11 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import CustomRangePicker from '$lib/components/custom-range-picker.svelte';
+	import UsageChart from '$lib/components/usage-chart.svelte';
 	import { resolve } from '$app/paths';
+	import { goto } from '$app/navigation';
+	import type { ResolvedPathname } from '$app/types';
 	import { formatUsd, formatTokens, relativeTime } from '$lib/format';
 	import Cpu from '@lucide/svelte/icons/cpu';
 	import KeyRound from '@lucide/svelte/icons/key-round';
@@ -13,7 +17,27 @@
 
 	let { data } = $props();
 
-	const rangeLabel = $derived(data.ranges.find((r) => r.key === data.range)?.label ?? data.range);
+	const rangeLabel = $derived(
+		data.range === 'custom'
+			? `${data.customFrom} – ${data.customTo}`
+			: (data.ranges.find((r) => r.key === data.range)?.label ?? data.range)
+	);
+
+	type Metric = 'cost' | 'requests' | 'tokens';
+	let metric = $state<Metric>('cost');
+	const METRICS: { key: Metric; label: string }[] = [
+		{ key: 'cost', label: 'Spend' },
+		{ key: 'requests', label: 'Requests' },
+		{ key: 'tokens', label: 'Tokens' }
+	];
+
+	function applyCustom(from: string, to: string) {
+		// resolve() yields the route; the query string is appended and the whole
+		// value cast back to ResolvedPathname so the navigation lint rule is satisfied.
+		const href =
+			`${resolve('/app/services/[id]', { id: data.service.id })}?range=custom&from=${from}&to=${to}` as ResolvedPathname;
+		goto(href, { noScroll: true });
+	}
 	const totals = $derived(data.totals);
 	const totalTokens = $derived(totals.inputTokens + totals.outputTokens);
 
@@ -55,18 +79,26 @@
 				)}
 			</p>
 		</div>
-		<div class="flex flex-wrap rounded-lg border p-0.5">
-			{#each data.ranges as r (r.key)}
-				<a
-					href="{resolve('/app/services/[id]', { id: data.service.id })}?range={r.key}"
-					data-sveltekit-noscroll
-					class="rounded-md px-3 py-1 text-sm font-medium transition-colors {r.key === data.range
-						? 'bg-accent text-accent-foreground'
-						: 'text-muted-foreground hover:text-foreground'}"
-				>
-					{r.label}
-				</a>
-			{/each}
+		<div class="flex flex-wrap items-center gap-2">
+			<div class="flex flex-wrap rounded-lg border p-0.5">
+				{#each data.ranges as r (r.key)}
+					<a
+						href="{resolve('/app/services/[id]', { id: data.service.id })}?range={r.key}"
+						data-sveltekit-noscroll
+						class="rounded-md px-3 py-1 text-sm font-medium transition-colors {r.key === data.range
+							? 'bg-accent text-accent-foreground'
+							: 'text-muted-foreground hover:text-foreground'}"
+					>
+						{r.label}
+					</a>
+				{/each}
+			</div>
+			<CustomRangePicker
+				from={data.customFrom}
+				to={data.customTo}
+				active={data.range === 'custom'}
+				onApply={applyCustom}
+			/>
 		</div>
 	</div>
 
@@ -122,6 +154,35 @@
 				</Card.Content>
 			</Card.Root>
 		</div>
+
+		<!-- Trend over time -->
+		<Card.Root>
+			<Card.Header class="flex flex-row items-start justify-between space-y-0">
+				<div>
+					<Card.Title>Trend over time</Card.Title>
+					<Card.Description>
+						{metric === 'cost' ? 'Spend' : metric === 'requests' ? 'Requests' : 'Tokens'} per {data
+							.series.unit} across {rangeLabel}
+					</Card.Description>
+				</div>
+				<div class="flex shrink-0 gap-1 rounded-lg border p-0.5">
+					{#each METRICS as m (m.key)}
+						<button
+							type="button"
+							onclick={() => (metric = m.key)}
+							class="rounded-md px-3 py-1 text-sm font-medium transition-colors {m.key === metric
+								? 'bg-accent text-accent-foreground'
+								: 'text-muted-foreground hover:text-foreground'}"
+						>
+							{m.label}
+						</button>
+					{/each}
+				</div>
+			</Card.Header>
+			<Card.Content>
+				<UsageChart points={data.series.points} unit={data.series.unit} {metric} />
+			</Card.Content>
+		</Card.Root>
 
 		<div class="grid gap-4 lg:grid-cols-2">
 			<!-- Usage by model -->

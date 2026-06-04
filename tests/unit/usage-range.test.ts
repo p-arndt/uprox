@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { resolveUsageRange, normalizeRangeKey, USAGE_RANGES } from '$lib/usage-range';
+import { resolveUsageRange, normalizeRangeKey, chooseBucket, USAGE_RANGES } from '$lib/usage-range';
 
 // Pin "now" to a mid-month, mid-day UTC instant so calendar buckets are
 // unambiguous. June has 30 days; the surrounding months let us check rollover.
@@ -56,6 +56,55 @@ describe('resolveUsageRange', () => {
 		const r = resolveUsageRange('last-month');
 		expect(r.start.toISOString()).toBe('2025-12-01T00:00:00.000Z');
 		expect(r.end?.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+	});
+
+	it('"custom" spans from 00:00 UTC of `from` to the exclusive end of `to`', () => {
+		const r = resolveUsageRange('custom', { from: '2026-06-03', to: '2026-06-09' });
+		expect(r.key).toBe('custom');
+		expect(r.start.toISOString()).toBe('2026-06-03T00:00:00.000Z');
+		// exclusive upper bound = the day *after* `to`, so the whole 9th is included
+		expect(r.end?.toISOString()).toBe('2026-06-10T00:00:00.000Z');
+	});
+
+	it('"custom" swaps out-of-order bounds', () => {
+		const r = resolveUsageRange('custom', { from: '2026-06-09', to: '2026-06-03' });
+		expect(r.start.toISOString()).toBe('2026-06-03T00:00:00.000Z');
+		expect(r.end?.toISOString()).toBe('2026-06-10T00:00:00.000Z');
+	});
+
+	it('"custom" falls back to the default when a bound is missing or malformed', () => {
+		expect(resolveUsageRange('custom', { from: '2026-06-03', to: null }).key).toBe('30d');
+		expect(resolveUsageRange('custom', { from: 'nonsense', to: '2026-06-09' }).key).toBe('30d');
+		expect(resolveUsageRange('custom', { from: '2026-02-30', to: '2026-06-09' }).key).toBe('30d');
+		expect(resolveUsageRange('custom').key).toBe('30d');
+	});
+});
+
+describe('chooseBucket', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(NOW);
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('buckets short windows (<= 2 days) hourly', () => {
+		expect(chooseBucket(resolveUsageRange('today'))).toBe('hour');
+		expect(chooseBucket(resolveUsageRange('yesterday'))).toBe('hour');
+		// a one-day custom window
+		expect(
+			chooseBucket(resolveUsageRange('custom', { from: '2026-06-03', to: '2026-06-03' }))
+		).toBe('hour');
+	});
+
+	it('buckets wider windows daily', () => {
+		expect(chooseBucket(resolveUsageRange('7d'))).toBe('day');
+		expect(chooseBucket(resolveUsageRange('30d'))).toBe('day');
+		expect(chooseBucket(resolveUsageRange('90d'))).toBe('day');
+		expect(
+			chooseBucket(resolveUsageRange('custom', { from: '2026-06-01', to: '2026-06-09' }))
+		).toBe('day');
 	});
 });
 

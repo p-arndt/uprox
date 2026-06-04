@@ -6,22 +6,31 @@ import {
 	listPolicies,
 	orgUsageByModel,
 	orgUsageByToken,
-	orgUsageTotals
+	orgUsageTotals,
+	orgUsageSeries
 } from '$lib/server/data';
 import { USAGE_RANGES, resolveUsageRange } from '$lib/usage-range';
+
+const DAY_MS = 86_400_000;
+const ymd = (d: Date) => d.toISOString().slice(0, 10);
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
 	const service = await getService(event.params.id);
 	if (!service) error(404, 'Service not found');
 
-	const range = resolveUsageRange(event.url.searchParams.get('range'));
+	const params = event.url.searchParams;
+	const range = resolveUsageRange(params.get('range'), {
+		from: params.get('from'),
+		to: params.get('to')
+	});
 	const serviceId = service.id;
 
-	const [totals, byModel, byToken, policies] = await Promise.all([
+	const [totals, byModel, byToken, series, policies] = await Promise.all([
 		orgUsageTotals(range, { serviceId }),
 		orgUsageByModel(range, { serviceId }),
 		orgUsageByToken(range, { serviceId }),
+		orgUsageSeries(range, { serviceId }),
 		listPolicies()
 	]);
 
@@ -38,8 +47,12 @@ export const load: PageServerLoad = async (event) => {
 		},
 		range: range.key,
 		ranges: USAGE_RANGES,
+		customFrom: range.key === 'custom' ? ymd(range.start) : null,
+		customTo:
+			range.key === 'custom' && range.end ? ymd(new Date(range.end.getTime() - DAY_MS)) : null,
 		totals,
 		byModel,
-		byToken
+		byToken,
+		series
 	};
 };
