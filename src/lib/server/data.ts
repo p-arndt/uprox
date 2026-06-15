@@ -12,7 +12,12 @@ import { encrypt } from '$lib/server/crypto';
 import { issueToken } from '$lib/server/tokens';
 import { audit } from '$lib/server/audit';
 import type { BudgetStatus } from '$lib/budget';
-import { chooseBucket, type ResolvedRange } from '$lib/usage-range';
+import {
+	resolveSeriesBucket,
+	type BucketChoice,
+	type ResolvedRange,
+	type SeriesBucket
+} from '$lib/usage-range';
 
 /* ----------------------------------- services ----------------------------------- */
 
@@ -611,17 +616,26 @@ export interface UsageSeriesPoint {
 }
 
 export interface UsageSeries {
-	/** bucket granularity chosen for the window (see chooseBucket) */
-	unit: 'hour' | 'day';
+	/** bucket granularity used for the window (see resolveSeriesBucket) */
+	unit: SeriesBucket;
 	points: UsageSeriesPoint[];
 }
 
+/** Postgres `date_trunc`/`generate_series` step for each bucket unit. */
+const BUCKET_STEP: Record<SeriesBucket, string> = {
+	hour: '1 hour',
+	day: '1 day',
+	week: '1 week',
+	month: '1 month'
+};
+
 /**
- * Time-series of gateway traffic across the resolved window, bucketed hourly or
- * daily (see chooseBucket) and optionally scoped to one service. Powers the
- * "trend over time" chart on the usage and service-detail pages. `generate_series`
- * fills empty buckets so the chart keeps a steady width; the query mirrors the
- * `orgDailyStats` shape (oldest-first, denied broken out).
+ * Time-series of gateway traffic across the resolved window, bucketed hourly,
+ * daily, weekly, or monthly and optionally scoped to one service. The bucket is
+ * picked by `resolveSeriesBucket` from the operator's `unit` choice (default
+ * `'auto'`). Powers the "trend over time" chart on the usage and service-detail
+ * pages. `generate_series` fills empty buckets so the chart keeps a steady width;
+ * the query mirrors the `orgDailyStats` shape (oldest-first, denied broken out).
  *
  * `created_at` is `timestamp without time zone` holding UTC wall-clock instants
  * (the same the budget windows enforce against), so the window bounds are bound
@@ -631,10 +645,10 @@ export interface UsageSeries {
  */
 export async function orgUsageSeries(
 	range: ResolvedRange,
-	opts: { serviceId?: string } = {}
+	opts: { serviceId?: string; unit?: BucketChoice } = {}
 ): Promise<UsageSeries> {
-	const unit = chooseBucket(range);
-	const step = unit === 'hour' ? '1 hour' : '1 day';
+	const unit = resolveSeriesBucket(range, opts.unit ?? 'auto');
+	const step = BUCKET_STEP[unit];
 	const startIso = range.start.toISOString();
 	// open-ended rolling windows run up to "now"
 	const upperIso = (range.end ?? new Date()).toISOString();
@@ -739,6 +753,49 @@ export async function orgUsageByModel(
 	return rows.map((r) => ({
 		model: r.model as string,
 		provider: r.provider,
+		requests: Number(r.requests ?? 0),
+		costUsd: Number(r.cost ?? 0),
+		denied: Number(r.denied ?? 0),
+		inputTokens: Number(r.inputTokens ?? 0),
+		outputTokens: Number(r.outputTokens ?? 0)
+	}));
+}
+
+export interface ProviderUsage {
+	provider: string;
+	requests: number;
+	costUsd: number;
+	denied: number;
+	inputTokens: number;
+	outputTokens: number;
+}
+
+/**
+ * Gateway traffic grouped by upstream provider over the window, busiest first.
+ * Coarser than the by-model breakdown — answers "where is the spend landing,
+ * OpenAI vs Anthropic vs Azure" at a glance. Rows with no recorded provider
+ * (e.g. denials before routing) are dropped.
+ */
+export async function orgUsageByProvider(
+	range: ResolvedRange,
+	opts: { serviceId?: string } = {}
+): Promise<ProviderUsage[]> {
+	const rows = await db
+		.select({
+			provider: auditLog.provider,
+			requests: sql<number>`count(*)::int`,
+			cost: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)::text`,
+			denied: sql<number>`(count(*) filter (where ${auditLog.status} = 'deny'))::int`,
+			inputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}), 0)::bigint`,
+			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`
+		})
+		.from(auditLog)
+		.where(and(sql`${auditLog.provider} is not null`, ...usageConds(range, opts.serviceId)))
+		.groupBy(auditLog.provider)
+		.orderBy(desc(sql`count(*)`));
+
+	return rows.map((r) => ({
+		provider: r.provider as string,
 		requests: Number(r.requests ?? 0),
 		costUsd: Number(r.cost ?? 0),
 		denied: Number(r.denied ?? 0),
@@ -859,6 +916,14 @@ export async function orgUsageByToken(
 export interface UsageTotals {
 	requests: number;
 	costUsd: number;
+	/** requests the upstream/gateway answered with an error status */
+	errors: number;
+	/** requests blocked by policy/budget before reaching upstream */
+	denied: number;
+	/** median upstream latency in ms over the window, or null when unmeasured */
+	latencyP50: number | null;
+	/** 95th-percentile upstream latency in ms, or null when unmeasured */
+	latencyP95: number | null;
 	inputTokens: number;
 	outputTokens: number;
 	savedInputTokens: number;
@@ -884,6 +949,16 @@ export async function orgUsageTotals(
 		.select({
 			requests: sql<number>`count(*)::int`,
 			cost: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)::text`,
+			errors: sql<number>`(count(*) filter (where ${auditLog.status} = 'error'))::int`,
+			denied: sql<number>`(count(*) filter (where ${auditLog.status} = 'deny'))::int`,
+			// percentiles over the rows that actually recorded a latency (cache hits
+			// and denials don't), so the figure reflects real upstream round-trips
+			latencyP50: sql<
+				number | null
+			>`percentile_cont(0.5) within group (order by ${auditLog.latencyMs})`,
+			latencyP95: sql<
+				number | null
+			>`percentile_cont(0.95) within group (order by ${auditLog.latencyMs})`,
 			inputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}), 0)::bigint`,
 			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`,
 			savedInputTokens: sql<number>`coalesce(sum(${auditLog.savedInputTokens}), 0)::bigint`,
@@ -897,6 +972,10 @@ export async function orgUsageTotals(
 	return {
 		requests: Number(row?.requests ?? 0),
 		costUsd: Number(row?.cost ?? 0),
+		errors: Number(row?.errors ?? 0),
+		denied: Number(row?.denied ?? 0),
+		latencyP50: row?.latencyP50 == null ? null : Math.round(Number(row.latencyP50)),
+		latencyP95: row?.latencyP95 == null ? null : Math.round(Number(row.latencyP95)),
 		inputTokens: Number(row?.inputTokens ?? 0),
 		outputTokens: Number(row?.outputTokens ?? 0),
 		savedInputTokens: Number(row?.savedInputTokens ?? 0),

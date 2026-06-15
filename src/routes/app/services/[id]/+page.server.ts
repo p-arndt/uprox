@@ -5,14 +5,24 @@ import {
 	getService,
 	listPolicies,
 	orgUsageByModel,
+	orgUsageByProvider,
 	orgUsageByToken,
 	orgUsageTotals,
 	orgUsageSeries
 } from '$lib/server/data';
-import { USAGE_RANGES, resolveUsageRange } from '$lib/usage-range';
+import {
+	USAGE_RANGES,
+	resolveUsageRange,
+	resolveSeriesBucket,
+	normalizeBucket,
+	shiftRangeBack
+} from '$lib/usage-range';
 
 const DAY_MS = 86_400_000;
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Default top-N for the breakdown tables; surfaced so the page can flag truncation. */
+const BREAKDOWN_LIMIT = 50;
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
@@ -25,12 +35,17 @@ export const load: PageServerLoad = async (event) => {
 		to: params.get('to')
 	});
 	const serviceId = service.id;
+	const bucket = normalizeBucket(params.get('bucket'));
+	const unit = resolveSeriesBucket(range, bucket);
+	const prevRange = shiftRangeBack(range);
 
-	const [totals, byModel, byToken, series, policies] = await Promise.all([
+	const [totals, byModel, byProvider, byToken, series, prevSeries, policies] = await Promise.all([
 		orgUsageTotals(range, { serviceId }),
-		orgUsageByModel(range, { serviceId }),
-		orgUsageByToken(range, { serviceId }),
-		orgUsageSeries(range, { serviceId }),
+		orgUsageByModel(range, { serviceId, limit: BREAKDOWN_LIMIT }),
+		orgUsageByProvider(range, { serviceId }),
+		orgUsageByToken(range, { serviceId, limit: BREAKDOWN_LIMIT }),
+		orgUsageSeries(range, { serviceId, unit }),
+		orgUsageSeries(prevRange, { serviceId, unit }),
 		listPolicies()
 	]);
 
@@ -47,12 +62,16 @@ export const load: PageServerLoad = async (event) => {
 		},
 		range: range.key,
 		ranges: USAGE_RANGES,
+		bucket,
+		breakdownLimit: BREAKDOWN_LIMIT,
 		customFrom: range.key === 'custom' ? ymd(range.start) : null,
 		customTo:
 			range.key === 'custom' && range.end ? ymd(new Date(range.end.getTime() - DAY_MS)) : null,
 		totals,
 		byModel,
+		byProvider,
 		byToken,
-		series
+		series,
+		prevPoints: prevSeries.points
 	};
 };

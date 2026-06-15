@@ -49,5 +49,7 @@ export function formatUsd(value: number | string | null | undefined): string {
 	let maximumFractionDigits = 4;
 	if (abs > 0 && abs < 0.0001) maximumFractionDigits = 8;
 	else if (abs > 0 && abs < 0.01) maximumFractionDigits = 6;
-	return `$${(n || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits })}`;
+	// Pin to en-US so USD always reads with a dot decimal ("$0.000483", not the
+	// "$0,000483" a comma-decimal locale would produce next to the `$` symbol).
+	return `$${(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits })}`;
 }
