@@ -71,6 +71,18 @@
 	let cumulative = $state(false);
 	let compare = $state(false);
 
+	const UNIT_ADVERB: Record<string, string> = {
+		hour: 'hourly',
+		day: 'daily',
+		week: 'weekly',
+		month: 'monthly'
+	};
+	const metricLabel = $derived(
+		metric === 'cost' ? 'Spend' : metric === 'requests' ? 'Requests' : 'Tokens'
+	);
+
+	// Breakdown view metric — drives row order, the headline number, and the bar
+	// length together, so toggling it visibly re-renders every breakdown.
 	type SortKey = 'cost' | 'requests' | 'tokens';
 	let sortBy = $state<SortKey>('cost');
 	const SORTS: { key: SortKey; label: string }[] = [
@@ -78,15 +90,28 @@
 		{ key: 'requests', label: 'Requests' },
 		{ key: 'tokens', label: 'Tokens' }
 	];
-	function sortRows<
-		T extends { costUsd: number; requests: number; inputTokens: number; outputTokens: number }
-	>(rows: readonly T[]): T[] {
-		const k = sortBy;
-		return [...rows].sort((a, b) => {
-			if (k === 'cost') return b.costUsd - a.costUsd;
-			if (k === 'requests') return b.requests - a.requests;
-			return b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens);
-		});
+
+	type BreakdownRow = {
+		costUsd: number;
+		requests: number;
+		inputTokens: number;
+		outputTokens: number;
+	};
+	const tokensOf = (r: BreakdownRow) => r.inputTokens + r.outputTokens;
+	const metricOf = (r: BreakdownRow) =>
+		sortBy === 'cost' ? r.costUsd : sortBy === 'requests' ? r.requests : tokensOf(r);
+
+	function sortRows<T extends BreakdownRow>(rows: readonly T[]): T[] {
+		return [...rows].sort((a, b) => metricOf(b) - metricOf(a));
+	}
+	function primaryValue(r: BreakdownRow): string {
+		if (sortBy === 'cost') return formatUsd(r.costUsd);
+		if (sortBy === 'requests') return `${r.requests.toLocaleString()} req`;
+		return `${formatTokens(tokensOf(r))} tok`;
+	}
+	function barPct(r: BreakdownRow, total: number): number {
+		const v = metricOf(r);
+		return Math.max(2, Math.round((total > 0 ? v / total : 0) * 100));
 	}
 
 	const sortedModels = $derived(sortRows(data.byModel));
@@ -97,23 +122,13 @@
 	const totalTokens = $derived(totals.inputTokens + totals.outputTokens);
 	const errorRate = $derived(totals.requests > 0 ? totals.errors / totals.requests : 0);
 
-	const modelCostTotal = $derived(data.byModel.reduce((s, r) => s + r.costUsd, 0));
-	const modelReqTotal = $derived(data.byModel.reduce((s, r) => s + r.requests, 0));
-	const providerCostTotal = $derived(data.byProvider.reduce((s, r) => s + r.costUsd, 0));
-	const providerReqTotal = $derived(data.byProvider.reduce((s, r) => s + r.requests, 0));
-	const tokenCostTotal = $derived(data.byToken.reduce((s, r) => s + r.costUsd, 0));
-	const tokenReqTotal = $derived(data.byToken.reduce((s, r) => s + r.requests, 0));
+	const modelTotal = $derived(data.byModel.reduce((s, r) => s + metricOf(r), 0));
+	const providerTotal = $derived(data.byProvider.reduce((s, r) => s + metricOf(r), 0));
+	const tokenTotal = $derived(data.byToken.reduce((s, r) => s + metricOf(r), 0));
 
 	function formatMs(ms: number | null): string {
 		if (ms == null) return '—';
 		return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms} ms`;
-	}
-
-	// Bars weighted by spend, falling back to request count when the window billed
-	// $0 (only cache hits or denials) so they still convey relative volume.
-	function share(cost: number, requests: number, costTotal: number, reqTotal: number) {
-		const f = costTotal > 0 ? cost / costTotal : reqTotal > 0 ? requests / reqTotal : 0;
-		return Math.max(2, Math.round(f * 100));
 	}
 
 	const hasTraffic = $derived(data.byModel.length > 0 || data.byToken.length > 0);
@@ -167,9 +182,10 @@
 		</div>
 	</div>
 
-	<!-- Granularity -->
-	<div class="flex items-center gap-2">
-		<span class="text-xs font-medium text-muted-foreground">Granularity</span>
+	<!-- Trend granularity: time-bucketing for the chart below. (Breakdowns are
+	     totals over the whole range, so bucketing can't reshape them.) -->
+	<div class="flex flex-wrap items-center gap-2">
+		<span class="text-xs font-medium text-muted-foreground">Trend granularity</span>
 		<div class="flex shrink-0 flex-wrap gap-1 rounded-lg border p-0.5">
 			{#each BUCKET_OPTIONS as b (b.key)}
 				<a
@@ -272,8 +288,9 @@
 				<div>
 					<Card.Title>Trend over time</Card.Title>
 					<Card.Description>
-						{metric === 'cost' ? 'Spend' : metric === 'requests' ? 'Requests' : 'Tokens'}
-						{cumulative ? 'accumulating' : `per ${data.series.unit}`} across {rangeLabel}
+						{metricLabel} · {cumulative
+							? 'cumulative'
+							: (UNIT_ADVERB[data.series.unit] ?? data.series.unit)} · {rangeLabel}
 					</Card.Description>
 				</div>
 				<div class="flex shrink-0 gap-1 rounded-lg border p-0.5">
@@ -332,7 +349,7 @@
 
 		<!-- Breakdown sort control -->
 		<div class="flex items-center gap-2">
-			<span class="text-xs font-medium text-muted-foreground">Sort breakdowns by</span>
+			<span class="text-xs font-medium text-muted-foreground">View breakdowns by</span>
 			<div class="flex shrink-0 gap-1 rounded-lg border p-0.5">
 				{#each SORTS as s (s.key)}
 					<button
@@ -353,7 +370,7 @@
 			<Card.Root>
 				<Card.Header class="flex flex-row items-center justify-between space-y-0">
 					<div>
-						<Card.Title>Usage by model</Card.Title>
+						<Card.Title>By model</Card.Title>
 						<Card.Description>Requests, cost, and tokens per model</Card.Description>
 					</div>
 					<span
@@ -372,12 +389,12 @@
 										<span class="shrink-0 text-xs text-muted-foreground">{row.provider}</span>
 									{/if}
 								</span>
-								<span class="shrink-0 tabular-nums">{formatUsd(row.costUsd)}</span>
+								<span class="shrink-0 tabular-nums">{primaryValue(row)}</span>
 							</div>
 							<div class="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
 								<div
 									class="h-full rounded-full bg-accent-foreground/70"
-									style="width: {share(row.costUsd, row.requests, modelCostTotal, modelReqTotal)}%"
+									style="width: {barPct(row, modelTotal)}%"
 								></div>
 							</div>
 							<div class="mt-1 flex justify-between text-xs text-muted-foreground tabular-nums">
@@ -407,7 +424,7 @@
 			<Card.Root>
 				<Card.Header class="flex flex-row items-center justify-between space-y-0">
 					<div>
-						<Card.Title>Spend by machine token</Card.Title>
+						<Card.Title>By machine token</Card.Title>
 						<Card.Description>Which individual key drives this service's spend</Card.Description>
 					</div>
 					<span
@@ -433,12 +450,12 @@
 										</span>
 									{/if}
 								</span>
-								<span class="shrink-0 tabular-nums">{formatUsd(row.costUsd)}</span>
+								<span class="shrink-0 tabular-nums">{primaryValue(row)}</span>
 							</div>
 							<div class="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
 								<div
 									class="h-full rounded-full bg-accent-foreground/70"
-									style="width: {share(row.costUsd, row.requests, tokenCostTotal, tokenReqTotal)}%"
+									style="width: {barPct(row, tokenTotal)}%"
 								></div>
 							</div>
 							<div class="mt-1 flex justify-between text-xs text-muted-foreground tabular-nums">
@@ -470,7 +487,7 @@
 			<Card.Root>
 				<Card.Header class="flex flex-row items-center justify-between space-y-0">
 					<div>
-						<Card.Title>Spend by provider</Card.Title>
+						<Card.Title>By provider</Card.Title>
 						<Card.Description>Cost and volume per upstream provider</Card.Description>
 					</div>
 					<span
@@ -484,17 +501,12 @@
 						<div>
 							<div class="flex items-baseline justify-between gap-2 text-sm">
 								<span class="truncate font-medium">{row.provider}</span>
-								<span class="shrink-0 tabular-nums">{formatUsd(row.costUsd)}</span>
+								<span class="shrink-0 tabular-nums">{primaryValue(row)}</span>
 							</div>
 							<div class="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
 								<div
 									class="h-full rounded-full bg-accent-foreground/70"
-									style="width: {share(
-										row.costUsd,
-										row.requests,
-										providerCostTotal,
-										providerReqTotal
-									)}%"
+									style="width: {barPct(row, providerTotal)}%"
 								></div>
 							</div>
 							<div class="mt-1 flex justify-between text-xs text-muted-foreground tabular-nums">
