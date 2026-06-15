@@ -1,5 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { resolveUsageRange, normalizeRangeKey, chooseBucket, USAGE_RANGES } from '$lib/usage-range';
+import {
+	resolveUsageRange,
+	normalizeRangeKey,
+	normalizeBucket,
+	chooseBucket,
+	resolveSeriesBucket,
+	shiftRangeBack,
+	MAX_SERIES_BUCKETS,
+	USAGE_RANGES
+} from '$lib/usage-range';
 
 // Pin "now" to a mid-month, mid-day UTC instant so calendar buckets are
 // unambiguous. June has 30 days; the surrounding months let us check rollover.
@@ -37,6 +46,18 @@ describe('resolveUsageRange', () => {
 		expect(sevenDays.start.toISOString()).toBe('2026-06-08T12:34:56.000Z');
 		expect(sevenDays.end).toBeUndefined();
 		expect(resolveUsageRange('90d').start.toISOString()).toBe('2026-03-17T12:34:56.000Z');
+	});
+
+	it('"last-24h" is a rolling 24-hour window ending now', () => {
+		const r = resolveUsageRange('last-24h');
+		expect(r.start.toISOString()).toBe('2026-06-14T12:34:56.000Z');
+		expect(r.end).toBeUndefined();
+	});
+
+	it('"ytd" starts at Jan 1 00:00 UTC of the current year', () => {
+		const r = resolveUsageRange('ytd');
+		expect(r.start.toISOString()).toBe('2026-01-01T00:00:00.000Z');
+		expect(r.end).toBeUndefined();
 	});
 
 	it('"this-month" starts at the 1st 00:00 UTC', () => {
@@ -105,6 +126,75 @@ describe('chooseBucket', () => {
 		expect(
 			chooseBucket(resolveUsageRange('custom', { from: '2026-06-01', to: '2026-06-09' }))
 		).toBe('day');
+	});
+});
+
+describe('resolveSeriesBucket', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(NOW);
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('defers to chooseBucket for "auto"', () => {
+		expect(resolveSeriesBucket(resolveUsageRange('today'), 'auto')).toBe('hour');
+		expect(resolveSeriesBucket(resolveUsageRange('30d'), 'auto')).toBe('day');
+		// missing choice defaults to auto
+		expect(resolveSeriesBucket(resolveUsageRange('30d'))).toBe('day');
+	});
+
+	it('honours an explicit unit when it fits the bar-count cap', () => {
+		expect(resolveSeriesBucket(resolveUsageRange('7d'), 'hour')).toBe('hour');
+		expect(resolveSeriesBucket(resolveUsageRange('90d'), 'week')).toBe('week');
+		expect(resolveSeriesBucket(resolveUsageRange('ytd'), 'month')).toBe('month');
+	});
+
+	it('steps a too-fine unit to the next coarser one past the cap', () => {
+		// hourly across 90 days would be ~2160 bars, well over the cap
+		expect(MAX_SERIES_BUCKETS).toBeLessThan(2160);
+		expect(resolveSeriesBucket(resolveUsageRange('90d'), 'hour')).toBe('day');
+		// hourly across a year cascades hour -> day -> ... but daily (~365) fits
+		expect(resolveSeriesBucket(resolveUsageRange('ytd'), 'hour')).toBe('day');
+	});
+});
+
+describe('shiftRangeBack', () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(NOW);
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it('returns the equal-length window immediately before a bounded range', () => {
+		const r = resolveUsageRange('yesterday');
+		const prev = shiftRangeBack(r);
+		// abuts the current window's start and is one day long
+		expect(prev.end?.toISOString()).toBe(r.start.toISOString());
+		expect(prev.start.toISOString()).toBe('2026-06-13T00:00:00.000Z');
+	});
+
+	it('measures rolling windows against now', () => {
+		const r = resolveUsageRange('7d'); // start = now - 7d, open-ended
+		const prev = shiftRangeBack(r);
+		expect(prev.end?.toISOString()).toBe(r.start.toISOString());
+		expect(prev.start.toISOString()).toBe('2026-06-01T12:34:56.000Z');
+	});
+});
+
+describe('normalizeBucket', () => {
+	it('passes through known bucket choices', () => {
+		for (const k of ['auto', 'hour', 'day', 'week', 'month'] as const) {
+			expect(normalizeBucket(k)).toBe(k);
+		}
+	});
+	it('coerces anything else to auto', () => {
+		expect(normalizeBucket('')).toBe('auto');
+		expect(normalizeBucket('minute')).toBe('auto');
+		expect(normalizeBucket(null)).toBe('auto');
 	});
 });
 

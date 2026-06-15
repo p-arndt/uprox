@@ -1,14 +1,18 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Switch } from '$lib/components/ui/switch/index.js';
+	import { Label } from '$lib/components/ui/label/index.js';
 	import CustomRangePicker from '$lib/components/custom-range-picker.svelte';
 	import UsageChart from '$lib/components/usage-chart.svelte';
+	import { BUCKET_OPTIONS } from '$lib/usage-range';
 	import { resolve } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import { formatUsd, formatTokens, relativeTime } from '$lib/format';
 	import Cpu from '@lucide/svelte/icons/cpu';
 	import KeyRound from '@lucide/svelte/icons/key-round';
+	import Server from '@lucide/svelte/icons/server';
 	import ArrowDownToLine from '@lucide/svelte/icons/arrow-down-to-line';
 	import ArrowUpFromLine from '@lucide/svelte/icons/arrow-up-from-line';
 	import Sigma from '@lucide/svelte/icons/sigma';
@@ -23,6 +27,32 @@
 			: (data.ranges.find((r) => r.key === data.range)?.label ?? data.range)
 	);
 
+	// Build a URL that preserves the params we aren't explicitly changing so
+	// switching granularity keeps the range (and vice versa).
+	function hrefWith(overrides: {
+		range?: string;
+		bucket?: string;
+		from?: string | null;
+		to?: string | null;
+	}): ResolvedPathname {
+		const p = new URLSearchParams();
+		const range = overrides.range ?? data.range;
+		p.set('range', range);
+		if (range === 'custom') {
+			const from = overrides.from ?? data.customFrom;
+			const to = overrides.to ?? data.customTo;
+			if (from) p.set('from', from);
+			if (to) p.set('to', to);
+		}
+		const bucket = overrides.bucket ?? data.bucket;
+		if (bucket && bucket !== 'auto') p.set('bucket', bucket);
+		return `${resolve('/app/services/[id]', { id: data.service.id })}?${p}` as ResolvedPathname;
+	}
+
+	function applyCustom(from: string, to: string) {
+		goto(hrefWith({ range: 'custom', from, to }), { noScroll: true });
+	}
+
 	type Metric = 'cost' | 'requests' | 'tokens';
 	let metric = $state<Metric>('cost');
 	const METRICS: { key: Metric; label: string }[] = [
@@ -31,20 +61,53 @@
 		{ key: 'tokens', label: 'Tokens' }
 	];
 
-	function applyCustom(from: string, to: string) {
-		// resolve() yields the route; the query string is appended and the whole
-		// value cast back to ResolvedPathname so the navigation lint rule is satisfied.
-		const href =
-			`${resolve('/app/services/[id]', { id: data.service.id })}?range=custom&from=${from}&to=${to}` as ResolvedPathname;
-		goto(href, { noScroll: true });
+	type ChartType = 'bar' | 'line' | 'area';
+	let chartType = $state<ChartType>('bar');
+	const CHART_TYPES: { key: ChartType; label: string }[] = [
+		{ key: 'bar', label: 'Bars' },
+		{ key: 'line', label: 'Line' },
+		{ key: 'area', label: 'Area' }
+	];
+	let cumulative = $state(false);
+	let compare = $state(false);
+
+	type SortKey = 'cost' | 'requests' | 'tokens';
+	let sortBy = $state<SortKey>('cost');
+	const SORTS: { key: SortKey; label: string }[] = [
+		{ key: 'cost', label: 'Spend' },
+		{ key: 'requests', label: 'Requests' },
+		{ key: 'tokens', label: 'Tokens' }
+	];
+	function sortRows<
+		T extends { costUsd: number; requests: number; inputTokens: number; outputTokens: number }
+	>(rows: readonly T[]): T[] {
+		const k = sortBy;
+		return [...rows].sort((a, b) => {
+			if (k === 'cost') return b.costUsd - a.costUsd;
+			if (k === 'requests') return b.requests - a.requests;
+			return b.inputTokens + b.outputTokens - (a.inputTokens + a.outputTokens);
+		});
 	}
+
+	const sortedModels = $derived(sortRows(data.byModel));
+	const sortedProviders = $derived(sortRows(data.byProvider));
+	const sortedTokens = $derived(sortRows(data.byToken));
+
 	const totals = $derived(data.totals);
 	const totalTokens = $derived(totals.inputTokens + totals.outputTokens);
+	const errorRate = $derived(totals.requests > 0 ? totals.errors / totals.requests : 0);
 
 	const modelCostTotal = $derived(data.byModel.reduce((s, r) => s + r.costUsd, 0));
 	const modelReqTotal = $derived(data.byModel.reduce((s, r) => s + r.requests, 0));
+	const providerCostTotal = $derived(data.byProvider.reduce((s, r) => s + r.costUsd, 0));
+	const providerReqTotal = $derived(data.byProvider.reduce((s, r) => s + r.requests, 0));
 	const tokenCostTotal = $derived(data.byToken.reduce((s, r) => s + r.costUsd, 0));
 	const tokenReqTotal = $derived(data.byToken.reduce((s, r) => s + r.requests, 0));
+
+	function formatMs(ms: number | null): string {
+		if (ms == null) return '—';
+		return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms} ms`;
+	}
 
 	// Bars weighted by spend, falling back to request count when the window billed
 	// $0 (only cache hits or denials) so they still convey relative volume.
@@ -54,6 +117,8 @@
 	}
 
 	const hasTraffic = $derived(data.byModel.length > 0 || data.byToken.length > 0);
+	const modelsTruncated = $derived(data.byModel.length >= data.breakdownLimit);
+	const tokensTruncated = $derived(data.byToken.length >= data.breakdownLimit);
 </script>
 
 <div class="mx-auto max-w-6xl space-y-6">
@@ -83,7 +148,7 @@
 			<div class="flex flex-wrap rounded-lg border p-0.5">
 				{#each data.ranges as r (r.key)}
 					<a
-						href="{resolve('/app/services/[id]', { id: data.service.id })}?range={r.key}"
+						href={hrefWith({ range: r.key })}
 						data-sveltekit-noscroll
 						class="rounded-md px-3 py-1 text-sm font-medium transition-colors {r.key === data.range
 							? 'bg-accent text-accent-foreground'
@@ -99,6 +164,24 @@
 				active={data.range === 'custom'}
 				onApply={applyCustom}
 			/>
+		</div>
+	</div>
+
+	<!-- Granularity -->
+	<div class="flex items-center gap-2">
+		<span class="text-xs font-medium text-muted-foreground">Granularity</span>
+		<div class="flex shrink-0 flex-wrap gap-1 rounded-lg border p-0.5">
+			{#each BUCKET_OPTIONS as b (b.key)}
+				<a
+					href={hrefWith({ bucket: b.key })}
+					data-sveltekit-noscroll
+					class="rounded-md px-3 py-1 text-sm font-medium transition-colors {b.key === data.bucket
+						? 'bg-accent text-accent-foreground'
+						: 'text-muted-foreground hover:text-foreground'}"
+				>
+					{b.label}
+				</a>
+			{/each}
 		</div>
 	</div>
 
@@ -155,14 +238,42 @@
 			</Card.Root>
 		</div>
 
+		<!-- Reliability & latency -->
+		<Card.Root>
+			<Card.Content class="grid gap-4 py-4 sm:grid-cols-2 lg:grid-cols-4">
+				<div>
+					<div class="text-xs text-muted-foreground">Error rate</div>
+					<div class="text-xl font-semibold tabular-nums">{(errorRate * 100).toFixed(1)}%</div>
+					<p class="text-xs text-muted-foreground tabular-nums">
+						{totals.errors.toLocaleString()} of {totals.requests.toLocaleString()}
+					</p>
+				</div>
+				<div>
+					<div class="text-xs text-muted-foreground">Denied</div>
+					<div class="text-xl font-semibold tabular-nums">{totals.denied.toLocaleString()}</div>
+					<p class="text-xs text-muted-foreground">blocked by policy or budget</p>
+				</div>
+				<div>
+					<div class="text-xs text-muted-foreground">Latency p50</div>
+					<div class="text-xl font-semibold tabular-nums">{formatMs(totals.latencyP50)}</div>
+					<p class="text-xs text-muted-foreground">median upstream round-trip</p>
+				</div>
+				<div>
+					<div class="text-xs text-muted-foreground">Latency p95</div>
+					<div class="text-xl font-semibold tabular-nums">{formatMs(totals.latencyP95)}</div>
+					<p class="text-xs text-muted-foreground">95th percentile</p>
+				</div>
+			</Card.Content>
+		</Card.Root>
+
 		<!-- Trend over time -->
 		<Card.Root>
 			<Card.Header class="flex flex-row items-start justify-between space-y-0">
 				<div>
 					<Card.Title>Trend over time</Card.Title>
 					<Card.Description>
-						{metric === 'cost' ? 'Spend' : metric === 'requests' ? 'Requests' : 'Tokens'} per {data
-							.series.unit} across {rangeLabel}
+						{metric === 'cost' ? 'Spend' : metric === 'requests' ? 'Requests' : 'Tokens'}
+						{cumulative ? 'accumulating' : `per ${data.series.unit}`} across {rangeLabel}
 					</Card.Description>
 				</div>
 				<div class="flex shrink-0 gap-1 rounded-lg border p-0.5">
@@ -179,10 +290,63 @@
 					{/each}
 				</div>
 			</Card.Header>
-			<Card.Content>
-				<UsageChart points={data.series.points} unit={data.series.unit} {metric} />
+			<Card.Content class="space-y-3">
+				<div class="flex flex-wrap items-center gap-3">
+					<div class="flex shrink-0 gap-1 rounded-lg border p-0.5">
+						{#each CHART_TYPES as c (c.key)}
+							<button
+								type="button"
+								onclick={() => (chartType = c.key)}
+								class="rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors {c.key ===
+								chartType
+									? 'bg-accent text-accent-foreground'
+									: 'text-muted-foreground hover:text-foreground'}"
+							>
+								{c.label}
+							</button>
+						{/each}
+					</div>
+					<div class="flex items-center gap-2">
+						<Switch id="cumulative" size="sm" bind:checked={cumulative} />
+						<Label for="cumulative" class="text-sm font-normal text-muted-foreground"
+							>Cumulative</Label
+						>
+					</div>
+					<div class="flex items-center gap-2">
+						<Switch id="compare" size="sm" bind:checked={compare} />
+						<Label for="compare" class="text-sm font-normal text-muted-foreground">
+							Compare to previous period
+						</Label>
+					</div>
+				</div>
+				<UsageChart
+					points={data.series.points}
+					unit={data.series.unit}
+					{metric}
+					type={chartType}
+					{cumulative}
+					comparePoints={compare ? data.prevPoints : null}
+				/>
 			</Card.Content>
 		</Card.Root>
+
+		<!-- Breakdown sort control -->
+		<div class="flex items-center gap-2">
+			<span class="text-xs font-medium text-muted-foreground">Sort breakdowns by</span>
+			<div class="flex shrink-0 gap-1 rounded-lg border p-0.5">
+				{#each SORTS as s (s.key)}
+					<button
+						type="button"
+						onclick={() => (sortBy = s.key)}
+						class="rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors {s.key === sortBy
+							? 'bg-accent text-accent-foreground'
+							: 'text-muted-foreground hover:text-foreground'}"
+					>
+						{s.label}
+					</button>
+				{/each}
+			</div>
+		</div>
 
 		<div class="grid gap-4 lg:grid-cols-2">
 			<!-- Usage by model -->
@@ -199,7 +363,7 @@
 					</span>
 				</Card.Header>
 				<Card.Content class="space-y-3">
-					{#each data.byModel as row (row.model)}
+					{#each sortedModels as row (row.model)}
 						<div>
 							<div class="flex items-baseline justify-between gap-2 text-sm">
 								<span class="flex min-w-0 items-baseline gap-2">
@@ -231,6 +395,11 @@
 							</div>
 						</div>
 					{/each}
+					{#if modelsTruncated}
+						<p class="pt-1 text-xs text-muted-foreground">
+							Showing the top {data.breakdownLimit} models by request volume.
+						</p>
+					{/if}
 				</Card.Content>
 			</Card.Root>
 
@@ -253,7 +422,7 @@
 							No per-token activity in this window.
 						</p>
 					{/if}
-					{#each data.byToken as row (row.tokenId)}
+					{#each sortedTokens as row (row.tokenId)}
 						<div>
 							<div class="flex items-baseline justify-between gap-2 text-sm">
 								<span class="flex min-w-0 items-baseline gap-2">
@@ -287,8 +456,64 @@
 							</div>
 						</div>
 					{/each}
+					{#if tokensTruncated}
+						<p class="pt-1 text-xs text-muted-foreground">
+							Showing the top {data.breakdownLimit} tokens by request volume.
+						</p>
+					{/if}
 				</Card.Content>
 			</Card.Root>
 		</div>
+
+		{#if data.byProvider.length > 1}
+			<!-- Only worth showing when this service spans more than one provider. -->
+			<Card.Root>
+				<Card.Header class="flex flex-row items-center justify-between space-y-0">
+					<div>
+						<Card.Title>Spend by provider</Card.Title>
+						<Card.Description>Cost and volume per upstream provider</Card.Description>
+					</div>
+					<span
+						class="flex size-8 items-center justify-center rounded-lg bg-accent text-accent-foreground"
+					>
+						<Server class="size-4" />
+					</span>
+				</Card.Header>
+				<Card.Content class="space-y-3">
+					{#each sortedProviders as row (row.provider)}
+						<div>
+							<div class="flex items-baseline justify-between gap-2 text-sm">
+								<span class="truncate font-medium">{row.provider}</span>
+								<span class="shrink-0 tabular-nums">{formatUsd(row.costUsd)}</span>
+							</div>
+							<div class="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+								<div
+									class="h-full rounded-full bg-accent-foreground/70"
+									style="width: {share(
+										row.costUsd,
+										row.requests,
+										providerCostTotal,
+										providerReqTotal
+									)}%"
+								></div>
+							</div>
+							<div class="mt-1 flex justify-between text-xs text-muted-foreground tabular-nums">
+								<span>{row.requests.toLocaleString()} requests</span>
+								<span class="flex items-center gap-2">
+									{#if row.inputTokens > 0 || row.outputTokens > 0}
+										<span title="input / output tokens">
+											{formatTokens(row.inputTokens)} in · {formatTokens(row.outputTokens)} out
+										</span>
+									{/if}
+									{#if row.denied > 0}
+										<span class="text-destructive">{row.denied.toLocaleString()} denied</span>
+									{/if}
+								</span>
+							</div>
+						</div>
+					{/each}
+				</Card.Content>
+			</Card.Root>
+		{/if}
 	{/if}
 </div>
