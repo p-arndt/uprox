@@ -48,6 +48,20 @@
 	// the breakdowns keep showing embedding models.
 	let excludeEmbeddings = $state(false);
 
+	// Provider prompt-cache hits are part of prompt_tokens, so they're already in
+	// inputTokens — the full volume uprox processed. A provider's billed/net token
+	// metric (e.g. the Azure portal) discounts that cached subset, so operators
+	// reconciling the two figures can drop it here. Input-only; output isn't cached.
+	let excludeCachedTokens = $state(false);
+
+	// Labels for whichever exclusions are active, reused across the headline cards.
+	const exclusions = $derived(
+		[
+			excludeEmbeddings ? 'embeddings' : null,
+			excludeCachedTokens ? 'cache hits' : null
+		].filter((v): v is string => v !== null)
+	);
+
 	// Share bars are weighted by spend, falling back to request count when the
 	// whole window billed $0 (e.g. only cache hits or denials), so the bars still
 	// convey relative volume.
@@ -64,7 +78,9 @@
 	const totals = $derived(data.totals);
 	const embeddingTokens = $derived(totals.embeddingInputTokens + totals.embeddingOutputTokens);
 	const inputTokenTotal = $derived(
-		excludeEmbeddings ? totals.inputTokens - totals.embeddingInputTokens : totals.inputTokens
+		totals.inputTokens -
+			(excludeEmbeddings ? totals.embeddingInputTokens : 0) -
+			(excludeCachedTokens ? totals.providerCachedTokens : 0)
 	);
 	const outputTokenTotal = $derived(
 		excludeEmbeddings ? totals.outputTokens - totals.embeddingOutputTokens : totals.outputTokens
@@ -123,17 +139,31 @@
 				/>
 			</div>
 			{#if hasTraffic}
-				<div class="flex items-center gap-2">
-					<Switch
-						id="exclude-embeddings"
-						size="sm"
-						bind:checked={excludeEmbeddings}
-						disabled={embeddingTokens === 0}
-					/>
-					<Label for="exclude-embeddings" class="text-sm font-normal text-muted-foreground">
-						Exclude embedding tokens{#if embeddingTokens === 0}
-							<span class="opacity-60">(none in range)</span>{/if}
-					</Label>
+				<div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+					<div class="flex items-center gap-2">
+						<Switch
+							id="exclude-embeddings"
+							size="sm"
+							bind:checked={excludeEmbeddings}
+							disabled={embeddingTokens === 0}
+						/>
+						<Label for="exclude-embeddings" class="text-sm font-normal text-muted-foreground">
+							Exclude embedding tokens{#if embeddingTokens === 0}
+								<span class="opacity-60">(none in range)</span>{/if}
+						</Label>
+					</div>
+					<div class="flex items-center gap-2">
+						<Switch
+							id="exclude-cached"
+							size="sm"
+							bind:checked={excludeCachedTokens}
+							disabled={providerCachedTotal === 0}
+						/>
+						<Label for="exclude-cached" class="text-sm font-normal text-muted-foreground">
+							Exclude cache hits{#if providerCachedTotal === 0}
+								<span class="opacity-60">(none in range)</span>{/if}
+						</Label>
+					</div>
 				</div>
 			{/if}
 		</div>
@@ -158,8 +188,8 @@
 				<Card.Content>
 					<div class="text-2xl font-semibold tabular-nums">{formatTokens(totalTokens)}</div>
 					<p class="text-xs text-muted-foreground">
-						{excludeEmbeddings
-							? `excludes ${formatTokens(embeddingTokens)} embedding`
+						{exclusions.length
+							? `excludes ${exclusions.join(' + ')}`
 							: 'prompt + completion combined'}
 					</p>
 				</Card.Content>
@@ -172,7 +202,7 @@
 				<Card.Content>
 					<div class="text-2xl font-semibold tabular-nums">{formatTokens(inputTokenTotal)}</div>
 					<p class="text-xs text-muted-foreground">
-						{excludeEmbeddings ? 'embeddings excluded' : 'sent to the upstream model'}
+						{exclusions.length ? `${exclusions.join(' + ')} excluded` : 'sent to the upstream model'}
 					</p>
 				</Card.Content>
 			</Card.Root>
