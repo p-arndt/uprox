@@ -11,7 +11,6 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { formatUsd, formatTokens, relativeTime } from '$lib/format';
 	import Cpu from '@lucide/svelte/icons/cpu';
-	import KeyRound from '@lucide/svelte/icons/key-round';
 	import Server from '@lucide/svelte/icons/server';
 	import ArrowDownToLine from '@lucide/svelte/icons/arrow-down-to-line';
 	import ArrowUpFromLine from '@lucide/svelte/icons/arrow-up-from-line';
@@ -46,12 +45,21 @@
 		}
 		const bucket = overrides.bucket ?? data.bucket;
 		if (bucket && bucket !== 'auto') p.set('bucket', bucket);
-		return `${resolve('/app/services/[id]', { id: data.service.id })}?${p}` as ResolvedPathname;
+		return `${resolve('/app/tokens/[id]', { id: data.token.id })}?${p}` as ResolvedPathname;
 	}
 
 	function applyCustom(from: string, to: string) {
 		goto(hrefWith({ range: 'custom', from, to }), { noScroll: true });
 	}
+
+	// Active / expired / revoked, mirroring the tokens list badge.
+	const tokenStatus = $derived.by(() => {
+		const t = data.token;
+		if (t.revokedAt) return { label: 'revoked', dot: 'bg-red-500' };
+		if (t.expiresAt && new Date(t.expiresAt).getTime() < Date.now())
+			return { label: 'expired', dot: 'bg-amber-500' };
+		return { label: 'active', dot: 'bg-emerald-500', pulse: true };
+	});
 
 	type Metric = 'cost' | 'requests' | 'tokens';
 	let metric = $state<Metric>('cost');
@@ -116,7 +124,6 @@
 
 	const sortedModels = $derived(sortRows(data.byModel));
 	const sortedProviders = $derived(sortRows(data.byProvider));
-	const sortedTokens = $derived(sortRows(data.byToken));
 
 	const totals = $derived(data.totals);
 	const totalTokens = $derived(totals.inputTokens + totals.outputTokens);
@@ -124,40 +131,60 @@
 
 	const modelTotal = $derived(data.byModel.reduce((s, r) => s + metricOf(r), 0));
 	const providerTotal = $derived(data.byProvider.reduce((s, r) => s + metricOf(r), 0));
-	const tokenTotal = $derived(data.byToken.reduce((s, r) => s + metricOf(r), 0));
 
 	function formatMs(ms: number | null): string {
 		if (ms == null) return '—';
 		return ms >= 1000 ? `${(ms / 1000).toFixed(2)} s` : `${ms} ms`;
 	}
 
-	const hasTraffic = $derived(data.byModel.length > 0 || data.byToken.length > 0);
+	const hasTraffic = $derived(data.byModel.length > 0);
 	const modelsTruncated = $derived(data.byModel.length >= data.breakdownLimit);
-	const tokensTruncated = $derived(data.byToken.length >= data.breakdownLimit);
 </script>
 
 <div class="mx-auto max-w-6xl space-y-6">
 	<a
-		href={resolve('/app/services')}
+		href={resolve('/app/tokens')}
 		class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
 	>
-		<ChevronLeft class="size-4" /> Services
+		<ChevronLeft class="size-4" /> Tokens
 	</a>
 
 	<div class="flex flex-wrap items-start justify-between gap-3">
 		<div class="space-y-1">
-			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{data.service.name}</h2>
-				<Badge variant="outline">{data.service.type}</Badge>
+			<div class="flex flex-wrap items-center gap-2">
+				<h2 class="text-lg font-semibold">{data.token.name}</h2>
+				<span class="inline-flex items-center gap-1.5 text-sm capitalize text-muted-foreground">
+					<span
+						class="size-1.5 rounded-full {tokenStatus.dot} {tokenStatus.pulse ? 'dot-pulse' : ''}"
+					></span>
+					{tokenStatus.label}
+				</span>
+				<span
+					title="Token prefix (the full token is shown only once at creation)"
+					class="inline-flex items-center rounded-md bg-muted/60 px-2 py-0.5 font-mono text-xs text-muted-foreground"
+				>
+					{data.token.display}
+				</span>
 			</div>
-			{#if data.service.description}
-				<p class="text-sm text-muted-foreground">{data.service.description}</p>
-			{/if}
 			<p class="text-xs text-muted-foreground">
-				Policy: {data.service.policyName ?? 'No policy (allow all)'} · created {relativeTime(
-					data.service.createdAt
+				Service:
+				<a
+					href={resolve('/app/services/[id]', { id: data.token.serviceId })}
+					class="font-medium hover:underline"
+				>
+					{data.token.serviceName}
+				</a>
+				· Policy: {data.token.policyId
+					? (data.token.policyName ?? 'No policy')
+					: 'inherits service policy'} · created {relativeTime(data.token.createdAt)} · last used {relativeTime(
+					data.token.lastUsedAt
 				)}
 			</p>
+			{#if data.token.scopes.length > 0}
+				<div class="flex flex-wrap gap-1 pt-0.5">
+					{#each data.token.scopes as s (s)}<Badge variant="outline">{s}</Badge>{/each}
+				</div>
+			{/if}
 		</div>
 		<div class="flex flex-wrap items-center gap-2">
 			<div class="flex flex-wrap rounded-lg border p-0.5">
@@ -204,7 +231,7 @@
 	{#if !hasTraffic}
 		<Card.Root>
 			<Card.Content class="py-16 text-center text-sm text-muted-foreground">
-				No gateway traffic from this service for {rangeLabel}.
+				No gateway traffic from this token for {rangeLabel}.
 			</Card.Content>
 		</Card.Root>
 	{:else}
@@ -365,7 +392,7 @@
 			</div>
 		</div>
 
-		<div class="grid gap-4 lg:grid-cols-2">
+		<div class="grid gap-4 {data.byProvider.length > 1 ? 'lg:grid-cols-2' : ''}">
 			<!-- Usage by model -->
 			<Card.Root>
 				<Card.Header class="flex flex-row items-center justify-between space-y-0">
@@ -420,121 +447,51 @@
 				</Card.Content>
 			</Card.Root>
 
-			<!-- Spend by machine token -->
-			<Card.Root>
-				<Card.Header class="flex flex-row items-center justify-between space-y-0">
-					<div>
-						<Card.Title>By machine token</Card.Title>
-						<Card.Description>Which individual key drives this service's spend</Card.Description>
-					</div>
-					<span
-						class="flex size-8 items-center justify-center rounded-lg bg-accent text-accent-foreground"
-					>
-						<KeyRound class="size-4" />
-					</span>
-				</Card.Header>
-				<Card.Content class="space-y-3">
-					{#if data.byToken.length === 0}
-						<p class="py-6 text-center text-sm text-muted-foreground">
-							No per-token activity in this window.
-						</p>
-					{/if}
-					{#each sortedTokens as row (row.tokenId)}
+			{#if data.byProvider.length > 1}
+				<!-- Only worth showing when this token spans more than one provider. -->
+				<Card.Root>
+					<Card.Header class="flex flex-row items-center justify-between space-y-0">
 						<div>
-							<div class="flex items-baseline justify-between gap-2 text-sm">
-								<span class="flex min-w-0 items-baseline gap-2">
-									{#if row.tokenId}
-										<a
-											href={resolve('/app/tokens/[id]', { id: row.tokenId })}
-											class="truncate font-medium hover:underline"
-										>
-											{row.tokenName ?? 'Revoked token'}
-										</a>
-									{:else}
-										<span class="truncate font-medium">{row.tokenName ?? 'Revoked token'}</span>
-									{/if}
-									{#if row.tokenDisplay}
-										<span class="shrink-0 font-mono text-xs text-muted-foreground">
-											{row.tokenDisplay}
-										</span>
-									{/if}
-								</span>
-								<span class="shrink-0 tabular-nums">{primaryValue(row)}</span>
-							</div>
-							<div class="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
-								<div
-									class="h-full rounded-full bg-accent-foreground/70"
-									style="width: {barPct(row, tokenTotal)}%"
-								></div>
-							</div>
-							<div class="mt-1 flex justify-between text-xs text-muted-foreground tabular-nums">
-								<span>{row.requests.toLocaleString()} requests</span>
-								<span class="flex items-center gap-2">
-									{#if row.inputTokens > 0 || row.outputTokens > 0}
-										<span title="input / output tokens">
-											{formatTokens(row.inputTokens)} in · {formatTokens(row.outputTokens)} out
-										</span>
-									{/if}
-									{#if row.denied > 0}
-										<span class="text-destructive">{row.denied.toLocaleString()} denied</span>
-									{/if}
-								</span>
-							</div>
+							<Card.Title>By provider</Card.Title>
+							<Card.Description>Cost and volume per upstream provider</Card.Description>
 						</div>
-					{/each}
-					{#if tokensTruncated}
-						<p class="pt-1 text-xs text-muted-foreground">
-							Showing the top {data.breakdownLimit} tokens by request volume.
-						</p>
-					{/if}
-				</Card.Content>
-			</Card.Root>
+						<span
+							class="flex size-8 items-center justify-center rounded-lg bg-accent text-accent-foreground"
+						>
+							<Server class="size-4" />
+						</span>
+					</Card.Header>
+					<Card.Content class="space-y-3">
+						{#each sortedProviders as row (row.provider)}
+							<div>
+								<div class="flex items-baseline justify-between gap-2 text-sm">
+									<span class="truncate font-medium">{row.provider}</span>
+									<span class="shrink-0 tabular-nums">{primaryValue(row)}</span>
+								</div>
+								<div class="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
+									<div
+										class="h-full rounded-full bg-accent-foreground/70"
+										style="width: {barPct(row, providerTotal)}%"
+									></div>
+								</div>
+								<div class="mt-1 flex justify-between text-xs text-muted-foreground tabular-nums">
+									<span>{row.requests.toLocaleString()} requests</span>
+									<span class="flex items-center gap-2">
+										{#if row.inputTokens > 0 || row.outputTokens > 0}
+											<span title="input / output tokens">
+												{formatTokens(row.inputTokens)} in · {formatTokens(row.outputTokens)} out
+											</span>
+										{/if}
+										{#if row.denied > 0}
+											<span class="text-destructive">{row.denied.toLocaleString()} denied</span>
+										{/if}
+									</span>
+								</div>
+							</div>
+						{/each}
+					</Card.Content>
+				</Card.Root>
+			{/if}
 		</div>
-
-		{#if data.byProvider.length > 1}
-			<!-- Only worth showing when this service spans more than one provider. -->
-			<Card.Root>
-				<Card.Header class="flex flex-row items-center justify-between space-y-0">
-					<div>
-						<Card.Title>By provider</Card.Title>
-						<Card.Description>Cost and volume per upstream provider</Card.Description>
-					</div>
-					<span
-						class="flex size-8 items-center justify-center rounded-lg bg-accent text-accent-foreground"
-					>
-						<Server class="size-4" />
-					</span>
-				</Card.Header>
-				<Card.Content class="space-y-3">
-					{#each sortedProviders as row (row.provider)}
-						<div>
-							<div class="flex items-baseline justify-between gap-2 text-sm">
-								<span class="truncate font-medium">{row.provider}</span>
-								<span class="shrink-0 tabular-nums">{primaryValue(row)}</span>
-							</div>
-							<div class="mt-1 h-1.5 overflow-hidden rounded-full bg-muted">
-								<div
-									class="h-full rounded-full bg-accent-foreground/70"
-									style="width: {barPct(row, providerTotal)}%"
-								></div>
-							</div>
-							<div class="mt-1 flex justify-between text-xs text-muted-foreground tabular-nums">
-								<span>{row.requests.toLocaleString()} requests</span>
-								<span class="flex items-center gap-2">
-									{#if row.inputTokens > 0 || row.outputTokens > 0}
-										<span title="input / output tokens">
-											{formatTokens(row.inputTokens)} in · {formatTokens(row.outputTokens)} out
-										</span>
-									{/if}
-									{#if row.denied > 0}
-										<span class="text-destructive">{row.denied.toLocaleString()} denied</span>
-									{/if}
-								</span>
-							</div>
-						</div>
-					{/each}
-				</Card.Content>
-			</Card.Root>
-		{/if}
 	{/if}
 </div>
