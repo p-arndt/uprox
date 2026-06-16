@@ -92,6 +92,12 @@
 	// the breakdowns keep showing embedding models.
 	let excludeEmbeddings = $state(false);
 
+	// Provider prompt-cache hits are part of prompt_tokens, so they're already in
+	// inputTokens — the full volume uprox processed. A provider's billed/net token
+	// metric (e.g. the Azure portal) discounts that cached subset, so operators
+	// reconciling the two figures can drop it here. Input-only; output isn't cached.
+	let excludeCachedTokens = $state(false);
+
 	// Breakdown view metric — drives the row ORDER, the headline number, and the
 	// bar length together, so toggling it visibly re-renders every breakdown (even
 	// when the ranking happens to be the same across metrics).
@@ -146,7 +152,9 @@
 	const totals = $derived(data.totals);
 	const embeddingTokens = $derived(totals.embeddingInputTokens + totals.embeddingOutputTokens);
 	const inputTokenTotal = $derived(
-		excludeEmbeddings ? totals.inputTokens - totals.embeddingInputTokens : totals.inputTokens
+		totals.inputTokens -
+			(excludeEmbeddings ? totals.embeddingInputTokens : 0) -
+			(excludeCachedTokens ? totals.providerCachedTokens : 0)
 	);
 	const outputTokenTotal = $derived(
 		excludeEmbeddings ? totals.outputTokens - totals.embeddingOutputTokens : totals.outputTokens
@@ -162,6 +170,14 @@
 	const cacheableInput = $derived(totals.inputTokens + savedInputTotal);
 	const cachedInput = $derived(savedInputTotal + providerCachedTotal);
 	const tokenCacheRate = $derived(cacheableInput > 0 ? cachedInput / cacheableInput : 0);
+
+	// Subtitle for the input/total cards: which subsets the toggles dropped, if any.
+	const excluded = $derived(
+		[
+			excludeEmbeddings ? `${formatTokens(embeddingTokens)} embedding` : null,
+			excludeCachedTokens ? `${formatTokens(providerCachedTotal)} cached` : null
+		].filter((v): v is string => v !== null)
+	);
 
 	// Error rate over all gateway requests in the window (errors only — denials are
 	// shown separately since they're a policy outcome, not a failure).
@@ -212,17 +228,31 @@
 				/>
 			</div>
 			{#if hasTraffic}
-				<div class="flex items-center gap-2">
-					<Switch
-						id="exclude-embeddings"
-						size="sm"
-						bind:checked={excludeEmbeddings}
-						disabled={embeddingTokens === 0}
-					/>
-					<Label for="exclude-embeddings" class="text-sm font-normal text-muted-foreground">
-						Exclude embedding tokens{#if embeddingTokens === 0}
-							<span class="opacity-60">(none in range)</span>{/if}
-					</Label>
+				<div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+					<div class="flex items-center gap-2">
+						<Switch
+							id="exclude-embeddings"
+							size="sm"
+							bind:checked={excludeEmbeddings}
+							disabled={embeddingTokens === 0}
+						/>
+						<Label for="exclude-embeddings" class="text-sm font-normal text-muted-foreground">
+							Exclude embedding tokens{#if embeddingTokens === 0}
+								<span class="opacity-60">(none in range)</span>{/if}
+						</Label>
+					</div>
+					<div class="flex items-center gap-2">
+						<Switch
+							id="exclude-cached"
+							size="sm"
+							bind:checked={excludeCachedTokens}
+							disabled={providerCachedTotal === 0}
+						/>
+						<Label for="exclude-cached" class="text-sm font-normal text-muted-foreground">
+							Exclude cache hits{#if providerCachedTotal === 0}
+								<span class="opacity-60">(none in range)</span>{/if}
+						</Label>
+					</div>
 				</div>
 			{/if}
 		</div>
@@ -265,8 +295,8 @@
 				<Card.Content>
 					<div class="text-2xl font-semibold tabular-nums">{formatTokens(totalTokens)}</div>
 					<p class="text-xs text-muted-foreground">
-						{excludeEmbeddings
-							? `excludes ${formatTokens(embeddingTokens)} embedding`
+						{excluded.length > 0
+							? `excludes ${excluded.join(' + ')}`
 							: 'prompt + completion combined'}
 					</p>
 				</Card.Content>
@@ -279,7 +309,7 @@
 				<Card.Content>
 					<div class="text-2xl font-semibold tabular-nums">{formatTokens(inputTokenTotal)}</div>
 					<p class="text-xs text-muted-foreground">
-						{excludeEmbeddings ? 'embeddings excluded' : 'sent to the upstream model'}
+						{excluded.length > 0 ? 'excluded from headline' : 'sent to the upstream model'}
 					</p>
 				</Card.Content>
 			</Card.Root>
@@ -598,9 +628,16 @@
 						<div>
 							<div class="flex items-baseline justify-between gap-2 text-sm">
 								<span class="flex min-w-0 items-baseline gap-2">
-									<span class="truncate font-medium">
-										{row.tokenName ?? 'Revoked token'}
-									</span>
+									{#if row.tokenId}
+										<a
+											href={resolve('/app/tokens/[id]', { id: row.tokenId })}
+											class="truncate font-medium hover:underline"
+										>
+											{row.tokenName ?? 'Revoked token'}
+										</a>
+									{:else}
+										<span class="truncate font-medium">{row.tokenName ?? 'Revoked token'}</span>
+									{/if}
 									{#if row.serviceName}
 										<span class="shrink-0 text-xs text-muted-foreground">
 											· {row.serviceName}

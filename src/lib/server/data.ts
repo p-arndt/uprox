@@ -101,6 +101,37 @@ export async function getService(id: string) {
 
 /* ------------------------------------ tokens ------------------------------------ */
 
+/**
+ * A single machine token by id with its service and (own) policy names, or null.
+ * Powers the token detail page. Revoked tokens — and tokens whose service was
+ * since soft-deleted — are still returned so historical usage stays attributable
+ * (the page links here straight from the usage breakdowns).
+ */
+export async function getToken(id: string) {
+	const [row] = await db
+		.select({
+			id: machineToken.id,
+			name: machineToken.name,
+			display: machineToken.display,
+			scopes: machineToken.scopes,
+			serviceId: machineToken.serviceId,
+			serviceName: service.name,
+			// the token's own policy (overrides the service policy when set)
+			policyId: machineToken.policyId,
+			policyName: policy.name,
+			lastUsedAt: machineToken.lastUsedAt,
+			expiresAt: machineToken.expiresAt,
+			revokedAt: machineToken.revokedAt,
+			createdAt: machineToken.createdAt
+		})
+		.from(machineToken)
+		.innerJoin(service, eq(service.id, machineToken.serviceId))
+		.leftJoin(policy, eq(policy.id, machineToken.policyId))
+		.where(eq(machineToken.id, id))
+		.limit(1);
+	return row ?? null;
+}
+
 export function listTokens() {
 	return (
 		db
@@ -645,7 +676,7 @@ const BUCKET_STEP: Record<SeriesBucket, string> = {
  */
 export async function orgUsageSeries(
 	range: ResolvedRange,
-	opts: { serviceId?: string; unit?: BucketChoice } = {}
+	opts: { serviceId?: string; tokenId?: string; unit?: BucketChoice } = {}
 ): Promise<UsageSeries> {
 	const unit = resolveSeriesBucket(range, opts.unit ?? 'auto');
 	const step = BUCKET_STEP[unit];
@@ -654,6 +685,9 @@ export async function orgUsageSeries(
 	const upperIso = (range.end ?? new Date()).toISOString();
 	const serviceFilter = opts.serviceId
 		? sql`and ${auditLog.serviceId} = ${opts.serviceId}::uuid`
+		: sql``;
+	const tokenFilter = opts.tokenId
+		? sql`and ${auditLog.tokenId} = ${opts.tokenId}::uuid`
 		: sql``;
 
 	const rows = await db.execute<{
@@ -680,6 +714,7 @@ export async function orgUsageSeries(
 			on date_trunc(${unit}, ${auditLog.createdAt}) = g.bucket
 			and ${auditLog.action} like 'gateway.%'
 			${serviceFilter}
+			${tokenFilter}
 		group by g.bucket
 		order by g.bucket asc
 	`);
@@ -701,16 +736,18 @@ export async function orgUsageSeries(
 
 /**
  * The shared filter for the usage breakdowns: gateway traffic inside a resolved
- * time window, optionally narrowed to one service. Rolling windows carry no
- * `end`; calendar buckets bound the upper edge exclusively. Pass the result to
- * `and(...)` — `undefined` legs are ignored by drizzle.
+ * time window, optionally narrowed to one service and/or one machine token.
+ * Rolling windows carry no `end`; calendar buckets bound the upper edge
+ * exclusively. Pass the result to `and(...)` — `undefined` legs are ignored by
+ * drizzle.
  */
-function usageConds(range: ResolvedRange, serviceId?: string) {
+function usageConds(range: ResolvedRange, serviceId?: string, tokenId?: string) {
 	return [
 		sql`${auditLog.action} like 'gateway.%'`,
 		gte(auditLog.createdAt, range.start),
 		range.end ? lt(auditLog.createdAt, range.end) : undefined,
-		serviceId ? eq(auditLog.serviceId, serviceId) : undefined
+		serviceId ? eq(auditLog.serviceId, serviceId) : undefined,
+		tokenId ? eq(auditLog.tokenId, tokenId) : undefined
 	];
 }
 
@@ -731,7 +768,7 @@ export interface ModelUsage {
  */
 export async function orgUsageByModel(
 	range: ResolvedRange,
-	opts: { serviceId?: string; limit?: number } = {}
+	opts: { serviceId?: string; tokenId?: string; limit?: number } = {}
 ): Promise<ModelUsage[]> {
 	const rows = await db
 		.select({
@@ -745,7 +782,9 @@ export async function orgUsageByModel(
 			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`
 		})
 		.from(auditLog)
-		.where(and(sql`${auditLog.model} is not null`, ...usageConds(range, opts.serviceId)))
+		.where(
+			and(sql`${auditLog.model} is not null`, ...usageConds(range, opts.serviceId, opts.tokenId))
+		)
 		.groupBy(auditLog.model)
 		.orderBy(desc(sql`count(*)`))
 		.limit(opts.limit ?? 50);
@@ -778,7 +817,7 @@ export interface ProviderUsage {
  */
 export async function orgUsageByProvider(
 	range: ResolvedRange,
-	opts: { serviceId?: string } = {}
+	opts: { serviceId?: string; tokenId?: string } = {}
 ): Promise<ProviderUsage[]> {
 	const rows = await db
 		.select({
@@ -790,7 +829,9 @@ export async function orgUsageByProvider(
 			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`
 		})
 		.from(auditLog)
-		.where(and(sql`${auditLog.provider} is not null`, ...usageConds(range, opts.serviceId)))
+		.where(
+			and(sql`${auditLog.provider} is not null`, ...usageConds(range, opts.serviceId, opts.tokenId))
+		)
 		.groupBy(auditLog.provider)
 		.orderBy(desc(sql`count(*)`));
 
@@ -942,7 +983,7 @@ export interface UsageTotals {
  */
 export async function orgUsageTotals(
 	range: ResolvedRange,
-	opts: { serviceId?: string } = {}
+	opts: { serviceId?: string; tokenId?: string } = {}
 ): Promise<UsageTotals> {
 	const embedding = sql`${auditLog.model} ilike '%embedding%'`;
 	const [row] = await db
@@ -967,7 +1008,7 @@ export async function orgUsageTotals(
 			embeddingOutputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}) filter (where ${embedding}), 0)::bigint`
 		})
 		.from(auditLog)
-		.where(and(...usageConds(range, opts.serviceId)));
+		.where(and(...usageConds(range, opts.serviceId, opts.tokenId)));
 
 	return {
 		requests: Number(row?.requests ?? 0),

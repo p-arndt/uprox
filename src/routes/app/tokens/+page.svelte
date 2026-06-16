@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
@@ -261,7 +262,11 @@
 					{#each visibleTokens as t (t.id)}
 						{@const st = status(t)}
 						<Table.Row class="group transition-colors hover:bg-accent/40">
-							<Table.Cell class="font-medium">{t.name}</Table.Cell>
+							<Table.Cell class="font-medium">
+								<a href={resolve('/app/tokens/[id]', { id: t.id })} class="hover:underline">
+									{t.name}
+								</a>
+							</Table.Cell>
 							<Table.Cell>
 								<span
 									title="Token prefix (the full token is shown only once at creation)"
