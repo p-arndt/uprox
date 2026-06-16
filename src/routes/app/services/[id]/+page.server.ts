@@ -39,15 +39,18 @@ export const load: PageServerLoad = async (event) => {
 	const unit = resolveSeriesBucket(range, bucket);
 	const prevRange = shiftRangeBack(range);
 
-	const [totals, byModel, byProvider, byToken, series, prevSeries, policies] = await Promise.all([
-		orgUsageTotals(range, { serviceId }),
-		orgUsageByModel(range, { serviceId, limit: BREAKDOWN_LIMIT }),
-		orgUsageByProvider(range, { serviceId }),
-		orgUsageByToken(range, { serviceId, limit: BREAKDOWN_LIMIT }),
-		orgUsageSeries(range, { serviceId, unit }),
-		orgUsageSeries(prevRange, { serviceId, unit }),
-		listPolicies()
-	]);
+	const [totals, prevTotals, byModel, byProvider, byToken, series, prevSeries, policies] =
+		await Promise.all([
+			orgUsageTotals(range, { serviceId }),
+			// previous equal-length window — powers the headline deltas
+			orgUsageTotals(prevRange, { serviceId }),
+			orgUsageByModel(range, { serviceId, limit: BREAKDOWN_LIMIT }),
+			orgUsageByProvider(range, { serviceId }),
+			orgUsageByToken(range, { serviceId, limit: BREAKDOWN_LIMIT }),
+			orgUsageSeries(range, { serviceId, unit }),
+			orgUsageSeries(prevRange, { serviceId, unit }),
+			listPolicies()
+		]);
 
 	return {
 		service: {
@@ -68,6 +71,7 @@ export const load: PageServerLoad = async (event) => {
 		customTo:
 			range.key === 'custom' && range.end ? ymd(new Date(range.end.getTime() - DAY_MS)) : null,
 		totals,
+		prevTotals,
 		byModel,
 		byProvider,
 		byToken,
