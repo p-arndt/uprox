@@ -132,7 +132,30 @@
 	);
 
 	const totalLabel = $derived(cumulative ? null : formatValue(values.reduce((s, v) => s + v, 0)));
+
+	// A full axis-and-gridlines chart reads as "broken" when there's only one (or
+	// zero) non-empty bucket. Below the threshold we swap in a single headline
+	// figure so a quiet window looks intentional rather than empty.
+	const nonZero = $derived(points.filter((p) => rawValue(p) > 0).length);
+	const sparse = $derived(nonZero <= 1);
+	// The lone active bucket (if any), for the sparse callout caption.
+	const lonePoint = $derived(points.find((p) => rawValue(p) > 0) ?? null);
+	const windowTotal = $derived(points.reduce((s, p) => s + rawValue(p), 0));
 </script>
+
+{#if sparse}
+	<!-- Sparse window: one figure beats an empty plot. -->
+	<div class="flex h-44 flex-col items-center justify-center gap-1 text-center">
+		<div class="text-3xl font-semibold tabular-nums">{formatValue(windowTotal)}</div>
+		<div class="text-xs text-muted-foreground">
+			{#if lonePoint}
+				all on {bucketLabel(lonePoint.bucket)} · per {unit}
+			{:else}
+				no activity in this window
+			{/if}
+		</div>
+	</div>
+{:else}
 
 <div class="space-y-1.5">
 	<div
@@ -301,3 +324,4 @@
 		</div>
 	{/if}
 </div>
+{/if}

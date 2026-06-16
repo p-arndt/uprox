@@ -37,19 +37,31 @@ export const load: PageServerLoad = async (event) => {
 	const unit = resolveSeriesBucket(range, bucket);
 	const prevRange = shiftRangeBack(range);
 
-	const [totals, byModel, byProvider, byService, byToken, series, prevSeries, budgets, settings] =
-		await Promise.all([
-			orgUsageTotals(range),
-			orgUsageByModel(range, { limit: BREAKDOWN_LIMIT }),
-			orgUsageByProvider(range),
-			orgUsageByService(range),
-			orgUsageByToken(range, { limit: BREAKDOWN_LIMIT }),
-			orgUsageSeries(range, { unit }),
-			orgUsageSeries(prevRange, { unit }),
-			// budgets always reflect the current UTC day/month window, not the selected range
-			orgBudgetStatus(),
-			getSettings()
-		]);
+	const [
+		totals,
+		prevTotals,
+		byModel,
+		byProvider,
+		byService,
+		byToken,
+		series,
+		prevSeries,
+		budgets,
+		settings
+	] = await Promise.all([
+		orgUsageTotals(range),
+		// previous equal-length window — powers the headline deltas
+		orgUsageTotals(prevRange),
+		orgUsageByModel(range, { limit: BREAKDOWN_LIMIT }),
+		orgUsageByProvider(range),
+		orgUsageByService(range),
+		orgUsageByToken(range, { limit: BREAKDOWN_LIMIT }),
+		orgUsageSeries(range, { unit }),
+		orgUsageSeries(prevRange, { unit }),
+		// budgets always reflect the current UTC day/month window, not the selected range
+		orgBudgetStatus(),
+		getSettings()
+	]);
 
 	return {
 		range: range.key,
@@ -61,6 +73,7 @@ export const load: PageServerLoad = async (event) => {
 		customTo:
 			range.key === 'custom' && range.end ? ymd(new Date(range.end.getTime() - DAY_MS)) : null,
 		totals,
+		prevTotals,
 		byModel,
 		byProvider,
 		byService,

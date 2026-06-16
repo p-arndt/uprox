@@ -40,8 +40,10 @@ export const load: PageServerLoad = async (event) => {
 	// No by-service/by-token breakdowns here — a token belongs to exactly one
 	// service, so those views collapse to a single row. Model and provider are the
 	// dimensions that still vary within one token's traffic.
-	const [totals, byModel, byProvider, series, prevSeries] = await Promise.all([
+	const [totals, prevTotals, byModel, byProvider, series, prevSeries] = await Promise.all([
 		orgUsageTotals(range, { tokenId }),
+		// previous equal-length window — powers the headline deltas
+		orgUsageTotals(prevRange, { tokenId }),
 		orgUsageByModel(range, { tokenId, limit: BREAKDOWN_LIMIT }),
 		orgUsageByProvider(range, { tokenId }),
 		orgUsageSeries(range, { tokenId, unit }),
@@ -71,6 +73,7 @@ export const load: PageServerLoad = async (event) => {
 		customTo:
 			range.key === 'custom' && range.end ? ymd(new Date(range.end.getTime() - DAY_MS)) : null,
 		totals,
+		prevTotals,
 		byModel,
 		byProvider,
 		series,
