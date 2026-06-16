@@ -39,18 +39,43 @@
 		goto(href);
 	}
 
-	const nav: { href: ResolvedPathname; label: string; icon: typeof Boxes; exact?: boolean }[] = [
-		{ href: '/app', label: 'Overview', icon: LayoutDashboard, exact: true },
-		{ href: '/app/usage', label: 'Usage', icon: ChartColumn },
-		{ href: '/app/services', label: 'Services', icon: Boxes },
-		{ href: '/app/tokens', label: 'Machine Tokens', icon: KeyRound },
-		{ href: '/app/providers', label: 'Providers', icon: Plug },
-		{ href: '/app/policies', label: 'Policies', icon: ShieldHalf },
-		{ href: '/app/pricing', label: 'Model Prices', icon: Coins },
-		{ href: '/app/audit', label: 'Audit Log', icon: ScrollText },
-		{ href: '/app/members', label: 'Members', icon: Users },
-		{ href: '/app/settings', label: 'Settings', icon: Settings }
+	type NavItem = { href: ResolvedPathname; label: string; icon: typeof Boxes; exact?: boolean };
+	type NavSection = { label: string; items: NavItem[] };
+
+	const sections: NavSection[] = [
+		{
+			label: 'Monitor',
+			items: [
+				{ href: '/app', label: 'Overview', icon: LayoutDashboard, exact: true },
+				{ href: '/app/usage', label: 'Usage', icon: ChartColumn }
+			]
+		},
+		{
+			label: 'Gateway',
+			items: [
+				{ href: '/app/services', label: 'Services', icon: Boxes },
+				{ href: '/app/providers', label: 'Providers', icon: Plug },
+				{ href: '/app/tokens', label: 'Machine Tokens', icon: KeyRound }
+			]
+		},
+		{
+			label: 'Governance',
+			items: [
+				{ href: '/app/policies', label: 'Policies', icon: ShieldHalf },
+				{ href: '/app/pricing', label: 'Model Prices', icon: Coins },
+				{ href: '/app/audit', label: 'Audit Log', icon: ScrollText }
+			]
+		},
+		{
+			label: 'Workspace',
+			items: [
+				{ href: '/app/members', label: 'Members', icon: Users },
+				{ href: '/app/settings', label: 'Settings', icon: Settings }
+			]
+		}
 	];
+
+	const nav: NavItem[] = sections.flatMap((s) => s.items);
 
 	function isActive(href: ResolvedPathname, exact?: boolean) {
 		return exact ? page.url.pathname === href : page.url.pathname.startsWith(href);
@@ -75,14 +100,16 @@
 	<Command.Input placeholder="Jump to a page…" />
 	<Command.List>
 		<Command.Empty>No results found.</Command.Empty>
-		<Command.Group heading="Platform">
-			{#each nav as item (item.href)}
-				<Command.Item value={item.label} onSelect={() => go(item.href)}>
-					<item.icon class="size-4" />
-					<span>{item.label}</span>
-				</Command.Item>
-			{/each}
-		</Command.Group>
+		{#each sections as section (section.label)}
+			<Command.Group heading={section.label}>
+				{#each section.items as item (item.href)}
+					<Command.Item value={item.label} onSelect={() => go(item.href)}>
+						<item.icon class="size-4" />
+						<span>{item.label}</span>
+					</Command.Item>
+				{/each}
+			</Command.Group>
+		{/each}
 	</Command.List>
 </Command.Dialog>
 
@@ -100,28 +127,30 @@
 			</div>
 		</Sidebar.Header>
 		<Sidebar.Content>
-			<Sidebar.Group>
-				<Sidebar.GroupLabel>Platform</Sidebar.GroupLabel>
-				<Sidebar.GroupContent>
-					<Sidebar.Menu>
-						{#each nav as item (item.href)}
-							<Sidebar.MenuItem>
-								<Sidebar.MenuButton
-									isActive={isActive(item.href, item.exact)}
-									tooltipContent={item.label}
-								>
-									{#snippet child({ props })}
-										<a href={item.href} {...props}>
-											<item.icon />
-											<span>{item.label}</span>
-										</a>
-									{/snippet}
-								</Sidebar.MenuButton>
-							</Sidebar.MenuItem>
-						{/each}
-					</Sidebar.Menu>
-				</Sidebar.GroupContent>
-			</Sidebar.Group>
+			{#each sections as section (section.label)}
+				<Sidebar.Group>
+					<Sidebar.GroupLabel>{section.label}</Sidebar.GroupLabel>
+					<Sidebar.GroupContent>
+						<Sidebar.Menu>
+							{#each section.items as item (item.href)}
+								<Sidebar.MenuItem>
+									<Sidebar.MenuButton
+										isActive={isActive(item.href, item.exact)}
+										tooltipContent={item.label}
+									>
+										{#snippet child({ props })}
+											<a href={item.href} {...props}>
+												<item.icon />
+												<span>{item.label}</span>
+											</a>
+										{/snippet}
+									</Sidebar.MenuButton>
+								</Sidebar.MenuItem>
+							{/each}
+						</Sidebar.Menu>
+					</Sidebar.GroupContent>
+				</Sidebar.Group>
+			{/each}
 		</Sidebar.Content>
 		<Sidebar.Footer>
 			<div class="flex items-center gap-2 rounded-lg px-2 py-1.5">
