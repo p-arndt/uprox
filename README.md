@@ -18,8 +18,8 @@ raw provider keys, enforce per-service limits and budgets, and log every request
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/dashboard-light.png" alt="uprox dashboard" /></td>
     <td width="50%"><img src="docs/screenshots/dashboard-dark.png" alt="uprox dashboard, dark mode" /></td>
+    <td width="50%"><img src="docs/screenshots/usage.png" alt="uprox usage" /></td>
   </tr>
 </table>
 
