@@ -3,6 +3,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import CustomRangePicker from '$lib/components/custom-range-picker.svelte';
 	import DeltaPill from '$lib/components/delta-pill.svelte';
+	import TokenSplit from '$lib/components/token-split.svelte';
 	import UsageReliability from '$lib/components/usage-reliability.svelte';
 	import UsageTrendCard from '$lib/components/usage-trend-card.svelte';
 	import UsageBreakdown, { type BreakdownSection } from '$lib/components/usage-breakdown.svelte';
@@ -12,6 +13,7 @@
 	import { formatUsd, formatTokens, relativeTime } from '$lib/format';
 	import Cpu from '@lucide/svelte/icons/cpu';
 	import Server from '@lucide/svelte/icons/server';
+	import KeyRound from '@lucide/svelte/icons/key-round';
 	import Coins from '@lucide/svelte/icons/coins';
 	import Activity from '@lucide/svelte/icons/activity';
 	import Sigma from '@lucide/svelte/icons/sigma';
@@ -122,41 +124,51 @@
 	</a>
 
 	<div class="flex flex-wrap items-start justify-between gap-3">
-		<div class="space-y-1">
-			<div class="flex flex-wrap items-center gap-2">
-				<h2 class="text-lg font-semibold">{data.token.name}</h2>
-				<span class="inline-flex items-center gap-1.5 text-sm capitalize text-muted-foreground">
+		<div class="flex items-start gap-3">
+			<span
+				class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground"
+			>
+				<KeyRound class="size-5" />
+			</span>
+			<div class="space-y-1">
+				<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+					Machine token
+				</p>
+				<div class="flex flex-wrap items-center gap-2">
+					<h2 class="text-lg font-semibold">{data.token.name}</h2>
+					<span class="inline-flex items-center gap-1.5 text-sm capitalize text-muted-foreground">
+						<span
+							class="size-1.5 rounded-full {tokenStatus.dot} {tokenStatus.pulse ? 'dot-pulse' : ''}"
+						></span>
+						{tokenStatus.label}
+					</span>
 					<span
-						class="size-1.5 rounded-full {tokenStatus.dot} {tokenStatus.pulse ? 'dot-pulse' : ''}"
-					></span>
-					{tokenStatus.label}
-				</span>
-				<span
-					title="Token prefix (the full token is shown only once at creation)"
-					class="inline-flex items-center rounded-md bg-muted/60 px-2 py-0.5 font-mono text-xs text-muted-foreground"
-				>
-					{data.token.display}
-				</span>
-			</div>
-			<p class="text-xs text-muted-foreground">
-				Service:
-				<a
-					href={resolve('/app/services/[id]', { id: data.token.serviceId })}
-					class="font-medium hover:underline"
-				>
-					{data.token.serviceName}
-				</a>
-				· Policy: {data.token.policyId
-					? (data.token.policyName ?? 'No policy')
-					: 'inherits service policy'} · created {relativeTime(data.token.createdAt)} · last used {relativeTime(
-					data.token.lastUsedAt
-				)}
-			</p>
-			{#if data.token.scopes.length > 0}
-				<div class="flex flex-wrap gap-1 pt-0.5">
-					{#each data.token.scopes as s (s)}<Badge variant="outline">{s}</Badge>{/each}
+						title="Token prefix (the full token is shown only once at creation)"
+						class="inline-flex items-center rounded-md bg-muted/60 px-2 py-0.5 font-mono text-xs text-muted-foreground"
+					>
+						{data.token.display}
+					</span>
 				</div>
-			{/if}
+				<p class="text-xs text-muted-foreground">
+					Service:
+					<a
+						href={resolve('/app/services/[id]', { id: data.token.serviceId })}
+						class="font-medium hover:underline"
+					>
+						{data.token.serviceName}
+					</a>
+					· Policy: {data.token.policyId
+						? (data.token.policyName ?? 'No policy')
+						: 'inherits service policy'} · created {relativeTime(data.token.createdAt)} · last used {relativeTime(
+						data.token.lastUsedAt
+					)}
+				</p>
+				{#if data.token.scopes.length > 0}
+					<div class="flex flex-wrap gap-1 pt-0.5">
+						{#each data.token.scopes as s (s)}<Badge variant="outline">{s}</Badge>{/each}
+					</div>
+				{/if}
+			</div>
 		</div>
 		<div class="flex flex-wrap items-center gap-2">
 			<div class="flex flex-wrap rounded-lg border p-0.5">
@@ -229,9 +241,7 @@
 				<Card.Content>
 					<div class="text-2xl font-semibold tabular-nums">{formatTokens(totalTokens)}</div>
 					<div class="mt-1"><DeltaPill value={tokenDelta} /></div>
-					<p class="mt-1 text-xs text-muted-foreground tabular-nums">
-						{formatTokens(totals.inputTokens)} in · {formatTokens(totals.outputTokens)} out
-					</p>
+					<TokenSplit input={totals.inputTokens} output={totals.outputTokens} />
 				</Card.Content>
 			</Card.Root>
 
@@ -241,7 +251,9 @@
 					<DatabaseZap class="size-4 text-muted-foreground" />
 				</Card.Header>
 				<Card.Content>
-					<div class="text-2xl font-semibold tabular-nums">{(tokenCacheRate * 100).toFixed(1)}%</div>
+					<div class="text-2xl font-semibold tabular-nums">
+						{(tokenCacheRate * 100).toFixed(1)}%
+					</div>
 					<p class="mt-1 text-xs text-muted-foreground tabular-nums">
 						{formatTokens(totals.savedInputTokens)} uprox · {formatTokens(
 							totals.providerCachedTokens

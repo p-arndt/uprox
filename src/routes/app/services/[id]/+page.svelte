@@ -3,6 +3,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import CustomRangePicker from '$lib/components/custom-range-picker.svelte';
 	import DeltaPill from '$lib/components/delta-pill.svelte';
+	import TokenSplit from '$lib/components/token-split.svelte';
 	import UsageReliability from '$lib/components/usage-reliability.svelte';
 	import UsageTrendCard from '$lib/components/usage-trend-card.svelte';
 	import UsageBreakdown, { type BreakdownSection } from '$lib/components/usage-breakdown.svelte';
@@ -10,6 +11,7 @@
 	import { goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import { formatUsd, formatTokens, relativeTime } from '$lib/format';
+	import Boxes from '@lucide/svelte/icons/boxes';
 	import Cpu from '@lucide/svelte/icons/cpu';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import Server from '@lucide/svelte/icons/server';
@@ -133,19 +135,27 @@
 	</a>
 
 	<div class="flex flex-wrap items-start justify-between gap-3">
-		<div class="space-y-1">
-			<div class="flex items-center gap-2">
-				<h2 class="text-lg font-semibold">{data.service.name}</h2>
-				<Badge variant="outline">{data.service.type}</Badge>
+		<div class="flex items-start gap-3">
+			<span
+				class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground"
+			>
+				<Boxes class="size-5" />
+			</span>
+			<div class="space-y-1">
+				<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Service</p>
+				<div class="flex items-center gap-2">
+					<h2 class="text-lg font-semibold">{data.service.name}</h2>
+					<Badge variant="outline">{data.service.type}</Badge>
+				</div>
+				{#if data.service.description}
+					<p class="text-sm text-muted-foreground">{data.service.description}</p>
+				{/if}
+				<p class="text-xs text-muted-foreground">
+					Policy: {data.service.policyName ?? 'No policy (allow all)'} · created {relativeTime(
+						data.service.createdAt
+					)}
+				</p>
 			</div>
-			{#if data.service.description}
-				<p class="text-sm text-muted-foreground">{data.service.description}</p>
-			{/if}
-			<p class="text-xs text-muted-foreground">
-				Policy: {data.service.policyName ?? 'No policy (allow all)'} · created {relativeTime(
-					data.service.createdAt
-				)}
-			</p>
 		</div>
 		<div class="flex flex-wrap items-center gap-2">
 			<div class="flex flex-wrap rounded-lg border p-0.5">
@@ -218,9 +228,7 @@
 				<Card.Content>
 					<div class="text-2xl font-semibold tabular-nums">{formatTokens(totalTokens)}</div>
 					<div class="mt-1"><DeltaPill value={tokenDelta} /></div>
-					<p class="mt-1 text-xs text-muted-foreground tabular-nums">
-						{formatTokens(totals.inputTokens)} in · {formatTokens(totals.outputTokens)} out
-					</p>
+					<TokenSplit input={totals.inputTokens} output={totals.outputTokens} />
 				</Card.Content>
 			</Card.Root>
 
@@ -230,7 +238,9 @@
 					<DatabaseZap class="size-4 text-muted-foreground" />
 				</Card.Header>
 				<Card.Content>
-					<div class="text-2xl font-semibold tabular-nums">{(tokenCacheRate * 100).toFixed(1)}%</div>
+					<div class="text-2xl font-semibold tabular-nums">
+						{(tokenCacheRate * 100).toFixed(1)}%
+					</div>
 					<p class="mt-1 text-xs text-muted-foreground tabular-nums">
 						{formatTokens(totals.savedInputTokens)} uprox · {formatTokens(
 							totals.providerCachedTokens
