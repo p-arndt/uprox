@@ -3,6 +3,7 @@
 	import BudgetAlert from '$lib/components/budget-alert.svelte';
 	import CustomRangePicker from '$lib/components/custom-range-picker.svelte';
 	import DeltaPill from '$lib/components/delta-pill.svelte';
+	import TokenSplit from '$lib/components/token-split.svelte';
 	import UsageReliability from '$lib/components/usage-reliability.svelte';
 	import UsageTrendCard from '$lib/components/usage-trend-card.svelte';
 	import UsageBreakdown, { type BreakdownSection } from '$lib/components/usage-breakdown.svelte';
@@ -270,13 +271,11 @@
 				<Card.Content>
 					<div class="text-2xl font-semibold tabular-nums">{formatTokens(totalTokens)}</div>
 					<div class="mt-1"><DeltaPill value={tokenDelta} /></div>
-					<p class="mt-1 text-xs text-muted-foreground tabular-nums">
-						{#if excluded.length > 0}
-							excludes {excluded.join(' + ')}
-						{:else}
-							{formatTokens(inputTokenTotal)} in · {formatTokens(outputTokenTotal)} out
-						{/if}
-					</p>
+					<TokenSplit
+						input={inputTokenTotal}
+						output={outputTokenTotal}
+						note={excluded.length > 0 ? `excludes ${excluded.join(' + ')}` : null}
+					/>
 				</Card.Content>
 			</Card.Root>
 
@@ -286,7 +285,9 @@
 					<DatabaseZap class="size-4 text-muted-foreground" />
 				</Card.Header>
 				<Card.Content>
-					<div class="text-2xl font-semibold tabular-nums">{(tokenCacheRate * 100).toFixed(1)}%</div>
+					<div class="text-2xl font-semibold tabular-nums">
+						{(tokenCacheRate * 100).toFixed(1)}%
+					</div>
 					<p class="mt-1 text-xs text-muted-foreground tabular-nums">
 						{formatTokens(savedInputTotal)} uprox · {formatTokens(providerCachedTotal)} provider
 					</p>
