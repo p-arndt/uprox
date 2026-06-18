@@ -20,6 +20,8 @@
 		monthlyBudgetUsd: number | string;
 		/** '' = inherit org default */
 		cacheTtlSeconds: string;
+		/** '' = inherit org default | 'true' = on | 'false' = off */
+		tracingEnabled: string;
 	}
 
 	let {
@@ -55,6 +57,15 @@
 	const preferredLabel = (id: string) =>
 		id ? (sharedNamespaceProviders.find((p) => p.id === id)?.label ?? id) : 'No preference';
 
+	let tracing = $state(untrack(() => values.tracingEnabled));
+	const tracingOptions = [
+		{ value: '', label: 'Inherit org default' },
+		{ value: 'true', label: 'Always on' },
+		{ value: 'false', label: 'Always off' }
+	];
+	const tracingLabel = (v: string) =>
+		tracingOptions.find((o) => o.value === v)?.label ?? 'Inherit org default';
+
 	const id = (field: string) => `${idPrefix}-${field}`;
 </script>
 
@@ -82,10 +93,11 @@
 	</div>
 
 	<Tabs.Root bind:value={tab}>
-		<Tabs.List class="grid w-full grid-cols-3">
+		<Tabs.List class="grid w-full grid-cols-4">
 			<Tabs.Trigger value="access">Access</Tabs.Trigger>
 			<Tabs.Trigger value="limits">Limits</Tabs.Trigger>
 			<Tabs.Trigger value="caching">Caching</Tabs.Trigger>
+			<Tabs.Trigger value="tracing">Tracing</Tabs.Trigger>
 		</Tabs.List>
 	</Tabs.Root>
 
@@ -200,6 +212,27 @@
 			/>
 			<p class="text-xs text-muted-foreground">
 				Overrides the org-wide cache setting. Blank = inherit, 0 = force off, &gt;0 = TTL.
+			</p>
+		</div>
+	</div>
+
+	<!-- Tracing -->
+	<div class="space-y-4" class:hidden={tab !== 'tracing'}>
+		<div class="space-y-2">
+			<Label for={id('tracingEnabled')}>Request tracing</Label>
+			<Select.Root type="single" name="tracingEnabled" bind:value={tracing}>
+				<Select.Trigger id={id('tracingEnabled')} class="w-full">
+					{tracingLabel(tracing)}
+				</Select.Trigger>
+				<Select.Content>
+					{#each tracingOptions as o (o.value)}
+						<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+			<p class="text-xs text-muted-foreground">
+				Overrides the org-wide tracing setting for this policy's services. Capturing payloads stores
+				prompt &amp; response content — see the trace viewer.
 			</p>
 		</div>
 	</div>

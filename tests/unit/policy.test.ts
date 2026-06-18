@@ -13,6 +13,7 @@ function token(over: Partial<ResolvedToken> = {}): ResolvedToken {
 		providerSecretId: null,
 		policy: null,
 		defaultCacheTtlSeconds: 0,
+		defaultTracingEnabled: false,
 		...over
 	};
 }

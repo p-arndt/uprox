@@ -19,6 +19,7 @@
 	import Settings from '@lucide/svelte/icons/settings';
 	import ShieldHalf from '@lucide/svelte/icons/shield-half';
 	import Users from '@lucide/svelte/icons/users';
+	import Waypoints from '@lucide/svelte/icons/waypoints';
 	import Sun from '@lucide/svelte/icons/sun';
 	import Moon from '@lucide/svelte/icons/moon';
 	import { toggleMode } from 'mode-watcher';
@@ -47,7 +48,8 @@
 			label: 'Monitor',
 			items: [
 				{ href: '/app', label: 'Overview', icon: LayoutDashboard, exact: true },
-				{ href: '/app/usage', label: 'Usage', icon: ChartColumn }
+				{ href: '/app/usage', label: 'Usage', icon: ChartColumn },
+				{ href: '/app/traces', label: 'Traces', icon: Waypoints }
 			]
 		},
 		{

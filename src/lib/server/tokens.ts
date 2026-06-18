@@ -49,6 +49,8 @@ export interface ResolvedToken {
 	policy: typeof policy.$inferSelect | null;
 	/** instance-wide default cache TTL (seconds); policy.cacheTtlSeconds overrides it */
 	defaultCacheTtlSeconds: number;
+	/** instance-wide tracing default; policy.tracingEnabled (when set) overrides it */
+	defaultTracingEnabled: boolean;
 }
 
 /**
@@ -111,6 +113,7 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 		providerSecretId: row.service.providerSecretId,
 		// the token's own policy wins; fall back to the service's policy
 		policy: row.tokenPolicy ?? row.servicePolicy,
-		defaultCacheTtlSeconds: settingsRow?.cacheTtlSeconds ?? 0
+		defaultCacheTtlSeconds: settingsRow?.cacheTtlSeconds ?? 0,
+		defaultTracingEnabled: settingsRow?.tracingEnabled ?? false
 	};
 }

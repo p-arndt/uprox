@@ -1,0 +1,155 @@
+import { describe, it, expect } from 'vitest';
+import {
+	safeParse,
+	flattenContent,
+	requestMessages,
+	reconstructSse,
+	responseText,
+	prettyJson
+} from '$lib/trace';
+
+describe('safeParse', () => {
+	it('parses valid JSON and returns null for invalid/empty', () => {
+		expect(safeParse('{"a":1}')).toEqual({ a: 1 });
+		expect(safeParse('not json')).toBeNull();
+		expect(safeParse('')).toBeNull();
+		expect(safeParse(null)).toBeNull();
+	});
+});
+
+describe('flattenContent', () => {
+	it('passes a bare string through', () => {
+		expect(flattenContent('hello')).toBe('hello');
+	});
+
+	it('joins an OpenAI content-parts array, keeping text and noting non-text', () => {
+		const parts = [
+			{ type: 'text', text: 'describe this' },
+			{ type: 'image_url', image_url: { url: 'http://x' } }
+		];
+		expect(flattenContent(parts)).toBe('describe this\n[image_url]');
+	});
+
+	it('flattens Gemini parts', () => {
+		expect(flattenContent([{ text: 'a' }, { text: 'b' }])).toBe('a\nb');
+	});
+
+	it('returns empty string for nullish', () => {
+		expect(flattenContent(null)).toBe('');
+		expect(flattenContent(undefined)).toBe('');
+	});
+});
+
+describe('requestMessages', () => {
+	it('reads OpenAI chat messages with tool calls', () => {
+		const body = JSON.stringify({
+			messages: [
+				{ role: 'system', content: 'be terse' },
+				{ role: 'user', content: 'weather?' },
+				{
+					role: 'assistant',
+					content: '',
+					tool_calls: [{ function: { name: 'get_weather', arguments: '{"city":"NYC"}' } }]
+				}
+			]
+		});
+		const msgs = requestMessages(body);
+		expect(msgs).toHaveLength(3);
+		expect(msgs[0]).toMatchObject({ role: 'system', text: 'be terse' });
+		expect(msgs[2].toolCalls).toEqual([{ name: 'get_weather', args: '{"city":"NYC"}' }]);
+	});
+
+	it('reads the Responses API string input', () => {
+		expect(requestMessages(JSON.stringify({ input: 'hi there' }))).toEqual([
+			{ role: 'user', text: 'hi there', toolCalls: undefined }
+		]);
+	});
+
+	it('treats a string-array input as a single embeddings prompt', () => {
+		expect(requestMessages(JSON.stringify({ input: ['a', 'b'] }))).toEqual([
+			{ role: 'user', text: 'a\nb', toolCalls: undefined }
+		]);
+	});
+
+	it('reads native Gemini contents plus systemInstruction', () => {
+		const body = JSON.stringify({
+			systemInstruction: { parts: [{ text: 'be nice' }] },
+			contents: [{ role: 'user', parts: [{ text: 'hello' }] }]
+		});
+		const msgs = requestMessages(body);
+		expect(msgs[0]).toMatchObject({ role: 'system', text: 'be nice' });
+		expect(msgs[1]).toMatchObject({ role: 'user', text: 'hello' });
+	});
+
+	it('returns [] for unrecognized or invalid payloads', () => {
+		expect(requestMessages('garbage')).toEqual([]);
+		expect(requestMessages(JSON.stringify({ foo: 'bar' }))).toEqual([]);
+		expect(requestMessages(null)).toEqual([]);
+	});
+});
+
+describe('reconstructSse', () => {
+	it('concatenates OpenAI chat delta content across data lines', () => {
+		const raw = [
+			'data: {"choices":[{"delta":{"content":"Hel"}}]}',
+			'data: {"choices":[{"delta":{"content":"lo"}}]}',
+			'data: [DONE]'
+		].join('\n\n');
+		expect(reconstructSse(raw)).toBe('Hello');
+	});
+
+	it('handles OpenAI Responses output_text deltas', () => {
+		const raw = [
+			'data: {"type":"response.output_text.delta","delta":"foo"}',
+			'data: {"type":"response.output_text.delta","delta":"bar"}'
+		].join('\n');
+		expect(reconstructSse(raw)).toBe('foobar');
+	});
+
+	it('handles native Gemini candidate parts', () => {
+		const raw = 'data: {"candidates":[{"content":{"parts":[{"text":"hi"}]}}]}';
+		expect(reconstructSse(raw)).toBe('hi');
+	});
+
+	it('ignores keepalive/non-JSON lines', () => {
+		const raw = ': ping\n\ndata: {"choices":[{"delta":{"content":"x"}}]}';
+		expect(reconstructSse(raw)).toBe('x');
+	});
+});
+
+describe('responseText', () => {
+	it('reads a buffered OpenAI chat reply', () => {
+		const body = JSON.stringify({ choices: [{ message: { content: 'the answer' } }] });
+		expect(responseText(body, 'json')).toBe('the answer');
+	});
+
+	it('prefers output_text for the Responses API', () => {
+		expect(responseText(JSON.stringify({ output_text: 'resp' }), 'json')).toBe('resp');
+	});
+
+	it('reads a buffered Gemini reply', () => {
+		const body = JSON.stringify({ candidates: [{ content: { parts: [{ text: 'gem' }] } }] });
+		expect(responseText(body, 'json')).toBe('gem');
+	});
+
+	it('reconstructs a streamed reply when format is sse', () => {
+		const raw = 'data: {"choices":[{"delta":{"content":"streamed"}}]}';
+		expect(responseText(raw, 'sse')).toBe('streamed');
+	});
+
+	it('returns empty string for missing or unparseable bodies', () => {
+		expect(responseText(null, 'json')).toBe('');
+		expect(responseText('garbage', 'json')).toBe('');
+	});
+});
+
+describe('prettyJson', () => {
+	it('pretty-prints JSON', () => {
+		expect(prettyJson('{"a":1}')).toBe('{\n  "a": 1\n}');
+	});
+
+	it('returns the original text when not JSON, and empty for nullish', () => {
+		expect(prettyJson('hello')).toBe('hello');
+		expect(prettyJson(null)).toBe('');
+	});
+});

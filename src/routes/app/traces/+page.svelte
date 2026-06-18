@@ -1,0 +1,183 @@
+<script lang="ts">
+	import { resolve } from '$app/paths';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import { formatDateTime, relativeTime, formatUsd, formatTokens } from '$lib/format';
+	import { eventTone, toneDot, toneText } from '$lib/events';
+	import Waypoints from '@lucide/svelte/icons/waypoints';
+	import Search from '@lucide/svelte/icons/search';
+	import X from '@lucide/svelte/icons/x';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+
+	let { data } = $props();
+
+	let query = $state('');
+	let status = $state('all');
+
+	const statusOptions = [
+		{ value: 'all', label: 'All statuses' },
+		{ value: 'ok', label: 'Succeeded' },
+		{ value: 'denied', label: 'Denied' },
+		{ value: 'error', label: 'Errors' }
+	];
+	const statusLabel = $derived(statusOptions.find((o) => o.value === status)?.label ?? '');
+
+	const filtered = $derived(
+		data.traces.filter((t) => {
+			const tone = eventTone(t.status);
+			if (status === 'ok' && tone !== 'ok') return false;
+			if (status === 'denied' && tone !== 'denied') return false;
+			if (status === 'error' && tone !== 'error') return false;
+			if (query.trim()) {
+				const q = query.toLowerCase();
+				const haystack = [t.action, t.status, t.model, t.serviceName, t.provider, t.detail]
+					.filter(Boolean)
+					.join(' ')
+					.toLowerCase();
+				if (!haystack.includes(q)) return false;
+			}
+			return true;
+		})
+	);
+
+	const hasFilters = $derived(query.trim() !== '' || status !== 'all');
+
+	function reset() {
+		query = '';
+		status = 'all';
+	}
+</script>
+
+<div class="mx-auto max-w-6xl space-y-6">
+	<div>
+		<h2 class="text-xl font-semibold tracking-tight">Traces</h2>
+		<p class="text-sm text-muted-foreground">
+			Captured request &amp; response payloads for gateway calls. Open a trace to inspect the
+			prompt, the model's reply, and token usage.
+		</p>
+	</div>
+
+	{#if !data.tracingEnabled && data.traces.length === 0}
+		<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
+			<Waypoints class="size-8 text-muted-foreground" />
+			<p class="mt-3 text-sm font-medium">Tracing is off</p>
+			<p class="max-w-sm text-center text-sm text-muted-foreground">
+				Enable request tracing in Settings (or per policy) to start capturing prompts and responses
+				here.
+			</p>
+			<Button href={resolve('/app/settings')} variant="outline" size="sm" class="mt-4">
+				Go to Settings
+			</Button>
+		</div>
+	{:else if data.traces.length === 0}
+		<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
+			<Waypoints class="size-8 text-muted-foreground" />
+			<p class="mt-3 text-sm font-medium">No traces yet</p>
+			<p class="text-sm text-muted-foreground">Traced requests will appear here as they happen.</p>
+		</div>
+	{:else}
+		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+			<div class="relative flex-1">
+				<Search
+					class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+				/>
+				<Input bind:value={query} placeholder="Search model, service, provider…" class="pl-9" />
+			</div>
+			<Select.Root type="single" bind:value={status}>
+				<Select.Trigger class="w-full sm:w-40">{statusLabel}</Select.Trigger>
+				<Select.Content>
+					{#each statusOptions as o (o.value)}
+						<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+			{#if hasFilters}
+				<Button variant="ghost" size="sm" onclick={reset} class="shrink-0">
+					<X class="size-4" /> Clear
+				</Button>
+			{/if}
+		</div>
+
+		<div class="flex items-center justify-between text-xs text-muted-foreground">
+			<span>
+				Showing <span class="font-medium text-foreground tabular-nums">{filtered.length}</span>
+				of {data.traces.length} traces
+			</span>
+		</div>
+
+		<div class="overflow-hidden rounded-xl border">
+			<div class="overflow-x-auto">
+				<Table.Root>
+					<Table.Header>
+						<Table.Row class="hover:bg-transparent">
+							<Table.Head class="bg-muted/40">Time</Table.Head>
+							<Table.Head class="bg-muted/40">Status</Table.Head>
+							<Table.Head class="bg-muted/40">Service</Table.Head>
+							<Table.Head class="bg-muted/40">Model</Table.Head>
+							<Table.Head class="bg-muted/40 text-right">Tokens</Table.Head>
+							<Table.Head class="bg-muted/40 text-right">Cost</Table.Head>
+							<Table.Head class="bg-muted/40 text-right">Latency</Table.Head>
+							<Table.Head class="bg-muted/40"></Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#each filtered as t (t.id)}
+							{@const tone = eventTone(t.status)}
+							<Table.Row
+								class="group cursor-pointer"
+								onclick={() => (window.location.href = resolve('/app/traces/[id]', { id: t.id }))}
+							>
+								<Table.Cell class="whitespace-nowrap text-muted-foreground">
+									<span class="text-xs" title={formatDateTime(t.createdAt)}>
+										{relativeTime(t.createdAt)}
+									</span>
+								</Table.Cell>
+								<Table.Cell>
+									<span class="flex items-center gap-1.5 whitespace-nowrap">
+										<span class="size-1.5 rounded-full {toneDot[tone]}" aria-hidden="true"></span>
+										<span class="text-xs font-medium {toneText[tone]}">
+											{t.status}{t.statusCode ? ` ${t.statusCode}` : ''}
+										</span>
+									</span>
+								</Table.Cell>
+								<Table.Cell class="text-muted-foreground">{t.serviceName ?? '—'}</Table.Cell>
+								<Table.Cell class="font-mono text-xs text-muted-foreground">
+									{t.model ?? '—'}
+								</Table.Cell>
+								<Table.Cell class="text-right text-muted-foreground tabular-nums">
+									{#if t.inputTokens != null || t.outputTokens != null}
+										{formatTokens(t.inputTokens)} → {formatTokens(t.outputTokens)}
+									{:else}
+										—
+									{/if}
+								</Table.Cell>
+								<Table.Cell class="text-right text-muted-foreground tabular-nums">
+									{t.costUsd ? formatUsd(t.costUsd) : '—'}
+								</Table.Cell>
+								<Table.Cell class="text-right text-muted-foreground tabular-nums">
+									{t.latencyMs != null ? `${t.latencyMs}ms` : '—'}
+								</Table.Cell>
+								<Table.Cell class="text-right">
+									<ArrowRight
+										class="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+									/>
+								</Table.Cell>
+							</Table.Row>
+						{/each}
+					</Table.Body>
+				</Table.Root>
+			</div>
+
+			{#if filtered.length === 0}
+				<div class="flex flex-col items-center justify-center py-16">
+					<Search class="size-7 text-muted-foreground" />
+					<p class="mt-3 text-sm font-medium">No matching traces</p>
+					<p class="text-sm text-muted-foreground">Try adjusting your search or filters.</p>
+					<Button variant="outline" size="sm" onclick={reset} class="mt-4">Clear filters</Button>
+				</div>
+			{/if}
+		</div>
+	{/if}
+</div>

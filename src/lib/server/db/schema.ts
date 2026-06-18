@@ -153,6 +153,11 @@ export const policy = pgTable('policy', {
 	// exact-match cache TTL override, in seconds. NULL = inherit the instance
 	// default; 0 = explicitly disabled; >0 = override the instance default.
 	cacheTtlSeconds: integer('cache_ttl_seconds'),
+	// per-policy request-tracing override. NULL = inherit the instance default
+	// (settings.tracingEnabled); true/false force it on/off for this policy's
+	// services. Tracing captures the request/response payloads of gateway calls
+	// for the in-app trace viewer — see requestTrace.
+	tracingEnabled: boolean('tracing_enabled'),
 	createdAt: timestamp('created_at').defaultNow().notNull()
 });
 
@@ -213,6 +218,13 @@ export const settings = pgTable('settings', {
 	budgetAlertThresholdPct: integer('budget_alert_threshold_pct').notNull().default(80),
 	// optional extra recipient (e.g. a team distribution list)
 	budgetAlertEmail: text('budget_alert_email'),
+	// request tracing: when on, the gateway stores each request's prompt/response
+	// payload for the in-app trace viewer (see requestTrace). Off by default
+	// because payloads are sensitive and large; a policy can override per service.
+	tracingEnabled: boolean('tracing_enabled').notNull().default(false),
+	// how many days captured traces are retained before being pruned. Payloads
+	// are bulky, so this is bounded rather than append-forever like the audit log.
+	tracingRetentionDays: integer('tracing_retention_days').notNull().default(30),
 	updatedAt: timestamp('updated_at')
 		.defaultNow()
 		.$onUpdate(() => new Date())
@@ -342,6 +354,49 @@ export const auditLog = pgTable(
 		createdAt: timestamp('created_at').defaultNow().notNull()
 	},
 	(t) => [index('audit_log_created_idx').on(t.createdAt)]
+);
+
+/**
+ * Captured request/response payloads for the in-app trace viewer — uprox's own
+ * lightweight take on an LLM tracing tool (Phoenix-style). One row per traced
+ * gateway request, paired 1:1 with its append-only {@link auditLog} row (which
+ * holds the metadata: model, provider, status, tokens, cost, latency). The trace
+ * carries only the heavy/sensitive parts — the prompt the caller sent and the
+ * response uprox returned — so the lean audit path is untouched when tracing is
+ * off.
+ *
+ * Written only when tracing is enabled for the request (instance setting, or a
+ * policy override). Pruned by age (settings.tracingRetentionDays), unlike the
+ * audit log, because payloads are bulky. Deleting the audit row cascades here.
+ */
+export const requestTrace = pgTable(
+	'request_trace',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		// the audit row this trace augments; cascade so a future audit prune (or a
+		// service hard-delete that nulls audit FKs) never leaves an orphan trace.
+		auditLogId: uuid('audit_log_id')
+			.notNull()
+			.references(() => auditLog.id, { onDelete: 'cascade' }),
+		// denormalized from the audit row so the trace list can filter/scope by
+		// service without a three-way join; nulls out if the service is removed.
+		serviceId: uuid('service_id').references(() => service.id, { onDelete: 'set null' }),
+		// the request body as the gateway received it (OpenAI or native Gemini shape),
+		// verbatim JSON. NULL for requests with no JSON body (rare on traced routes).
+		requestBody: text('request_body'),
+		// the response body returned to the client: buffered JSON, or — for a streamed
+		// request — the reassembled SSE wire text. NULL when no body was produced
+		// (e.g. a policy denial returns only the error envelope, captured separately).
+		responseBody: text('response_body'),
+		// how to render responseBody: "json" (buffered) | "sse" (streamed). NULL when
+		// there is no response body.
+		responseFormat: text('response_format'),
+		createdAt: timestamp('created_at').defaultNow().notNull()
+	},
+	(t) => [
+		uniqueIndex('request_trace_audit_uidx').on(t.auditLogId),
+		index('request_trace_created_idx').on(t.createdAt)
+	]
 );
 
 export const serviceRelations = relations(service, ({ one, many }) => ({
