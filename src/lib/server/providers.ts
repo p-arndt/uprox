@@ -73,6 +73,23 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 		modelPrefixes: ['claude-'],
 		capabilities: ['chat', 'models']
 	},
+	gemini: {
+		id: 'gemini',
+		label: 'Google Gemini',
+		// Google ships an OpenAI-compatible surface for the Gemini API under
+		// /v1beta/openai (https://ai.google.dev/gemini-api/docs/openai), covering
+		// chat completions, embeddings, image generation and model listing — but
+		// not the Responses API. It authenticates with the standard `Authorization:
+		// Bearer <GEMINI_API_KEY>` header, so the default bearer scheme applies. The
+		// native generateContent API is a different request shape and isn't proxied.
+		baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+		// Gemini chat models and the gemini-embedding family share the `gemini-`
+		// prefix; `gemma-` are the open-weight models served on the API and
+		// `imagen-` the image-generation models. None collide with the OpenAI or
+		// Anthropic namespaces, so routing is unambiguous.
+		modelPrefixes: ['gemini-', 'gemma-', 'imagen-'],
+		capabilities: ['chat', 'embeddings', 'models', 'images']
+	},
 	azure: {
 		id: 'azure',
 		label: 'Azure OpenAI',
@@ -253,6 +270,16 @@ const openai = (input: number, out: number, readRatio: number): ModelPrice => ({
 	out,
 	cacheRead: round4(input * readRatio)
 });
+// Gemini, like OpenAI, charges a cache-read discount but no per-token cache-write
+// cost on its OpenAI-compatible surface (explicit caches are billed by storage
+// time, not tokens). Cached reads are billed at an explicit rate from the docs.
+// Prices use the standard (≤200k-token) context tier; long-context requests are
+// billed higher upstream but priced here at the base rate.
+const gemini = (input: number, out: number, cacheRead: number): ModelPrice => ({
+	in: input,
+	out,
+	cacheRead
+});
 
 export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	// OpenAI — current GPT-5 series (most specific keys first, see lookup note below)
@@ -282,7 +309,18 @@ export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	// Anthropic — older models
 	'claude-3-5-sonnet': anthropic(3, 15),
 	'claude-3-5-haiku': anthropic(0.8, 4),
-	'claude-sonnet-4': anthropic(3, 15)
+	'claude-sonnet-4': anthropic(3, 15),
+	// Google Gemini — current Gemini 3 series (cache reads at the docs' explicit rate)
+	'gemini-3.5-flash': gemini(1.5, 9, 0.15),
+	'gemini-3.1-pro': gemini(2, 12, 0.2),
+	'gemini-3.1-flash-lite': gemini(0.25, 1.5, 0.025),
+	// Google Gemini — 2.5 series (cache reads ~0.1× input)
+	'gemini-2.5-pro': gemini(1.25, 10, 0.125),
+	'gemini-2.5-flash-lite': gemini(0.1, 0.4, 0.01),
+	'gemini-2.5-flash': gemini(0.3, 2.5, 0.03),
+	// Google Gemini — embeddings (input-only; no output tokens, no prompt caching)
+	'gemini-embedding-001': { in: 0.15, out: 0 },
+	'gemini-embedding-2': { in: 0.2, out: 0 }
 };
 
 /** Fallback cache-rate multipliers of the input price when a price is unset. */
