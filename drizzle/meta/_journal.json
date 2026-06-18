@@ -43,6 +43,13 @@
       "when": 1780510949394,
       "tag": "0005_majestic_starjammers",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781817534464,
+      "tag": "0006_supreme_kid_colt",
+      "breakpoints": true
     }
   ]
 }

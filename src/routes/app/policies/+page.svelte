@@ -15,6 +15,7 @@
 	import Gauge from '@lucide/svelte/icons/gauge';
 	import Wallet from '@lucide/svelte/icons/wallet';
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
+	import Waypoints from '@lucide/svelte/icons/waypoints';
 
 	const fmtBudget = (daily: string | number, monthly: string | number) => {
 		const d = Number(daily);
@@ -37,7 +38,8 @@
 		rateLimitPerMinute: 0,
 		dailyBudgetUsd: 0,
 		monthlyBudgetUsd: 0,
-		cacheTtlSeconds: ''
+		cacheTtlSeconds: '',
+		tracingEnabled: ''
 	};
 
 	const canManage = $derived(can(data.role, 'policies:manage', data.memberPermissions));
@@ -120,7 +122,8 @@
 											rateLimitPerMinute: p.rateLimitPerMinute,
 											dailyBudgetUsd: String(Number(p.dailyBudgetUsd)),
 											monthlyBudgetUsd: String(Number(p.monthlyBudgetUsd)),
-											cacheTtlSeconds: p.cacheTtlSeconds == null ? '' : String(p.cacheTtlSeconds)
+											cacheTtlSeconds: p.cacheTtlSeconds == null ? '' : String(p.cacheTtlSeconds),
+											tracingEnabled: p.tracingEnabled == null ? '' : String(p.tracingEnabled)
 										})}
 								>
 									<Pencil class="size-4" />
@@ -207,6 +210,14 @@
 									: p.cacheTtlSeconds === 0
 										? 'Cache: off'
 										: `Cache ${p.cacheTtlSeconds}s`}
+							</span>
+							<span class="flex items-center gap-1.5">
+								<Waypoints class="size-3.5" />
+								{p.tracingEnabled == null
+									? 'Trace: inherit'
+									: p.tracingEnabled
+										? 'Trace: on'
+										: 'Trace: off'}
 							</span>
 						</div>
 					</Card.Content>

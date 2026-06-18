@@ -6,6 +6,7 @@ import {
 	providerSecret,
 	policy,
 	auditLog,
+	requestTrace,
 	settings
 } from '$lib/server/db/schema';
 import { encrypt } from '$lib/server/crypto';
@@ -378,6 +379,8 @@ export async function createPolicy(input: {
 	monthlyBudgetUsd?: number;
 	// null = inherit instance default, 0 = off, >0 = override
 	cacheTtlSeconds?: number | null;
+	// null = inherit instance default; true/false force tracing on/off
+	tracingEnabled?: boolean | null;
 }) {
 	const [row] = await db
 		.insert(policy)
@@ -389,7 +392,8 @@ export async function createPolicy(input: {
 			rateLimitPerMinute: input.rateLimitPerMinute ?? 0,
 			dailyBudgetUsd: String(input.dailyBudgetUsd ?? 0),
 			monthlyBudgetUsd: String(input.monthlyBudgetUsd ?? 0),
-			cacheTtlSeconds: input.cacheTtlSeconds ?? null
+			cacheTtlSeconds: input.cacheTtlSeconds ?? null,
+			tracingEnabled: input.tracingEnabled ?? null
 		})
 		.returning();
 	return row;
@@ -406,6 +410,7 @@ export async function updatePolicy(
 		dailyBudgetUsd?: number;
 		monthlyBudgetUsd?: number;
 		cacheTtlSeconds?: number | null;
+		tracingEnabled?: boolean | null;
 	}
 ) {
 	// numeric columns round-trip as strings in drizzle/pg
@@ -435,6 +440,8 @@ export interface Settings {
 	budgetAlertsEnabled: boolean;
 	budgetAlertThresholdPct: number;
 	budgetAlertEmail: string | null;
+	tracingEnabled: boolean;
+	tracingRetentionDays: number;
 }
 
 /** Read instance settings, falling back to defaults when no row exists yet. */
@@ -446,7 +453,9 @@ export async function getSettings(): Promise<Settings> {
 		membersCanManageServices: row?.membersCanManageServices ?? false,
 		budgetAlertsEnabled: row?.budgetAlertsEnabled ?? false,
 		budgetAlertThresholdPct: row?.budgetAlertThresholdPct ?? 80,
-		budgetAlertEmail: row?.budgetAlertEmail ?? null
+		budgetAlertEmail: row?.budgetAlertEmail ?? null,
+		tracingEnabled: row?.tracingEnabled ?? false,
+		tracingRetentionDays: row?.tracingRetentionDays ?? 30
 	};
 }
 
@@ -476,6 +485,14 @@ export async function updateSettings(input: Partial<Settings>) {
 	}
 	if (input.budgetAlertEmail !== undefined) {
 		set.budgetAlertEmail = input.budgetAlertEmail?.trim() || null;
+	}
+	if (input.tracingEnabled !== undefined) {
+		set.tracingEnabled = input.tracingEnabled;
+	}
+	if (input.tracingRetentionDays !== undefined) {
+		// at least 1 day; out-of-range or NaN falls back to the 30-day default
+		const days = Math.floor(input.tracingRetentionDays);
+		set.tracingRetentionDays = Number.isFinite(days) ? Math.max(1, days) : 30;
 	}
 	await db
 		.insert(settings)
@@ -509,6 +526,71 @@ export function listAudit(limit = 100) {
 		.leftJoin(service, eq(service.id, auditLog.serviceId))
 		.orderBy(desc(auditLog.createdAt))
 		.limit(limit);
+}
+
+/* ------------------------------------ traces ------------------------------------ */
+
+/**
+ * List captured request traces for the trace viewer, newest first. Joins the
+ * paired audit row for the metadata (status, model, cost, tokens, latency) and
+ * the service name; payloads are loaded lazily by {@link getTrace} on the detail
+ * view, so the list query stays light.
+ */
+export function listTraces(limit = 100) {
+	return db
+		.select({
+			id: requestTrace.id,
+			createdAt: requestTrace.createdAt,
+			format: requestTrace.responseFormat,
+			action: auditLog.action,
+			status: auditLog.status,
+			statusCode: auditLog.statusCode,
+			provider: auditLog.provider,
+			model: auditLog.model,
+			costUsd: auditLog.costUsd,
+			inputTokens: auditLog.inputTokens,
+			outputTokens: auditLog.outputTokens,
+			latencyMs: auditLog.latencyMs,
+			detail: auditLog.detail,
+			serviceName: service.name
+		})
+		.from(requestTrace)
+		.innerJoin(auditLog, eq(auditLog.id, requestTrace.auditLogId))
+		.leftJoin(service, eq(service.id, requestTrace.serviceId))
+		.orderBy(desc(requestTrace.createdAt))
+		.limit(limit);
+}
+
+/** Load a single trace with its full request/response payloads and metadata. */
+export async function getTrace(id: string) {
+	const [row] = await db
+		.select({
+			id: requestTrace.id,
+			createdAt: requestTrace.createdAt,
+			requestBody: requestTrace.requestBody,
+			responseBody: requestTrace.responseBody,
+			format: requestTrace.responseFormat,
+			action: auditLog.action,
+			status: auditLog.status,
+			statusCode: auditLog.statusCode,
+			provider: auditLog.provider,
+			model: auditLog.model,
+			costUsd: auditLog.costUsd,
+			inputTokens: auditLog.inputTokens,
+			outputTokens: auditLog.outputTokens,
+			providerCachedTokens: auditLog.providerCachedTokens,
+			cacheWriteTokens: auditLog.cacheWriteTokens,
+			latencyMs: auditLog.latencyMs,
+			ip: auditLog.ip,
+			detail: auditLog.detail,
+			serviceName: service.name
+		})
+		.from(requestTrace)
+		.innerJoin(auditLog, eq(auditLog.id, requestTrace.auditLogId))
+		.leftJoin(service, eq(service.id, requestTrace.serviceId))
+		.where(eq(requestTrace.id, id))
+		.limit(1);
+	return row ?? null;
 }
 
 /** Aggregate dashboard stats for the overview page. */

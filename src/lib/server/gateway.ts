@@ -18,7 +18,8 @@ import {
 } from '$lib/server/providers';
 import { getAdapter } from '$lib/server/adapters';
 import { mapUsage } from '$lib/server/adapters/gemini';
-import { audit } from '$lib/server/audit';
+import { audit, type AuditEntry } from '$lib/server/audit';
+import { recordTrace } from '$lib/server/trace';
 import { checkRateLimit } from '$lib/server/ratelimit';
 import { checkBudget, reserve } from '$lib/server/budget';
 import { maybeSendBudgetAlert } from '$lib/server/budget-alerts';
@@ -276,6 +277,27 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	const started = Date.now();
 	const { token, ip } = auth;
 
+	// Request tracing: policy override wins over the instance default. When on, we
+	// pair each audit row with a request trace (the prompt + response payload) for
+	// the in-app trace viewer. auditTrace writes both; pass the response payload on
+	// the paths that produced one (cache hits and completions), request-only elsewhere.
+	const traceOn = token.policy?.tracingEnabled ?? token.defaultTracingEnabled;
+	const auditTrace = async (
+		entry: AuditEntry,
+		resp?: { response?: string | null; format?: 'json' | 'sse' }
+	) => {
+		const auditLogId = await audit(entry);
+		if (traceOn && auditLogId) {
+			await recordTrace({
+				auditLogId,
+				serviceId: token.serviceId,
+				request: body,
+				response: resp?.response ?? null,
+				format: resp?.format ?? null
+			});
+		}
+	};
+
 	// Route by model, choosing among the providers this instance has configured.
 	// OpenAI and Azure share the model namespace; an explicit `preferProvider`
 	// (set by Azure-style URL routes to signal URL-level intent) wins, otherwise
@@ -293,7 +315,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		// Distinguish "we don't recognize this model" from "we recognize it but
 		// the instance hasn't configured the provider that would serve it".
 		const known = providerForModel(model);
-		await audit({
+		await auditTrace({
 			action: `gateway.${scope}`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -316,7 +338,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	// capability check: not every provider implements every endpoint
 	// (e.g. the Responses API and embeddings are OpenAI-only).
 	if (!providerSupports(provider, scope)) {
-		await audit({
+		await auditTrace({
 			action: `gateway.${scope}`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -337,7 +359,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	// policy enforcement
 	const decision = evaluatePolicy(token, { provider: provider.id, model, scope });
 	if (!decision.allow) {
-		await audit({
+		await auditTrace({
 			action: 'policy.deny',
 			status: 'deny',
 			serviceId: token.serviceId,
@@ -355,7 +377,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	// from runaway callers before we do any I/O.
 	const rl = checkRateLimit(token.tokenId, token.policy?.rateLimitPerMinute ?? 0);
 	if (!rl.ok) {
-		await audit({
+		await auditTrace({
 			action: 'policy.deny',
 			status: 'deny',
 			serviceId: token.serviceId,
@@ -414,25 +436,28 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	if (cacheKey) {
 		const hit = await getCached(cacheKey);
 		if (hit) {
-			await audit({
-				action: `gateway.${scope}`,
-				status: 'ok',
-				serviceId: token.serviceId,
-				tokenId: token.tokenId,
-				provider: provider.id,
-				model,
-				statusCode: hit.statusCode,
-				costUsd: 0,
-				// exact savings: what this request would have cost upstream
-				savedUsd: hit.costUsd,
-				// tokens the miss consumed — replayed here as "saved" so analytics
-				// can show cache impact without double-counting consumption.
-				savedInputTokens: hit.inputTokens,
-				savedOutputTokens: hit.outputTokens,
-				latencyMs: Date.now() - started,
-				ip,
-				detail: stream ? 'cache hit (stream)' : 'cache hit'
-			});
+			await auditTrace(
+				{
+					action: `gateway.${scope}`,
+					status: 'ok',
+					serviceId: token.serviceId,
+					tokenId: token.tokenId,
+					provider: provider.id,
+					model,
+					statusCode: hit.statusCode,
+					costUsd: 0,
+					// exact savings: what this request would have cost upstream
+					savedUsd: hit.costUsd,
+					// tokens the miss consumed — replayed here as "saved" so analytics
+					// can show cache impact without double-counting consumption.
+					savedInputTokens: hit.inputTokens,
+					savedOutputTokens: hit.outputTokens,
+					latencyMs: Date.now() - started,
+					ip,
+					detail: stream ? 'cache hit (stream)' : 'cache hit'
+				},
+				{ response: hit.response, format: stream ? 'sse' : 'json' }
+			);
 			return new Response(hit.response, {
 				status: hit.statusCode,
 				headers: stream
@@ -466,7 +491,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 			void maybeSendBudgetAlert(token.serviceId, token.serviceName, token.policy);
 		}
 		if (!budget.ok) {
-			await audit({
+			await auditTrace({
 				action: 'policy.deny',
 				status: 'deny',
 				serviceId: token.serviceId,
@@ -487,7 +512,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	const creds = await loadProviderCreds(provider.id, token.providerSecretId);
 	if (!creds) {
 		releaseReservation();
-		await audit({
+		await auditTrace({
 			action: `gateway.${scope}`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -510,7 +535,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	const baseUrl = resolveBaseUrl(provider, creds.baseUrl);
 	if (!baseUrl) {
 		releaseReservation();
-		await audit({
+		await auditTrace({
 			action: `gateway.${scope}`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -561,7 +586,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		});
 	} catch (err) {
 		releaseReservation();
-		await audit({
+		await auditTrace({
 			action: `gateway.${scope}`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -599,23 +624,26 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 							usage.cacheWrite ?? 0
 						)
 					: null;
-				await audit({
-					action: `gateway.${scope}`,
-					status: 'ok',
-					serviceId: token.serviceId,
-					tokenId: token.tokenId,
-					provider: provider.id,
-					model,
-					statusCode: upstream.status,
-					costUsd: cost,
-					inputTokens: usage?.input ?? null,
-					outputTokens: usage?.output ?? null,
-					providerCachedTokens: usage?.cacheRead ?? null,
-					cacheWriteTokens: usage?.cacheWrite ?? null,
-					latencyMs: Date.now() - started,
-					ip,
-					detail: 'stream'
-				});
+				await auditTrace(
+					{
+						action: `gateway.${scope}`,
+						status: 'ok',
+						serviceId: token.serviceId,
+						tokenId: token.tokenId,
+						provider: provider.id,
+						model,
+						statusCode: upstream.status,
+						costUsd: cost,
+						inputTokens: usage?.input ?? null,
+						outputTokens: usage?.output ?? null,
+						providerCachedTokens: usage?.cacheRead ?? null,
+						cacheWriteTokens: usage?.cacheWrite ?? null,
+						latencyMs: Date.now() - started,
+						ip,
+						detail: 'stream'
+					},
+					{ response: raw, format: 'sse' }
+				);
 				// only cache a stream that finished cleanly — never a truncated one
 				if (cacheKey && complete && raw) {
 					await putCached({
@@ -676,22 +704,25 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		// non-JSON or no usage; leave cost null
 	}
 
-	await audit({
-		action: `gateway.${scope}`,
-		status: upstream.ok ? 'ok' : 'error',
-		serviceId: token.serviceId,
-		tokenId: token.tokenId,
-		provider: provider.id,
-		model,
-		statusCode: upstream.status,
-		costUsd: cost,
-		inputTokens,
-		outputTokens,
-		providerCachedTokens: cachedTokens,
-		cacheWriteTokens,
-		latencyMs: Date.now() - started,
-		ip
-	});
+	await auditTrace(
+		{
+			action: `gateway.${scope}`,
+			status: upstream.ok ? 'ok' : 'error',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: upstream.status,
+			costUsd: cost,
+			inputTokens,
+			outputTokens,
+			providerCachedTokens: cachedTokens,
+			cacheWriteTokens,
+			latencyMs: Date.now() - started,
+			ip
+		},
+		{ response: text, format: 'json' }
+	);
 	// real cost is now in the audit log — drop the in-flight reservation
 	releaseReservation();
 
@@ -761,9 +792,28 @@ export async function proxyGeminiNative(
 	const { token, ip } = auth;
 	const provider = PROVIDERS.gemini;
 
+	// Request tracing (see proxyToProvider): pair each audit row with the captured
+	// native request/response payload for the trace viewer when tracing is enabled.
+	const traceOn = token.policy?.tracingEnabled ?? token.defaultTracingEnabled;
+	const auditTrace = async (
+		entry: AuditEntry,
+		resp?: { response?: string | null; format?: 'json' | 'sse' }
+	) => {
+		const auditLogId = await audit(entry);
+		if (traceOn && auditLogId) {
+			await recordTrace({
+				auditLogId,
+				serviceId: token.serviceId,
+				request: body,
+				response: resp?.response ?? null,
+				format: resp?.format ?? null
+			});
+		}
+	};
+
 	// capability check (chat + embeddings only)
 	if (!providerSupports(provider, scope)) {
-		await audit({
+		await auditTrace({
 			action: `gateway.${scope}`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -780,7 +830,7 @@ export async function proxyGeminiNative(
 	// policy enforcement
 	const decision = evaluatePolicy(token, { provider: provider.id, model, scope });
 	if (!decision.allow) {
-		await audit({
+		await auditTrace({
 			action: 'policy.deny',
 			status: 'deny',
 			serviceId: token.serviceId,
@@ -801,7 +851,7 @@ export async function proxyGeminiNative(
 	// rate limiting (in-memory, per token)
 	const rl = checkRateLimit(token.tokenId, token.policy?.rateLimitPerMinute ?? 0);
 	if (!rl.ok) {
-		await audit({
+		await auditTrace({
 			action: 'policy.deny',
 			status: 'deny',
 			serviceId: token.serviceId,
@@ -832,22 +882,25 @@ export async function proxyGeminiNative(
 	if (cacheKey) {
 		const hit = await getCached(cacheKey);
 		if (hit) {
-			await audit({
-				action: `gateway.${scope}`,
-				status: 'ok',
-				serviceId: token.serviceId,
-				tokenId: token.tokenId,
-				provider: provider.id,
-				model,
-				statusCode: hit.statusCode,
-				costUsd: 0,
-				savedUsd: hit.costUsd,
-				savedInputTokens: hit.inputTokens,
-				savedOutputTokens: hit.outputTokens,
-				latencyMs: Date.now() - started,
-				ip,
-				detail: stream ? 'native cache hit (stream)' : 'native cache hit'
-			});
+			await auditTrace(
+				{
+					action: `gateway.${scope}`,
+					status: 'ok',
+					serviceId: token.serviceId,
+					tokenId: token.tokenId,
+					provider: provider.id,
+					model,
+					statusCode: hit.statusCode,
+					costUsd: 0,
+					savedUsd: hit.costUsd,
+					savedInputTokens: hit.inputTokens,
+					savedOutputTokens: hit.outputTokens,
+					latencyMs: Date.now() - started,
+					ip,
+					detail: stream ? 'native cache hit (stream)' : 'native cache hit'
+				},
+				{ response: hit.response, format: stream ? 'sse' : 'json' }
+			);
 			return new Response(hit.response, {
 				status: hit.statusCode,
 				headers: stream
@@ -872,7 +925,7 @@ export async function proxyGeminiNative(
 			void maybeSendBudgetAlert(token.serviceId, token.serviceName, token.policy);
 		}
 		if (!budget.ok) {
-			await audit({
+			await auditTrace({
 				action: 'policy.deny',
 				status: 'deny',
 				serviceId: token.serviceId,
@@ -892,7 +945,7 @@ export async function proxyGeminiNative(
 	const creds = await loadProviderCreds(provider.id, token.providerSecretId);
 	if (!creds) {
 		releaseReservation();
-		await audit({
+		await auditTrace({
 			action: `gateway.${scope}`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -934,7 +987,7 @@ export async function proxyGeminiNative(
 		});
 	} catch (err) {
 		releaseReservation();
-		await audit({
+		await auditTrace({
 			action: `gateway.${scope}`,
 			status: 'error',
 			serviceId: token.serviceId,
@@ -966,23 +1019,26 @@ export async function proxyGeminiNative(
 							usage.cacheWrite ?? 0
 						)
 					: null;
-				await audit({
-					action: `gateway.${scope}`,
-					status: 'ok',
-					serviceId: token.serviceId,
-					tokenId: token.tokenId,
-					provider: provider.id,
-					model,
-					statusCode: upstream.status,
-					costUsd: cost,
-					inputTokens: usage?.input ?? null,
-					outputTokens: usage?.output ?? null,
-					providerCachedTokens: usage?.cacheRead ?? null,
-					cacheWriteTokens: usage?.cacheWrite ?? null,
-					latencyMs: Date.now() - started,
-					ip,
-					detail: 'native stream'
-				});
+				await auditTrace(
+					{
+						action: `gateway.${scope}`,
+						status: 'ok',
+						serviceId: token.serviceId,
+						tokenId: token.tokenId,
+						provider: provider.id,
+						model,
+						statusCode: upstream.status,
+						costUsd: cost,
+						inputTokens: usage?.input ?? null,
+						outputTokens: usage?.output ?? null,
+						providerCachedTokens: usage?.cacheRead ?? null,
+						cacheWriteTokens: usage?.cacheWrite ?? null,
+						latencyMs: Date.now() - started,
+						ip,
+						detail: 'native stream'
+					},
+					{ response: raw, format: 'sse' }
+				);
 				if (cacheKey && complete && raw) {
 					await putCached({
 						cacheKey,
@@ -1035,23 +1091,26 @@ export async function proxyGeminiNative(
 		// non-JSON or no usage; leave cost null
 	}
 
-	await audit({
-		action: `gateway.${scope}`,
-		status: upstream.ok ? 'ok' : 'error',
-		serviceId: token.serviceId,
-		tokenId: token.tokenId,
-		provider: provider.id,
-		model,
-		statusCode: upstream.status,
-		costUsd: cost,
-		inputTokens,
-		outputTokens,
-		providerCachedTokens: cachedTokens,
-		cacheWriteTokens,
-		latencyMs: Date.now() - started,
-		ip,
-		detail: 'native'
-	});
+	await auditTrace(
+		{
+			action: `gateway.${scope}`,
+			status: upstream.ok ? 'ok' : 'error',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: upstream.status,
+			costUsd: cost,
+			inputTokens,
+			outputTokens,
+			providerCachedTokens: cachedTokens,
+			cacheWriteTokens,
+			latencyMs: Date.now() - started,
+			ip,
+			detail: 'native'
+		},
+		{ response: text, format: 'json' }
+	);
 	releaseReservation();
 
 	if (cacheKey && upstream.ok) {

@@ -12,6 +12,7 @@
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
 	import Users from '@lucide/svelte/icons/users';
 	import BellRing from '@lucide/svelte/icons/bell-ring';
+	import Waypoints from '@lucide/svelte/icons/waypoints';
 
 	let { data, form } = $props();
 
@@ -19,6 +20,7 @@
 	let tokensOn = $state(untrack(() => data.settings.membersCanManageTokens));
 	let servicesOn = $state(untrack(() => data.settings.membersCanManageServices));
 	let alertsOn = $state(untrack(() => data.settings.budgetAlertsEnabled));
+	let tracingOn = $state(untrack(() => data.settings.tracingEnabled));
 
 	const canManageSettings = $derived(can(data.role, 'settings:manage', data.memberPermissions));
 
@@ -27,6 +29,7 @@
 		tokensOn = data.settings.membersCanManageTokens;
 		servicesOn = data.settings.membersCanManageServices;
 		alertsOn = data.settings.budgetAlertsEnabled;
+		tracingOn = data.settings.tracingEnabled;
 	});
 
 	$effect(() => {
@@ -187,6 +190,58 @@
 						<p class="text-xs text-muted-foreground">
 							Sent in addition to owners &amp; admins. Requires SMTP to be configured; otherwise the
 							in-app banner is the only signal.
+						</p>
+					</div>
+
+					<Button type="submit">Save</Button>
+				</form>
+			</Card.Content>
+		</Card.Root>
+
+		<Card.Root>
+			<Card.Header>
+				<div class="flex items-center gap-3">
+					<div class="flex size-9 items-center justify-center rounded-lg border bg-muted">
+						<Waypoints class="size-4" />
+					</div>
+					<div>
+						<Card.Title class="text-base">Request tracing</Card.Title>
+						<Card.Description>
+							Capture each request's prompt &amp; response payload for the in-app trace viewer.
+						</Card.Description>
+					</div>
+				</div>
+			</Card.Header>
+			<Card.Content>
+				<form
+					method="post"
+					action="?/updateTracing"
+					class="space-y-4"
+					use:enhance={() =>
+						async ({ update }) =>
+							update({ reset: false })}
+				>
+					<input type="hidden" name="tracingEnabled" value={String(tracingOn)} />
+
+					<div class="flex items-center justify-between gap-4">
+						<Label for="tracingEnabled">Enable request tracing</Label>
+						<Switch id="tracingEnabled" bind:checked={tracingOn} />
+					</div>
+
+					<div class="space-y-2" class:opacity-50={!tracingOn}>
+						<Label for="tracingRetentionDays">Retention (days)</Label>
+						<Input
+							id="tracingRetentionDays"
+							name="tracingRetentionDays"
+							type="number"
+							min="1"
+							value={data.settings.tracingRetentionDays}
+							class="max-w-xs"
+							disabled={!tracingOn}
+						/>
+						<p class="text-xs text-muted-foreground">
+							Traces older than this are pruned automatically. Payloads can contain sensitive prompt
+							data, so tracing is off by default; a policy can override it per service.
 						</p>
 					</div>
 

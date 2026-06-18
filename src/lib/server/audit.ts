@@ -28,31 +28,37 @@ export interface AuditEntry {
 
 /**
  * Append a row to the audit trail. Never throws — auditing must not break the
- * request it is recording.
+ * request it is recording. Returns the new row's id (or null if the insert
+ * failed), so a caller can attach a request trace to it; see recordTrace.
  */
-export async function audit(entry: AuditEntry): Promise<void> {
+export async function audit(entry: AuditEntry): Promise<string | null> {
 	try {
-		await db.insert(auditLog).values({
-			action: entry.action,
-			status: entry.status,
-			serviceId: entry.serviceId ?? null,
-			tokenId: entry.tokenId ?? null,
-			provider: entry.provider ?? null,
-			model: entry.model ?? null,
-			statusCode: entry.statusCode ?? null,
-			costUsd: entry.costUsd != null ? entry.costUsd.toFixed(6) : null,
-			savedUsd: entry.savedUsd != null ? entry.savedUsd.toFixed(6) : null,
-			inputTokens: entry.inputTokens ?? null,
-			outputTokens: entry.outputTokens ?? null,
-			savedInputTokens: entry.savedInputTokens ?? null,
-			savedOutputTokens: entry.savedOutputTokens ?? null,
-			providerCachedTokens: entry.providerCachedTokens ?? null,
-			cacheWriteTokens: entry.cacheWriteTokens ?? null,
-			latencyMs: entry.latencyMs ?? null,
-			ip: entry.ip ?? null,
-			detail: entry.detail ?? null
-		});
+		const [row] = await db
+			.insert(auditLog)
+			.values({
+				action: entry.action,
+				status: entry.status,
+				serviceId: entry.serviceId ?? null,
+				tokenId: entry.tokenId ?? null,
+				provider: entry.provider ?? null,
+				model: entry.model ?? null,
+				statusCode: entry.statusCode ?? null,
+				costUsd: entry.costUsd != null ? entry.costUsd.toFixed(6) : null,
+				savedUsd: entry.savedUsd != null ? entry.savedUsd.toFixed(6) : null,
+				inputTokens: entry.inputTokens ?? null,
+				outputTokens: entry.outputTokens ?? null,
+				savedInputTokens: entry.savedInputTokens ?? null,
+				savedOutputTokens: entry.savedOutputTokens ?? null,
+				providerCachedTokens: entry.providerCachedTokens ?? null,
+				cacheWriteTokens: entry.cacheWriteTokens ?? null,
+				latencyMs: entry.latencyMs ?? null,
+				ip: entry.ip ?? null,
+				detail: entry.detail ?? null
+			})
+			.returning({ id: auditLog.id });
+		return row?.id ?? null;
 	} catch (err) {
 		console.error('[audit] failed to write entry', err);
+		return null;
 	}
 }

@@ -30,6 +30,9 @@ export const actions: Actions = {
 		// blank = no preference (defaults to OpenAI when both backends are configured)
 		const preferredProvider = data.get('preferredProvider')?.toString() || null;
 
+		// blank = inherit org default; "true"/"false" force tracing on/off
+		const rawTracing = data.get('tracingEnabled')?.toString() ?? '';
+
 		await createPolicy({
 			name,
 			allowedProviders,
@@ -38,7 +41,8 @@ export const actions: Actions = {
 			rateLimitPerMinute: Number(data.get('rateLimitPerMinute')) || 0,
 			dailyBudgetUsd: Number(data.get('dailyBudgetUsd')) || 0,
 			monthlyBudgetUsd: Number(data.get('monthlyBudgetUsd')) || 0,
-			cacheTtlSeconds: rawCache === '' ? null : Number(rawCache) || 0
+			cacheTtlSeconds: rawCache === '' ? null : Number(rawCache) || 0,
+			tracingEnabled: rawTracing === '' ? null : rawTracing === 'true'
 		});
 		return { success: true };
 	},
@@ -60,6 +64,9 @@ export const actions: Actions = {
 		// blank = no preference (defaults to OpenAI when both backends are configured)
 		const preferredProvider = data.get('preferredProvider')?.toString() || null;
 
+		// blank = inherit org default; "true"/"false" force tracing on/off
+		const rawTracing = data.get('tracingEnabled')?.toString() ?? '';
+
 		await updatePolicy(id!, {
 			name,
 			allowedProviders,
@@ -68,7 +75,8 @@ export const actions: Actions = {
 			rateLimitPerMinute: Number(data.get('rateLimitPerMinute')) || 0,
 			dailyBudgetUsd: Number(data.get('dailyBudgetUsd')) || 0,
 			monthlyBudgetUsd: Number(data.get('monthlyBudgetUsd')) || 0,
-			cacheTtlSeconds: rawCache === '' ? null : Number(rawCache) || 0
+			cacheTtlSeconds: rawCache === '' ? null : Number(rawCache) || 0,
+			tracingEnabled: rawTracing === '' ? null : rawTracing === 'true'
 		});
 		return { success: true };
 	},
