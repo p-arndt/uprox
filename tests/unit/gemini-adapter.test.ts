@@ -357,8 +357,17 @@ describe('parseGeminiAction (native ingress)', () => {
 		expect(parseGeminiAction('gemini-embedding-001:batchEmbedContents')?.scope).toBe('embeddings');
 	});
 
+	it('treats countTokens as a (free) chat-scope action', () => {
+		expect(parseGeminiAction('gemini-2.5-flash:countTokens')).toEqual({
+			model: 'gemini-2.5-flash',
+			method: 'countTokens',
+			scope: 'chat',
+			stream: false
+		});
+	});
+
 	it('returns null for an unsupported method or a malformed segment', () => {
-		expect(parseGeminiAction('gemini-2.5-flash:countTokens')).toBeNull();
+		expect(parseGeminiAction('gemini-2.5-flash:embedText')).toBeNull();
 		expect(parseGeminiAction('gemini-2.5-flash')).toBeNull();
 		expect(parseGeminiAction(':generateContent')).toBeNull();
 	});

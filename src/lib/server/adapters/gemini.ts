@@ -542,6 +542,10 @@ export function parseGeminiAction(
 			return { model, method, scope: 'chat', stream: false };
 		case 'streamGenerateContent':
 			return { model, method, scope: 'chat', stream: true };
+		// countTokens is a free pre-flight estimator; it scopes as chat (so policy
+		// applies) but reports no usageMetadata, so it's simply never billed.
+		case 'countTokens':
+			return { model, method, scope: 'chat', stream: false };
 		case 'embedContent':
 		case 'batchEmbedContents':
 			return { model, method, scope: 'embeddings', stream: false };
