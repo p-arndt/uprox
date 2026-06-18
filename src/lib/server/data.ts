@@ -12,6 +12,7 @@ import { encrypt } from '$lib/server/crypto';
 import { issueToken } from '$lib/server/tokens';
 import { audit } from '$lib/server/audit';
 import type { BudgetStatus } from '$lib/budget';
+import { cacheRate } from '$lib/cache-rate';
 import {
 	resolveSeriesBucket,
 	type BucketChoice,
@@ -544,7 +545,10 @@ export async function orgStats() {
 			// stored miss totals on every hit. Folded into the token-based cache
 			// rate so the headline reflects both layers of caching.
 			savedInputTokens: sql<number>`coalesce(sum(${auditLog.savedInputTokens}), 0)::bigint`,
-			savedOutputTokens: sql<number>`coalesce(sum(${auditLog.savedOutputTokens}), 0)::bigint`
+			savedOutputTokens: sql<number>`coalesce(sum(${auditLog.savedOutputTokens}), 0)::bigint`,
+			// embedding input is never eligible for prompt caching; broken out so it
+			// can be excluded from the cache-rate denominator below.
+			embeddingInputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}) filter (where ${auditLog.model} ilike '%embedding%'), 0)::bigint`
 		})
 		.from(auditLog)
 		.where(sql`${auditLog.action} like 'gateway.%'`);
@@ -556,17 +560,15 @@ export async function orgStats() {
 	const savedInputTokens = Number(reqs?.savedInputTokens ?? 0);
 	const savedOutputTokens = Number(reqs?.savedOutputTokens ?? 0);
 	const providerCachedTokens = Number(reqs?.providerCachedTokens ?? 0);
+	const embeddingInputTokens = Number(reqs?.embeddingInputTokens ?? 0);
 
-	// Token-based cache rate combines both layers:
-	//  - uprox's response cache (savedInputTokens) skips upstream entirely
-	//  - the provider's own prompt cache (providerCachedTokens) discounts a
-	//    subset of the inputTokens that *did* go upstream
-	// Denominator is total prompt volume the gateway has been asked to process —
-	// "served upstream" + "served from uprox cache" — so the rate answers
-	// "what fraction of input tokens benefited from caching?".
-	const cacheableInputTokens = inputTokens + savedInputTokens;
-	const cachedInputTokens = providerCachedTokens + savedInputTokens;
-	const tokenCacheRate = cacheableInputTokens > 0 ? cachedInputTokens / cacheableInputTokens : 0;
+	// share of input tokens that benefited from any cache layer — see cacheRate()
+	const { rate: tokenCacheRate } = cacheRate({
+		inputTokens,
+		embeddingInputTokens,
+		savedInputTokens,
+		providerCachedTokens
+	});
 
 	return {
 		services: Number(counts?.services ?? 0),
