@@ -13,6 +13,7 @@
 	import { goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import { formatUsd, formatTokens } from '$lib/format';
+	import { cacheRate } from '$lib/cache-rate';
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import Cpu from '@lucide/svelte/icons/cpu';
 	import KeyRound from '@lucide/svelte/icons/key-round';
@@ -85,15 +86,12 @@
 	);
 	const totalTokens = $derived(inputTokenTotal + outputTokenTotal);
 	// Saved by either uprox's response cache (replayed entire request) or the
-	// upstream provider's prompt cache (discounted subset of input). The rate is
-	// computed on actual input tokens only (always the full figure, regardless of
-	// the embedding toggle) — the provider cache discount applies to input, so
-	// mixing in output would inflate the headline meaninglessly.
+	// upstream provider's prompt cache (discounted subset of input). The rate
+	// excludes embeddings (never cacheable) — see cacheRate(). Kept independent of
+	// the embedding display toggle so the headline figure stays reliable.
 	const savedInputTotal = $derived(totals.savedInputTokens);
 	const providerCachedTotal = $derived(totals.providerCachedTokens);
-	const cacheableInput = $derived(totals.inputTokens + savedInputTotal);
-	const cachedInput = $derived(savedInputTotal + providerCachedTotal);
-	const tokenCacheRate = $derived(cacheableInput > 0 ? cachedInput / cacheableInput : 0);
+	const tokenCacheRate = $derived(cacheRate(totals).rate);
 
 	// Average spend per request — the unit-economics number a cost owner watches.
 	const avgCostPerReq = $derived(totals.requests > 0 ? totals.costUsd / totals.requests : 0);

@@ -11,6 +11,7 @@
 	import { goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import { formatUsd, formatTokens, relativeTime } from '$lib/format';
+	import { cacheRate } from '$lib/cache-rate';
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import Cpu from '@lucide/svelte/icons/cpu';
 	import KeyRound from '@lucide/svelte/icons/key-round';
@@ -61,9 +62,7 @@
 	const errorRate = $derived(totals.requests > 0 ? totals.errors / totals.requests : 0);
 	const avgCostPerReq = $derived(totals.requests > 0 ? totals.costUsd / totals.requests : 0);
 
-	const cacheableInput = $derived(totals.inputTokens + totals.savedInputTokens);
-	const cachedInput = $derived(totals.savedInputTokens + totals.providerCachedTokens);
-	const tokenCacheRate = $derived(cacheableInput > 0 ? cachedInput / cacheableInput : 0);
+	const tokenCacheRate = $derived(cacheRate(totals).rate);
 
 	function pctDelta(cur: number, prior: number): number | null {
 		if (!prior || prior <= 0) return null;
