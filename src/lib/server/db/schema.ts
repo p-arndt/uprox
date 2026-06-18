@@ -381,6 +381,11 @@ export const requestTrace = pgTable(
 		// denormalized from the audit row so the trace list can filter/scope by
 		// service without a three-way join; nulls out if the service is removed.
 		serviceId: uuid('service_id').references(() => service.id, { onDelete: 'set null' }),
+		// caller-supplied session/correlation id (from the x-uprox-trace-id or
+		// x-uprox-session-id request header). Groups the several gateway calls of one
+		// logical run — e.g. a tool-use loop — into a single timeline in the viewer.
+		// NULL when the caller sent no header. Free-form; not validated.
+		traceGroupId: text('trace_group_id'),
 		// the request body as the gateway received it (OpenAI or native Gemini shape),
 		// verbatim JSON. NULL for requests with no JSON body (rare on traced routes).
 		requestBody: text('request_body'),
@@ -395,7 +400,8 @@ export const requestTrace = pgTable(
 	},
 	(t) => [
 		uniqueIndex('request_trace_audit_uidx').on(t.auditLogId),
-		index('request_trace_created_idx').on(t.createdAt)
+		index('request_trace_created_idx').on(t.createdAt),
+		index('request_trace_group_idx').on(t.traceGroupId)
 	]
 );
 

@@ -6,13 +6,19 @@
  * payload tab, so a new provider shape never breaks the page.
  */
 
+export interface ToolCall {
+	name: string;
+	/** the call arguments as a JSON string (possibly partial for a truncated stream) */
+	args: string;
+}
+
 export interface TraceMessage {
 	/** system | user | assistant | tool | model | … (verbatim from the payload) */
 	role: string;
 	/** flattened text content */
 	text: string;
 	/** tool/function calls requested in this message, if any */
-	toolCalls?: { name: string; args: string }[];
+	toolCalls?: ToolCall[];
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
@@ -54,7 +60,8 @@ export function flattenContent(content: unknown): string {
 	return '';
 }
 
-function toolCallsFrom(msg: Record<string, unknown>): { name: string; args: string }[] | undefined {
+/** Read OpenAI `tool_calls` (chat shape) off a message into normalized calls. */
+function toolCallsFrom(msg: Record<string, unknown>): ToolCall[] | undefined {
 	const calls = msg.tool_calls;
 	if (!Array.isArray(calls)) return undefined;
 	const out = calls
@@ -64,8 +71,40 @@ function toolCallsFrom(msg: Record<string, unknown>): { name: string; args: stri
 			const args = typeof c.function.arguments === 'string' ? c.function.arguments : '';
 			return { name, args };
 		})
-		.filter((c): c is { name: string; args: string } => c !== null);
+		.filter((c): c is ToolCall => c !== null);
 	return out.length ? out : undefined;
+}
+
+/** Read Gemini `functionCall` parts (`{ functionCall: { name, args } }`) into calls. */
+function geminiToolCalls(parts: unknown): ToolCall[] | undefined {
+	if (!Array.isArray(parts)) return undefined;
+	const out: ToolCall[] = [];
+	for (const part of parts) {
+		if (isRecord(part) && isRecord(part.functionCall)) {
+			const fc = part.functionCall;
+			out.push({
+				name: typeof fc.name === 'string' ? fc.name : 'function',
+				args: fc.args != null ? JSON.stringify(fc.args) : ''
+			});
+		}
+	}
+	return out.length ? out : undefined;
+}
+
+/** Render Gemini `functionResponse` parts (tool results) to readable text. */
+function geminiToolResults(parts: unknown): string {
+	if (!Array.isArray(parts)) return '';
+	return parts
+		.map((part) => {
+			if (isRecord(part) && isRecord(part.functionResponse)) {
+				const fr = part.functionResponse;
+				const name = typeof fr.name === 'string' ? fr.name : 'function';
+				return `${name} → ${fr.response != null ? JSON.stringify(fr.response) : ''}`;
+			}
+			return '';
+		})
+		.filter(Boolean)
+		.join('\n');
 }
 
 /** Pull the OpenAI chat `messages` array into normalized messages. */
@@ -77,12 +116,24 @@ function openAiMessages(messages: unknown[]): TraceMessage[] {
 	}));
 }
 
-/** Pull Gemini native `contents` into normalized messages. */
+/**
+ * Pull Gemini native `contents` into normalized messages, surfacing
+ * `functionCall` parts as tool calls and `functionResponse` parts (tool
+ * results) as a `tool`-role message.
+ */
 function geminiMessages(contents: unknown[]): TraceMessage[] {
-	return contents.filter(isRecord).map((c) => ({
-		role: typeof c.role === 'string' ? c.role : 'user',
-		text: flattenContent(c.parts)
-	}));
+	return contents.filter(isRecord).map((c) => {
+		const parts = c.parts;
+		const toolResults = geminiToolResults(parts);
+		const text = flattenContent(parts);
+		// a content carrying a functionResponse is the tool's reply, not the user's
+		const role = toolResults ? 'tool' : typeof c.role === 'string' ? c.role : 'user';
+		return {
+			role,
+			text: toolResults ? [text, toolResults].filter(Boolean).join('\n') : text,
+			toolCalls: geminiToolCalls(parts)
+		};
+	});
 }
 
 /**
@@ -123,9 +174,26 @@ export function requestMessages(requestBody: string | null | undefined): TraceMe
 	return [];
 }
 
-/** Concatenate the streamed text out of an OpenAI/Gemini SSE wire body. */
-export function reconstructSse(raw: string): string {
-	let out = '';
+/**
+ * Reassemble an SSE wire body into the assistant's reply: concatenated text plus
+ * any tool calls. Spans OpenAI chat (`choices[].delta.{content,tool_calls}` —
+ * tool-call name/args arrive in fragments, accumulated by index), the Responses
+ * API (`output_text.delta` text + `function_call` item/argument-delta events),
+ * and native Gemini (`candidates[].content.parts[].{text,functionCall}`).
+ */
+function sseMessage(raw: string): { text: string; toolCalls: ToolCall[] } {
+	let text = '';
+	// insertion-ordered so tool calls render in the order the model emitted them
+	const calls = new Map<string, ToolCall>();
+	const ensure = (key: string) => {
+		let c = calls.get(key);
+		if (!c) {
+			c = { name: '', args: '' };
+			calls.set(key, c);
+		}
+		return c;
+	};
+
 	for (const line of raw.split('\n')) {
 		const trimmed = line.trim();
 		if (!trimmed.startsWith('data:')) continue;
@@ -134,75 +202,144 @@ export function reconstructSse(raw: string): string {
 		const obj = safeParse(data);
 		if (!isRecord(obj)) continue;
 
-		// OpenAI chat: choices[].delta.content
+		// OpenAI chat completions
 		if (Array.isArray(obj.choices)) {
 			for (const ch of obj.choices) {
-				if (isRecord(ch) && isRecord(ch.delta) && typeof ch.delta.content === 'string') {
-					out += ch.delta.content;
+				if (!isRecord(ch) || !isRecord(ch.delta)) continue;
+				const delta = ch.delta;
+				if (typeof delta.content === 'string') text += delta.content;
+				if (Array.isArray(delta.tool_calls)) {
+					for (const tc of delta.tool_calls) {
+						if (!isRecord(tc)) continue;
+						const key = `c${typeof tc.index === 'number' ? tc.index : calls.size}`;
+						const c = ensure(key);
+						if (isRecord(tc.function)) {
+							if (typeof tc.function.name === 'string') c.name = tc.function.name;
+							if (typeof tc.function.arguments === 'string') c.args += tc.function.arguments;
+						}
+					}
 				}
 			}
 			continue;
 		}
-		// OpenAI Responses: { type: 'response.output_text.delta', delta: '…' }
-		if (obj.type === 'response.output_text.delta' && typeof obj.delta === 'string') {
-			out += obj.delta;
-			continue;
+
+		// OpenAI Responses API streaming events
+		if (typeof obj.type === 'string') {
+			if (obj.type === 'response.output_text.delta' && typeof obj.delta === 'string') {
+				text += obj.delta;
+				continue;
+			}
+			if (
+				obj.type === 'response.output_item.added' &&
+				isRecord(obj.item) &&
+				obj.item.type === 'function_call'
+			) {
+				const id = typeof obj.item.id === 'string' ? obj.item.id : String(calls.size);
+				const c = ensure(`r${id}`);
+				if (typeof obj.item.name === 'string') c.name = obj.item.name;
+				continue;
+			}
+			if (obj.type === 'response.function_call_arguments.delta' && typeof obj.delta === 'string') {
+				const id = typeof obj.item_id === 'string' ? obj.item_id : '0';
+				ensure(`r${id}`).args += obj.delta;
+				continue;
+			}
 		}
-		// Native Gemini: candidates[].content.parts[].text
+
+		// Native Gemini
 		if (Array.isArray(obj.candidates)) {
 			for (const cand of obj.candidates) {
-				if (isRecord(cand) && isRecord(cand.content)) {
-					out += flattenContent(cand.content.parts);
-				}
+				if (!isRecord(cand) || !isRecord(cand.content)) continue;
+				text += flattenContent(cand.content.parts);
+				const tcs = geminiToolCalls(cand.content.parts);
+				if (tcs) for (const tc of tcs) calls.set(`g${calls.size}`, { ...tc });
 			}
 		}
 	}
-	return out;
+
+	return { text, toolCalls: [...calls.values()].filter((c) => c.name || c.args) };
 }
 
-/** Extract the assistant's reply text from a buffered JSON response body. */
-function bufferedResponseText(body: unknown): string {
-	if (!isRecord(body)) return '';
+/** Backwards-compatible text-only reassembly of an SSE body. */
+export function reconstructSse(raw: string): string {
+	return sseMessage(raw).text;
+}
+
+/** Extract the assistant's reply (text + tool calls) from a buffered JSON body. */
+function bufferedMessage(body: unknown): { text: string; toolCalls: ToolCall[] } {
+	const append = (acc: string, next: string) => (next ? (acc ? `${acc}\n${next}` : next) : acc);
+	if (!isRecord(body)) return { text: '', toolCalls: [] };
+
 	// OpenAI chat completions
 	if (Array.isArray(body.choices)) {
-		return body.choices
-			.map((ch) => {
-				if (isRecord(ch) && isRecord(ch.message)) return flattenContent(ch.message.content);
-				return '';
-			})
-			.filter(Boolean)
-			.join('\n');
+		let text = '';
+		const calls: ToolCall[] = [];
+		for (const ch of body.choices) {
+			if (!isRecord(ch) || !isRecord(ch.message)) continue;
+			text = append(text, flattenContent(ch.message.content));
+			const tc = toolCallsFrom(ch.message);
+			if (tc) calls.push(...tc);
+		}
+		return { text, toolCalls: calls };
 	}
-	// OpenAI Responses API: `output_text` convenience, else walk `output`
-	if (typeof body.output_text === 'string') return body.output_text;
-	if (Array.isArray(body.output)) {
-		return body.output
-			.map((item) => (isRecord(item) ? flattenContent(item.content) : ''))
-			.filter(Boolean)
-			.join('\n');
+
+	// OpenAI Responses API: `output_text` convenience, else walk `output` items
+	if (typeof body.output_text === 'string' || Array.isArray(body.output)) {
+		let text = typeof body.output_text === 'string' ? body.output_text : '';
+		const calls: ToolCall[] = [];
+		if (Array.isArray(body.output)) {
+			for (const item of body.output) {
+				if (!isRecord(item)) continue;
+				if (item.type === 'function_call') {
+					calls.push({
+						name: typeof item.name === 'string' ? item.name : 'function',
+						args: typeof item.arguments === 'string' ? item.arguments : ''
+					});
+				} else if (!body.output_text) {
+					text = append(text, flattenContent(item.content));
+				}
+			}
+		}
+		return { text, toolCalls: calls };
 	}
+
 	// Native Gemini
 	if (Array.isArray(body.candidates)) {
-		return body.candidates
-			.map((cand) => (isRecord(cand) && isRecord(cand.content) ? flattenContent(cand.content.parts) : ''))
-			.filter(Boolean)
-			.join('\n');
+		let text = '';
+		const calls: ToolCall[] = [];
+		for (const cand of body.candidates) {
+			if (!isRecord(cand) || !isRecord(cand.content)) continue;
+			text = append(text, flattenContent(cand.content.parts));
+			const tc = geminiToolCalls(cand.content.parts);
+			if (tc) calls.push(...tc);
+		}
+		return { text, toolCalls: calls };
 	}
-	return '';
+
+	return { text: '', toolCalls: [] };
 }
 
 /**
- * The assistant's reply for the conversation view: reconstructed from the SSE
- * stream when the response was streamed, else read from the buffered JSON.
- * Returns '' when nothing recognizable is present (UI falls back to raw).
+ * The assistant's reply for the conversation view (text + tool calls):
+ * reconstructed from the SSE stream when streamed, else read from the buffered
+ * JSON. Returns an empty assistant message when nothing recognizable is present.
  */
+export function responseMessage(
+	responseBody: string | null | undefined,
+	format: string | null | undefined
+): TraceMessage {
+	if (!responseBody) return { role: 'assistant', text: '' };
+	const { text, toolCalls } =
+		format === 'sse' ? sseMessage(responseBody) : bufferedMessage(safeParse(responseBody));
+	return { role: 'assistant', text, toolCalls: toolCalls.length ? toolCalls : undefined };
+}
+
+/** Backwards-compatible text-only accessor for the assistant's reply. */
 export function responseText(
 	responseBody: string | null | undefined,
 	format: string | null | undefined
 ): string {
-	if (!responseBody) return '';
-	if (format === 'sse') return reconstructSse(responseBody);
-	return bufferedResponseText(safeParse(responseBody));
+	return responseMessage(responseBody, format).text;
 }
 
 /** Pretty-print a JSON string for the raw view; returns the input unchanged if not JSON. */

@@ -542,6 +542,7 @@ export function listTraces(limit = 100) {
 			id: requestTrace.id,
 			createdAt: requestTrace.createdAt,
 			format: requestTrace.responseFormat,
+			groupId: requestTrace.traceGroupId,
 			action: auditLog.action,
 			status: auditLog.status,
 			statusCode: auditLog.statusCode,
@@ -561,6 +562,30 @@ export function listTraces(limit = 100) {
 		.limit(limit);
 }
 
+/**
+ * The other traces sharing a caller-supplied group id, oldest first — the
+ * session timeline shown on a trace's detail view. Metadata only (no payloads).
+ */
+export function listTraceGroup(groupId: string, limit = 100) {
+	return db
+		.select({
+			id: requestTrace.id,
+			createdAt: requestTrace.createdAt,
+			action: auditLog.action,
+			status: auditLog.status,
+			statusCode: auditLog.statusCode,
+			model: auditLog.model,
+			costUsd: auditLog.costUsd,
+			latencyMs: auditLog.latencyMs,
+			detail: auditLog.detail
+		})
+		.from(requestTrace)
+		.innerJoin(auditLog, eq(auditLog.id, requestTrace.auditLogId))
+		.where(eq(requestTrace.traceGroupId, groupId))
+		.orderBy(requestTrace.createdAt)
+		.limit(limit);
+}
+
 /** Load a single trace with its full request/response payloads and metadata. */
 export async function getTrace(id: string) {
 	const [row] = await db
@@ -570,6 +595,7 @@ export async function getTrace(id: string) {
 			requestBody: requestTrace.requestBody,
 			responseBody: requestTrace.responseBody,
 			format: requestTrace.responseFormat,
+			groupId: requestTrace.traceGroupId,
 			action: auditLog.action,
 			status: auditLog.status,
 			statusCode: auditLog.statusCode,
