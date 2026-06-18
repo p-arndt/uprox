@@ -7,17 +7,21 @@ import {
 	listPolicies,
 	createToken,
 	updateToken,
-	revokeToken
+	revokeToken,
+	revealToken,
+	getSettings
 } from '$lib/server/data';
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
-	const [tokens, services, policies] = await Promise.all([
+	const [tokens, services, policies, settings] = await Promise.all([
 		listTokens(),
 		listServices(),
-		listPolicies()
+		listPolicies(),
+		getSettings()
 	]);
-	return { tokens, services, policies };
+	// drives the default state of the "allow re-copying" checkbox in the create form
+	return { tokens, services, policies, recopyDefault: settings.tokensRecopyableDefault };
 };
 
 /** Parse the shared comma-separated "allowed models" field into a clean list. */
@@ -43,6 +47,9 @@ export const actions: Actions = {
 		const policyId = data.get('policyId')?.toString() || null;
 		const days = Number(data.get('expiresInDays')) || 0;
 		const expiresAt = days > 0 ? new Date(Date.now() + days * 86_400_000) : null;
+		// checkbox: present only when ticked. When on, the raw token is stored
+		// encrypted so it can be revealed/copied again later.
+		const recopyable = data.get('recopyable') === 'on' || data.get('recopyable') === 'true';
 
 		try {
 			const { plaintext } = await createToken(userId, {
@@ -51,13 +58,23 @@ export const actions: Actions = {
 				scopes,
 				allowedModels,
 				policyId,
-				expiresAt
+				expiresAt,
+				recopyable
 			});
-			// returned to the page exactly once, then gone forever
-			return { created: { name, plaintext } };
+			// shown immediately; recoverable later only if recopyable was set
+			return { created: { name, plaintext, recopyable } };
 		} catch (err) {
 			return fail(400, { message: err instanceof Error ? err.message : 'Failed to create token' });
 		}
+	},
+	reveal: async (event) => {
+		await requirePermission(event, 'tokens:manage');
+		const data = await event.request.formData();
+		const id = data.get('id')?.toString();
+		if (!id) return fail(400, { message: 'Missing token id' });
+		const revealed = await revealToken(id);
+		if (!revealed) return fail(400, { message: 'This token cannot be re-copied' });
+		return { revealed };
 	},
 	update: async (event) => {
 		await requirePermission(event, 'tokens:manage');

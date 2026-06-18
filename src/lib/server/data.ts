@@ -10,7 +10,7 @@ import {
 	traceSpan,
 	settings
 } from '$lib/server/db/schema';
-import { encrypt } from '$lib/server/crypto';
+import { encrypt, decrypt } from '$lib/server/crypto';
 import { issueToken } from '$lib/server/tokens';
 import { audit } from '$lib/server/audit';
 import type { BudgetStatus } from '$lib/budget';
@@ -122,6 +122,8 @@ export async function getToken(id: string) {
 			// the token's own policy (overrides the service policy when set)
 			policyId: machineToken.policyId,
 			policyName: policy.name,
+			// true when the raw token can be revealed again (see machineToken.encryptedToken)
+			recopyable: sql<boolean>`${machineToken.encryptedToken} is not null`,
 			lastUsedAt: machineToken.lastUsedAt,
 			expiresAt: machineToken.expiresAt,
 			revokedAt: machineToken.revokedAt,
@@ -149,6 +151,9 @@ export function listTokens() {
 				// the token's own policy (overrides the service policy when set)
 				policyId: machineToken.policyId,
 				policyName: policy.name,
+				// true when the raw token was kept (encrypted) and can be revealed again;
+				// the ciphertext itself is never sent to the client
+				recopyable: sql<boolean>`${machineToken.encryptedToken} is not null`,
 				lastUsedAt: machineToken.lastUsedAt,
 				expiresAt: machineToken.expiresAt,
 				revokedAt: machineToken.revokedAt,
@@ -178,6 +183,9 @@ export async function createToken(
 		// per-token policy that replaces the service policy; null = inherit service
 		policyId?: string | null;
 		expiresAt?: Date | null;
+		// when true, also store the raw token encrypted so it can be revealed again
+		// later (weaker than hash-only — see machineToken.encryptedToken). Default off.
+		recopyable?: boolean;
 	}
 ) {
 	// ensure the service exists and isn't retired
@@ -196,6 +204,8 @@ export async function createToken(
 			name: input.name,
 			display: issued.display,
 			hashedToken: issued.hashedToken,
+			// only persisted when the issuer opted into re-copying
+			encryptedToken: input.recopyable ? encrypt(issued.plaintext) : null,
 			scopes: input.scopes ?? [],
 			allowedModels: input.allowedModels ?? [],
 			policyId: input.policyId ?? null,
@@ -213,6 +223,37 @@ export async function createToken(
 	});
 
 	return { token: row, plaintext: issued.plaintext };
+}
+
+/**
+ * Re-reveal the raw secret of a re-copyable token. Only works for tokens issued
+ * with `recopyable` (their `encryptedToken` is set); returns null otherwise — a
+ * hash-only token's plaintext is genuinely unrecoverable. Each reveal is audited
+ * so re-copies stay traceable. Revoked tokens can still be revealed (the row is
+ * dead for auth, but an operator may need the old value).
+ */
+export async function revealToken(id: string): Promise<{ name: string; plaintext: string } | null> {
+	const [row] = await db
+		.select({
+			id: machineToken.id,
+			name: machineToken.name,
+			serviceId: machineToken.serviceId,
+			encryptedToken: machineToken.encryptedToken
+		})
+		.from(machineToken)
+		.where(eq(machineToken.id, id))
+		.limit(1);
+	if (!row?.encryptedToken) return null;
+
+	const plaintext = decrypt(row.encryptedToken);
+	await audit({
+		action: 'token.reveal',
+		status: 'ok',
+		serviceId: row.serviceId,
+		tokenId: row.id,
+		detail: row.name
+	});
+	return { name: row.name, plaintext };
 }
 
 /**
@@ -438,6 +479,7 @@ export interface Settings {
 	cacheTtlSeconds: number;
 	membersCanManageTokens: boolean;
 	membersCanManageServices: boolean;
+	tokensRecopyableDefault: boolean;
 	budgetAlertsEnabled: boolean;
 	budgetAlertThresholdPct: number;
 	budgetAlertEmail: string | null;
@@ -452,6 +494,7 @@ export async function getSettings(): Promise<Settings> {
 		cacheTtlSeconds: row?.cacheTtlSeconds ?? 0,
 		membersCanManageTokens: row?.membersCanManageTokens ?? false,
 		membersCanManageServices: row?.membersCanManageServices ?? false,
+		tokensRecopyableDefault: row?.tokensRecopyableDefault ?? false,
 		budgetAlertsEnabled: row?.budgetAlertsEnabled ?? false,
 		budgetAlertThresholdPct: row?.budgetAlertThresholdPct ?? 80,
 		budgetAlertEmail: row?.budgetAlertEmail ?? null,
@@ -475,6 +518,9 @@ export async function updateSettings(input: Partial<Settings>) {
 	}
 	if (input.membersCanManageServices !== undefined) {
 		set.membersCanManageServices = input.membersCanManageServices;
+	}
+	if (input.tokensRecopyableDefault !== undefined) {
+		set.tokensRecopyableDefault = input.tokensRecopyableDefault;
 	}
 	if (input.budgetAlertsEnabled !== undefined) {
 		set.budgetAlertsEnabled = input.budgetAlertsEnabled;
@@ -887,9 +933,7 @@ export async function orgUsageSeries(
 	const serviceFilter = opts.serviceId
 		? sql`and ${auditLog.serviceId} = ${opts.serviceId}::uuid`
 		: sql``;
-	const tokenFilter = opts.tokenId
-		? sql`and ${auditLog.tokenId} = ${opts.tokenId}::uuid`
-		: sql``;
+	const tokenFilter = opts.tokenId ? sql`and ${auditLog.tokenId} = ${opts.tokenId}::uuid` : sql``;
 
 	const rows = await db.execute<{
 		bucket: string;

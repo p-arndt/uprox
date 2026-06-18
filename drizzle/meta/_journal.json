@@ -64,6 +64,13 @@
       "when": 1781822757983,
       "tag": "0008_bent_cerise",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1781824171664,
+      "tag": "0009_broad_kingpin",
+      "breakpoints": true
     }
   ]
 }

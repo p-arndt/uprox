@@ -1,8 +1,9 @@
-import { error } from '@sveltejs/kit';
-import type { PageServerLoad } from './$types';
-import { requireOrg } from '$lib/server/org';
+import { error, fail } from '@sveltejs/kit';
+import type { Actions, PageServerLoad } from './$types';
+import { requireOrg, requirePermission } from '$lib/server/org';
 import {
 	getToken,
+	revealToken,
 	orgUsageByModel,
 	orgUsageByProvider,
 	orgUsageTotals,
@@ -60,6 +61,7 @@ export const load: PageServerLoad = async (event) => {
 			serviceName: token.serviceName,
 			policyId: token.policyId,
 			policyName: token.policyName,
+			recopyable: token.recopyable,
 			createdAt: token.createdAt,
 			lastUsedAt: token.lastUsedAt,
 			expiresAt: token.expiresAt,
@@ -79,4 +81,13 @@ export const load: PageServerLoad = async (event) => {
 		series,
 		prevPoints: prevSeries.points
 	};
+};
+
+export const actions: Actions = {
+	reveal: async (event) => {
+		await requirePermission(event, 'tokens:manage');
+		const revealed = await revealToken(event.params.id);
+		if (!revealed) return fail(400, { message: 'This token cannot be re-copied' });
+		return { revealed };
+	}
 };

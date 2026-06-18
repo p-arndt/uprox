@@ -13,12 +13,14 @@
 	import Users from '@lucide/svelte/icons/users';
 	import BellRing from '@lucide/svelte/icons/bell-ring';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
+	import KeyRound from '@lucide/svelte/icons/key-round';
 
 	let { data, form } = $props();
 
 	// Seeded once from server data; the $effect below re-syncs after reloads.
 	let tokensOn = $state(untrack(() => data.settings.membersCanManageTokens));
 	let servicesOn = $state(untrack(() => data.settings.membersCanManageServices));
+	let recopyOn = $state(untrack(() => data.settings.tokensRecopyableDefault));
 	let alertsOn = $state(untrack(() => data.settings.budgetAlertsEnabled));
 	let tracingOn = $state(untrack(() => data.settings.tracingEnabled));
 
@@ -28,6 +30,7 @@
 	$effect(() => {
 		tokensOn = data.settings.membersCanManageTokens;
 		servicesOn = data.settings.membersCanManageServices;
+		recopyOn = data.settings.tokensRecopyableDefault;
 		alertsOn = data.settings.budgetAlertsEnabled;
 		tracingOn = data.settings.tracingEnabled;
 	});
@@ -122,6 +125,46 @@
 						<Label for="membersCanManageServices">Members can create services</Label>
 						<Switch id="membersCanManageServices" bind:checked={servicesOn} />
 					</div>
+
+					<Button type="submit">Save</Button>
+				</form>
+			</Card.Content>
+		</Card.Root>
+
+		<Card.Root>
+			<Card.Header>
+				<div class="flex items-center gap-3">
+					<div class="flex size-9 items-center justify-center rounded-lg border bg-muted">
+						<KeyRound class="size-4" />
+					</div>
+					<div>
+						<Card.Title class="text-base">Token security</Card.Title>
+						<Card.Description>How machine tokens are stored at rest.</Card.Description>
+					</div>
+				</div>
+			</Card.Header>
+			<Card.Content>
+				<form
+					method="post"
+					action="?/updateTokenSecurity"
+					class="space-y-4"
+					use:enhance={() =>
+						async ({ update }) =>
+							update({ reset: false })}
+				>
+					<input type="hidden" name="tokensRecopyableDefault" value={String(recopyOn)} />
+
+					<div class="flex items-center justify-between gap-4">
+						<Label for="tokensRecopyableDefault">Allow re-copying new tokens by default</Label>
+						<Switch id="tokensRecopyableDefault" bind:checked={recopyOn} />
+					</div>
+					<p class="text-xs text-muted-foreground">
+						When on, the "Allow re-copying later" box is pre-checked when issuing a token, storing
+						its secret encrypted so it can be revealed and copied again. The issuer can still
+						override it per token. Off keeps tokens hash-only by default — shown once, then
+						unrecoverable, which is more secure (a database leak can't expose them). Existing tokens
+						are unaffected.
+					</p>
 
 					<Button type="submit">Save</Button>
 				</form>

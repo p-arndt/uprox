@@ -31,6 +31,15 @@ export const actions: Actions = {
 		});
 		return { success: true };
 	},
+	updateTokenSecurity: async (event) => {
+		await requirePermission(event, 'settings:manage');
+		const data = await event.request.formData();
+		const isOn = (v: FormDataEntryValue | null) => v === 'on' || v === 'true';
+		await updateSettings({
+			tokensRecopyableDefault: isOn(data.get('tokensRecopyableDefault'))
+		});
+		return { success: true };
+	},
 	updateBudgetAlerts: async (event) => {
 		await requirePermission(event, 'settings:manage');
 		const data = await event.request.formData();
