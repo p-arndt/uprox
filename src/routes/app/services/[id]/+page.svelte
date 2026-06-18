@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import CustomRangePicker from '$lib/components/custom-range-picker.svelte';
 	import DeltaPill from '$lib/components/delta-pill.svelte';
 	import TokenSplit from '$lib/components/token-split.svelte';
@@ -8,11 +9,12 @@
 	import UsageTrendCard from '$lib/components/usage-trend-card.svelte';
 	import UsageBreakdown, { type BreakdownSection } from '$lib/components/usage-breakdown.svelte';
 	import { resolve } from '$app/paths';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import { formatUsd, formatTokens, relativeTime } from '$lib/format';
 	import { cacheRate } from '$lib/cache-rate';
 	import Boxes from '@lucide/svelte/icons/boxes';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import Cpu from '@lucide/svelte/icons/cpu';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import Server from '@lucide/svelte/icons/server';
@@ -54,6 +56,19 @@
 
 	function applyCustom(from: string, to: string) {
 		goto(hrefWith({ range: 'custom', from, to }), { noScroll: true });
+	}
+
+	// Re-runs the page load (re-querying usage) without a full reload, so operators
+	// can pull fresh figures in place. invalidateAll resolves once the new data lands.
+	let refreshing = $state(false);
+	async function refresh() {
+		if (refreshing) return;
+		refreshing = true;
+		try {
+			await invalidateAll();
+		} finally {
+			refreshing = false;
+		}
 	}
 
 	const totals = $derived(data.totals);
@@ -176,6 +191,16 @@
 				active={data.range === 'custom'}
 				onApply={applyCustom}
 			/>
+			<Button
+				variant="outline"
+				size="icon"
+				onclick={refresh}
+				disabled={refreshing}
+				aria-label="Refresh usage"
+				title="Refresh"
+			>
+				<RefreshCw class={refreshing ? 'animate-spin' : ''} />
+			</Button>
 		</div>
 	</div>
 

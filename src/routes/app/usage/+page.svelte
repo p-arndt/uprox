@@ -9,8 +9,9 @@
 	import UsageBreakdown, { type BreakdownSection } from '$lib/components/usage-breakdown.svelte';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import { resolve } from '$app/paths';
-	import { goto } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import { formatUsd, formatTokens } from '$lib/format';
 	import { cacheRate } from '$lib/cache-rate';
@@ -22,8 +23,22 @@
 	import Activity from '@lucide/svelte/icons/activity';
 	import Sigma from '@lucide/svelte/icons/sigma';
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 
 	let { data } = $props();
+
+	// Re-runs the page load (re-querying usage) without a full reload, so operators
+	// can pull fresh figures in place. invalidateAll resolves once the new data lands.
+	let refreshing = $state(false);
+	async function refresh() {
+		if (refreshing) return;
+		refreshing = true;
+		try {
+			await invalidateAll();
+		} finally {
+			refreshing = false;
+		}
+	}
 
 	const rangeLabel = $derived(
 		data.range === 'custom'
@@ -215,6 +230,16 @@
 				active={data.range === 'custom'}
 				onApply={applyCustom}
 			/>
+			<Button
+				variant="outline"
+				size="icon"
+				onclick={refresh}
+				disabled={refreshing}
+				aria-label="Refresh usage"
+				title="Refresh"
+			>
+				<RefreshCw class={refreshing ? 'animate-spin' : ''} />
+			</Button>
 		</div>
 	</div>
 
