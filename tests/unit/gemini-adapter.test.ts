@@ -7,7 +7,8 @@ import {
 	fromGeminiEmbedResponse,
 	mapFinishReason,
 	mapUsage,
-	streamGeminiToOpenAi
+	streamGeminiToOpenAi,
+	parseGeminiAction
 } from '$lib/server/adapters/gemini';
 
 /** Build a ReadableStream<Uint8Array> from string chunks (a fake upstream SSE). */
@@ -330,6 +331,36 @@ describe('geminiAdapter.buildUrl / translateModels', () => {
 		expect(out).toEqual({
 			error: { message: 'bad key', type: 'api_error', code: null, param: null }
 		});
+	});
+});
+
+describe('parseGeminiAction (native ingress)', () => {
+	it('maps the four supported methods to scope + stream', () => {
+		expect(parseGeminiAction('gemini-2.5-flash:generateContent')).toEqual({
+			model: 'gemini-2.5-flash',
+			method: 'generateContent',
+			scope: 'chat',
+			stream: false
+		});
+		expect(parseGeminiAction('gemini-2.5-flash:streamGenerateContent')).toEqual({
+			model: 'gemini-2.5-flash',
+			method: 'streamGenerateContent',
+			scope: 'chat',
+			stream: true
+		});
+		expect(parseGeminiAction('gemini-embedding-001:embedContent')).toEqual({
+			model: 'gemini-embedding-001',
+			method: 'embedContent',
+			scope: 'embeddings',
+			stream: false
+		});
+		expect(parseGeminiAction('gemini-embedding-001:batchEmbedContents')?.scope).toBe('embeddings');
+	});
+
+	it('returns null for an unsupported method or a malformed segment', () => {
+		expect(parseGeminiAction('gemini-2.5-flash:countTokens')).toBeNull();
+		expect(parseGeminiAction('gemini-2.5-flash')).toBeNull();
+		expect(parseGeminiAction(':generateContent')).toBeNull();
 	});
 });
 

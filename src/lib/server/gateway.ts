@@ -17,6 +17,7 @@ import {
 	type ProviderDef
 } from '$lib/server/providers';
 import { getAdapter } from '$lib/server/adapters';
+import { mapUsage } from '$lib/server/adapters/gemini';
 import { audit } from '$lib/server/audit';
 import { checkRateLimit } from '$lib/server/ratelimit';
 import { checkBudget, reserve } from '$lib/server/budget';
@@ -86,6 +87,18 @@ function normalizeUsage(usage: unknown): NormalizedUsage | null {
 	return { input, output, cacheRead, cacheWrite };
 }
 
+/**
+ * Normalize usage from a *native* Gemini response (buffered or a streamed
+ * chunk). `mapUsage` converts Gemini's `usageMetadata` into the OpenAI usage
+ * shape, which `normalizeUsage` then folds into the gateway's common figure — so
+ * native-ingress requests are costed by the exact same code as everything else.
+ */
+function geminiNativeUsage(parsed: unknown): NormalizedUsage | null {
+	if (!isRecord(parsed)) return null;
+	const usageObj = mapUsage(parsed.usageMetadata);
+	return usageObj ? normalizeUsage(usageObj) : null;
+}
+
 interface DrainedSse {
 	usage: NormalizedUsage | null;
 	/** the verbatim SSE body, reassembled — used to cache a streamed response */
@@ -95,12 +108,33 @@ interface DrainedSse {
 }
 
 /**
- * Drain an SSE response stream: capture the last token usage it reports and
- * accumulate the raw body so a streamed response can be cached and replayed.
- * Handles both the chat/completions shape (`{ usage: {...} }` on a trailing
- * chunk) and the Responses API shape (`{ response: { usage: {...} } }`).
+ * Pull a usage figure out of one decoded SSE chunk, or null if it carries none.
+ * The OpenAI extractor reads the chat shape (`{ usage }`) and the Responses
+ * shape (`{ response: { usage } }`); the native Gemini extractor reads
+ * `{ usageMetadata }`. Whichever the stream uses, the drain below keeps the last
+ * one seen.
  */
-async function readSseUsage(stream: ReadableStream<Uint8Array>): Promise<DrainedSse> {
+type UsageExtractor = (obj: Record<string, unknown>) => NormalizedUsage | null;
+
+const openAiUsageExtractor: UsageExtractor = (obj) => {
+	const u =
+		(isRecord(obj.usage) && obj.usage) ||
+		(isRecord(obj.response) && isRecord(obj.response.usage) && obj.response.usage);
+	return u ? normalizeUsage(u) : null;
+};
+
+const geminiUsageExtractor: UsageExtractor = (obj) =>
+	isRecord(obj.usageMetadata) ? geminiNativeUsage(obj) : null;
+
+/**
+ * Drain an SSE response stream: capture the last token usage it reports (via the
+ * supplied extractor) and accumulate the raw body so a streamed response can be
+ * cached and replayed verbatim.
+ */
+async function drainSse(
+	stream: ReadableStream<Uint8Array>,
+	extract: UsageExtractor
+): Promise<DrainedSse> {
 	const reader = stream.getReader();
 	const decoder = new TextDecoder();
 	let buffer = '';
@@ -113,13 +147,8 @@ async function readSseUsage(stream: ReadableStream<Uint8Array>): Promise<Drained
 		if (!data || data === '[DONE]') return;
 		try {
 			const obj = JSON.parse(data) as Record<string, unknown>;
-			const u =
-				(isRecord(obj.usage) && obj.usage) ||
-				(isRecord(obj.response) && isRecord(obj.response.usage) && obj.response.usage);
-			if (u) {
-				const norm = normalizeUsage(u);
-				if (norm) usage = norm;
-			}
+			const norm = extract(obj);
+			if (norm) usage = norm;
 		} catch {
 			// ignore non-JSON keepalive/comment lines
 		}
@@ -150,17 +179,20 @@ async function readSseUsage(stream: ReadableStream<Uint8Array>): Promise<Drained
 }
 
 /**
- * Read the caller's machine token. Accepts either
- *   `Authorization: Bearer <token>` (OpenAI SDK shape) or
- *   `api-key: <token>` (Azure OpenAI SDK shape),
- * so the same uprox endpoint can sit behind clients of both ecosystems.
+ * Read the caller's machine token. Accepts
+ *   `Authorization: Bearer <token>` (OpenAI SDK shape),
+ *   `api-key: <token>` (Azure OpenAI SDK shape), or
+ *   `x-goog-api-key: <token>` (Google GenAI SDK shape, used by native ingress),
+ * so the same uprox instance can sit behind clients of all three ecosystems.
  */
 function readApiKey(event: RequestEvent): string | null {
 	const header = event.request.headers.get('authorization') ?? '';
 	const match = /^Bearer\s+(.+)$/i.exec(header);
 	if (match) return match[1].trim();
 	const apiKey = event.request.headers.get('api-key')?.trim();
-	return apiKey ? apiKey : null;
+	if (apiKey) return apiKey;
+	const goog = event.request.headers.get('x-goog-api-key')?.trim();
+	return goog ? goog : null;
 }
 
 export interface GatewayAuth {
@@ -556,7 +588,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		const [clientBranch, costBranch] = sourceStream.tee();
 		void (async () => {
 			try {
-				const { usage, raw, complete } = await readSseUsage(costBranch);
+				const { usage, raw, complete } = await drainSse(costBranch, openAiUsageExtractor);
 				const { estimateCostUsd } = await import('$lib/server/providers');
 				const cost = usage
 					? await estimateCostUsd(
@@ -688,6 +720,362 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 }
 
 export { loadProviderCreds };
+
+/**
+ * Native-Gemini error envelope (`{ error: { code, message, status } }`), so the
+ * Google GenAI SDK — which expects native errors, not OpenAI ones — parses a
+ * gateway rejection correctly.
+ */
+function geminiNativeError(status: number, message: string, googleStatus: string): Response {
+	return json({ error: { code: status, message, status: googleStatus } }, { status });
+}
+
+export interface NativeGeminiOptions {
+	auth: GatewayAuth;
+	/** the gateway capability this request exercises (chat or embeddings) */
+	scope: Capability;
+	model: string;
+	/** native method: generateContent | streamGenerateContent | embedContent | batchEmbedContents */
+	method: string;
+	stream: boolean;
+	body: unknown;
+}
+
+/**
+ * Native-ingress sibling of {@link proxyToProvider}. Accepts a request shaped for
+ * Google's native Gemini REST API (sent by the `@google/genai` SDK pointed at
+ * uprox) and forwards it to Gemini **verbatim** — no translation, so native-only
+ * features (safety settings, thinking config, response schemas, cached content)
+ * pass through with full fidelity. uprox's cross-cutting concerns still apply:
+ * policy, rate limiting, budget, exact-match caching, cost accounting from the
+ * native `usageMetadata`, and audit. Errors are returned in the native shape so
+ * the Google SDK parses them. Routing is fixed to the Gemini provider — this
+ * endpoint is the native Gemini API, not a model-routed surface.
+ */
+export async function proxyGeminiNative(
+	event: RequestEvent,
+	opts: NativeGeminiOptions
+): Promise<Response> {
+	const { auth, scope, model, method, stream, body } = opts;
+	const started = Date.now();
+	const { token, ip } = auth;
+	const provider = PROVIDERS.gemini;
+
+	// capability check (chat + embeddings only)
+	if (!providerSupports(provider, scope)) {
+		await audit({
+			action: `gateway.${scope}`,
+			status: 'error',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: 400,
+			ip,
+			detail: `gemini does not support ${scope}`
+		});
+		return geminiNativeError(400, `Gemini does not support ${scope} requests`, 'INVALID_ARGUMENT');
+	}
+
+	// policy enforcement
+	const decision = evaluatePolicy(token, { provider: provider.id, model, scope });
+	if (!decision.allow) {
+		await audit({
+			action: 'policy.deny',
+			status: 'deny',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: 403,
+			ip,
+			detail: decision.reason
+		});
+		return geminiNativeError(
+			403,
+			`Request denied by policy: ${decision.reason}`,
+			'PERMISSION_DENIED'
+		);
+	}
+
+	// rate limiting (in-memory, per token)
+	const rl = checkRateLimit(token.tokenId, token.policy?.rateLimitPerMinute ?? 0);
+	if (!rl.ok) {
+		await audit({
+			action: 'policy.deny',
+			status: 'deny',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: 429,
+			ip,
+			detail: `rate limit exceeded (${rl.limit}/min)`
+		});
+		return geminiNativeError(
+			429,
+			`Rate limit exceeded: ${rl.limit} requests/min`,
+			'RESOURCE_EXHAUSTED'
+		);
+	}
+
+	// exact-match cache. Determinism for native bodies: embeddings always;
+	// generateContent only when sampling is pinned (generationConfig.temperature 0).
+	const cacheTtl = token.policy?.cacheTtlSeconds ?? token.defaultCacheTtlSeconds;
+	const genCfg = isRecord(body) && isRecord(body.generationConfig) ? body.generationConfig : null;
+	const deterministic = scope === 'embeddings' || (genCfg != null && genCfg.temperature === 0);
+	const cacheable = (scope === 'chat' || scope === 'embeddings') && cacheTtl > 0 && deterministic;
+	// Key on the native path + body; distinct from the OpenAI-ingress cache (which
+	// keys on `/chat/completions` + an OpenAI body), so formats never cross.
+	const cachePath = `/models/${model}:${method}`;
+	const cacheKey = cacheable ? cacheKeyFor(provider.id, cachePath, body) : null;
+	if (cacheKey) {
+		const hit = await getCached(cacheKey);
+		if (hit) {
+			await audit({
+				action: `gateway.${scope}`,
+				status: 'ok',
+				serviceId: token.serviceId,
+				tokenId: token.tokenId,
+				provider: provider.id,
+				model,
+				statusCode: hit.statusCode,
+				costUsd: 0,
+				savedUsd: hit.costUsd,
+				savedInputTokens: hit.inputTokens,
+				savedOutputTokens: hit.outputTokens,
+				latencyMs: Date.now() - started,
+				ip,
+				detail: stream ? 'native cache hit (stream)' : 'native cache hit'
+			});
+			return new Response(hit.response, {
+				status: hit.statusCode,
+				headers: stream
+					? {
+							'content-type': 'text/event-stream',
+							'cache-control': 'no-cache',
+							'x-uprox-cache': 'HIT'
+						}
+					: { 'content-type': 'application/json', 'x-uprox-cache': 'HIT' }
+			});
+		}
+	}
+
+	// budget enforcement (per-service daily/monthly ceilings), mirroring proxyToProvider.
+	let releaseReservation: () => void = () => {};
+	if (token.policy) {
+		const hasBudget =
+			Number(token.policy.dailyBudgetUsd ?? 0) > 0 ||
+			Number(token.policy.monthlyBudgetUsd ?? 0) > 0;
+		const budget = await checkBudget(token.serviceId, token.policy);
+		if (hasBudget) {
+			void maybeSendBudgetAlert(token.serviceId, token.serviceName, token.policy);
+		}
+		if (!budget.ok) {
+			await audit({
+				action: 'policy.deny',
+				status: 'deny',
+				serviceId: token.serviceId,
+				tokenId: token.tokenId,
+				provider: provider.id,
+				model,
+				statusCode: 402,
+				ip,
+				detail: budget.reason
+			});
+			return geminiNativeError(402, `Request denied: ${budget.reason}`, 'RESOURCE_EXHAUSTED');
+		}
+		if (hasBudget) releaseReservation = reserve(token.serviceId);
+	}
+
+	// upstream credentials and (static) base URL
+	const creds = await loadProviderCreds(provider.id, token.providerSecretId);
+	if (!creds) {
+		releaseReservation();
+		await audit({
+			action: `gateway.${scope}`,
+			status: 'error',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: 502,
+			ip,
+			detail: 'no gemini secret configured'
+		});
+		return geminiNativeError(
+			502,
+			'No Google Gemini credentials configured for this instance',
+			'FAILED_PRECONDITION'
+		);
+	}
+	const baseUrl = resolveBaseUrl(provider, creds.baseUrl);
+	if (!baseUrl) {
+		releaseReservation();
+		return geminiNativeError(502, 'No Google Gemini endpoint configured', 'FAILED_PRECONDITION');
+	}
+
+	// Forward the query string verbatim except `key` — the Google SDK may put the
+	// API key there, and that's the uprox token, which must never reach Google.
+	const search = new URLSearchParams(event.url.search);
+	search.delete('key');
+	const qs = search.toString();
+	const upstreamUrl = `${baseUrl}/models/${model}:${method}${qs ? `?${qs}` : ''}`;
+
+	let upstream: Response;
+	try {
+		upstream = await fetch(upstreamUrl, {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				...authHeaders(provider, creds.apiKey)
+			},
+			body: JSON.stringify(body)
+		});
+	} catch (err) {
+		releaseReservation();
+		await audit({
+			action: `gateway.${scope}`,
+			status: 'error',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: 502,
+			latencyMs: Date.now() - started,
+			ip,
+			detail: err instanceof Error ? err.message : 'upstream fetch failed'
+		});
+		return geminiNativeError(502, 'Upstream provider request failed', 'UNAVAILABLE');
+	}
+
+	// streaming passthrough: tee — client gets the native SSE untouched; the cost
+	// branch is drained for the native usageMetadata so we can still bill it.
+	if (stream && upstream.ok && upstream.body) {
+		const [clientBranch, costBranch] = upstream.body.tee();
+		void (async () => {
+			try {
+				const { usage, raw, complete } = await drainSse(costBranch, geminiUsageExtractor);
+				const { estimateCostUsd } = await import('$lib/server/providers');
+				const cost = usage
+					? await estimateCostUsd(
+							model,
+							usage.input ?? undefined,
+							usage.output ?? undefined,
+							usage.cacheRead ?? 0,
+							usage.cacheWrite ?? 0
+						)
+					: null;
+				await audit({
+					action: `gateway.${scope}`,
+					status: 'ok',
+					serviceId: token.serviceId,
+					tokenId: token.tokenId,
+					provider: provider.id,
+					model,
+					statusCode: upstream.status,
+					costUsd: cost,
+					inputTokens: usage?.input ?? null,
+					outputTokens: usage?.output ?? null,
+					providerCachedTokens: usage?.cacheRead ?? null,
+					cacheWriteTokens: usage?.cacheWrite ?? null,
+					latencyMs: Date.now() - started,
+					ip,
+					detail: 'native stream'
+				});
+				if (cacheKey && complete && raw) {
+					await putCached({
+						cacheKey,
+						provider: provider.id,
+						model,
+						statusCode: upstream.status,
+						response: raw,
+						costUsd: cost,
+						inputTokens: usage?.input ?? null,
+						outputTokens: usage?.output ?? null,
+						ttlSeconds: cacheTtl
+					});
+				}
+			} finally {
+				releaseReservation();
+			}
+		})();
+		return new Response(clientBranch, {
+			status: upstream.status,
+			headers: {
+				'content-type': upstream.headers.get('content-type') ?? 'text/event-stream',
+				'cache-control': 'no-cache',
+				...(cacheKey ? { 'x-uprox-cache': 'MISS' } : {})
+			}
+		});
+	}
+
+	// buffered passthrough: read native usageMetadata for cost, return body as-is.
+	const text = await upstream.text();
+	let cost: number | null = null;
+	let cachedTokens: number | null = null;
+	let cacheWriteTokens: number | null = null;
+	let inputTokens: number | null = null;
+	let outputTokens: number | null = null;
+	try {
+		const usage = geminiNativeUsage(JSON.parse(text));
+		const { estimateCostUsd } = await import('$lib/server/providers');
+		inputTokens = usage?.input ?? null;
+		outputTokens = usage?.output ?? null;
+		cachedTokens = usage?.cacheRead ?? null;
+		cacheWriteTokens = usage?.cacheWrite ?? null;
+		cost = await estimateCostUsd(
+			model,
+			inputTokens ?? undefined,
+			outputTokens ?? undefined,
+			cachedTokens ?? 0,
+			cacheWriteTokens ?? 0
+		);
+	} catch {
+		// non-JSON or no usage; leave cost null
+	}
+
+	await audit({
+		action: `gateway.${scope}`,
+		status: upstream.ok ? 'ok' : 'error',
+		serviceId: token.serviceId,
+		tokenId: token.tokenId,
+		provider: provider.id,
+		model,
+		statusCode: upstream.status,
+		costUsd: cost,
+		inputTokens,
+		outputTokens,
+		providerCachedTokens: cachedTokens,
+		cacheWriteTokens,
+		latencyMs: Date.now() - started,
+		ip,
+		detail: 'native'
+	});
+	releaseReservation();
+
+	if (cacheKey && upstream.ok) {
+		await putCached({
+			cacheKey,
+			provider: provider.id,
+			model,
+			statusCode: upstream.status,
+			response: text,
+			costUsd: cost,
+			inputTokens,
+			outputTokens,
+			ttlSeconds: cacheTtl
+		});
+	}
+
+	return new Response(text, {
+		status: upstream.status,
+		headers: {
+			'content-type': upstream.headers.get('content-type') ?? 'application/json',
+			...(cacheKey ? { 'x-uprox-cache': 'MISS' } : {})
+		}
+	});
+}
 
 export interface RawProxyOptions {
 	auth: GatewayAuth;
