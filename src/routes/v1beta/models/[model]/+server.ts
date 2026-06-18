@@ -1,16 +1,18 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { authenticateGateway, proxyGeminiNative } from '$lib/server/gateway';
+import { authenticateGateway, proxyGeminiNative, proxyGeminiModels } from '$lib/server/gateway';
 import { parseGeminiAction } from '$lib/server/adapters/gemini';
 
 /**
  * Native Google Gemini ingress. The `@google/genai` SDK pointed at uprox calls
  * `POST /v1beta/models/{model}:{method}` (e.g. `gemini-2.5-flash:generateContent`,
- * `:streamGenerateContent`, `:embedContent`, `:batchEmbedContents`) with the
- * `x-goog-api-key` header carrying the uprox token. We parse the model/method,
- * enforce policy/budget/cost/cache, and pass the native body straight through to
- * Gemini — no translation, so native-only features survive. Errors come back in
- * the native `{ error: { code, message, status } }` shape the SDK expects.
+ * `:streamGenerateContent`, `:countTokens`, `:embedContent`,
+ * `:batchEmbedContents`) with the `x-goog-api-key` header carrying the uprox
+ * token. We parse the model/method, enforce policy/budget/cost/cache, and pass
+ * the native body straight through to Gemini — no translation, so native-only
+ * features survive. A plain `GET /v1beta/models/{model}` (no `:method`) is the
+ * SDK's `models.get()`. Errors come back in the native
+ * `{ error: { code, message, status } }` shape the SDK expects.
  */
 const nativeError = (status: number, message: string, googleStatus: string) =>
 	json({ error: { code: status, message, status: googleStatus } }, { status });
@@ -28,7 +30,7 @@ export const POST: RequestHandler = async (event) => {
 	if (!action) {
 		return nativeError(
 			400,
-			`Unsupported Gemini method in "${event.params.model}". Supported: generateContent, streamGenerateContent, embedContent, batchEmbedContents.`,
+			`Unsupported Gemini method in "${event.params.model}". Supported: generateContent, streamGenerateContent, countTokens, embedContent, batchEmbedContents.`,
 			'INVALID_ARGUMENT'
 		);
 	}
@@ -48,4 +50,11 @@ export const POST: RequestHandler = async (event) => {
 		stream: action.stream,
 		body
 	});
+};
+
+/** `models.get()` — `GET /v1beta/models/{model}` (no `:method` segment). */
+export const GET: RequestHandler = async (event) => {
+	const auth = await authenticateGateway(event);
+	if (!auth.ok) return nativeError(401, 'Missing or invalid API key', 'UNAUTHENTICATED');
+	return proxyGeminiModels(event, auth.auth, event.params.model ?? '');
 };
