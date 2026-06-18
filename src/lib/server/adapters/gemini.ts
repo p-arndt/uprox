@@ -522,3 +522,30 @@ export const geminiAdapter: ProviderAdapter = {
 function modelFromEmbedBody(body: unknown): string {
 	return isRecord(body) && typeof body.model === 'string' ? body.model : '';
 }
+
+/**
+ * Parse a native Gemini path segment of the form `{model}:{method}` (as the
+ * Google GenAI SDK sends, e.g. `gemini-2.5-flash:generateContent`) into the
+ * model, the method, and the gateway scope/stream it maps to. Returns null for
+ * an unsupported method so the route can reject it. Used by the native-ingress
+ * route; pure and unit-tested.
+ */
+export function parseGeminiAction(
+	segment: string
+): { model: string; method: string; scope: Capability; stream: boolean } | null {
+	const idx = segment.lastIndexOf(':');
+	if (idx <= 0) return null;
+	const model = segment.slice(0, idx);
+	const method = segment.slice(idx + 1);
+	switch (method) {
+		case 'generateContent':
+			return { model, method, scope: 'chat', stream: false };
+		case 'streamGenerateContent':
+			return { model, method, scope: 'chat', stream: true };
+		case 'embedContent':
+		case 'batchEmbedContents':
+			return { model, method, scope: 'embeddings', stream: false };
+		default:
+			return null;
+	}
+}
