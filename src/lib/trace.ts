@@ -396,13 +396,11 @@ export interface MetaFilter {
 export function parseMetaFilter(input: string | null | undefined): MetaFilter | null {
 	const t = input?.trim();
 	if (!t) return null;
-	const m = /^([^:=]+)[:=](.*)$/.exec(t);
-	if (m) {
-		const key = m[1].trim();
-		const value = m[2].trim();
-		return key ? { key, value: value || null } : null;
-	}
-	return { key: t, value: null };
+	const sep = t.search(/[:=]/);
+	if (sep === -1) return { key: t, value: null }; // bare key → existence filter
+	const key = t.slice(0, sep).trim();
+	const value = t.slice(sep + 1).trim();
+	return key ? { key, value: value || null } : null;
 }
 
 /** Pretty-print a JSON string for the raw view; returns the input unchanged if not JSON. */

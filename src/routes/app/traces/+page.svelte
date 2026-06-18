@@ -278,7 +278,10 @@
 										}))}
 								>
 									<Table.Cell class="whitespace-nowrap text-muted-foreground">
-										<span class="text-xs" title={formatDateTime(it.at)}>{relativeTime(it.at)}</span>
+										<span class="block text-xs" title={formatDateTime(it.at)}>{relativeTime(it.at)}</span>
+										<span class="block text-[10px] text-muted-foreground/60">
+											{formatDateTime(it.at)}
+										</span>
 									</Table.Cell>
 									<Table.Cell>
 										<span class="flex items-center gap-1.5 whitespace-nowrap">
@@ -317,7 +320,10 @@
 									onclick={() => (window.location.href = resolve('/app/traces/[id]', { id: it.id }))}
 								>
 									<Table.Cell class="whitespace-nowrap text-muted-foreground">
-										<span class="text-xs" title={formatDateTime(it.at)}>{relativeTime(it.at)}</span>
+										<span class="block text-xs" title={formatDateTime(it.at)}>{relativeTime(it.at)}</span>
+										<span class="block text-[10px] text-muted-foreground/60">
+											{formatDateTime(it.at)}
+										</span>
 									</Table.Cell>
 									<Table.Cell>
 										<span class="flex items-center gap-1.5 whitespace-nowrap">
