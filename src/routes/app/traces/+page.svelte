@@ -10,6 +10,7 @@
 	import Search from '@lucide/svelte/icons/search';
 	import X from '@lucide/svelte/icons/x';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
+	import Link2 from '@lucide/svelte/icons/link-2';
 
 	let { data } = $props();
 
@@ -144,7 +145,15 @@
 								</Table.Cell>
 								<Table.Cell class="text-muted-foreground">{t.serviceName ?? '—'}</Table.Cell>
 								<Table.Cell class="font-mono text-xs text-muted-foreground">
-									{t.model ?? '—'}
+									<span class="flex items-center gap-1.5">
+										{#if t.groupId}
+											<Link2
+												class="size-3 shrink-0 text-muted-foreground/70"
+												aria-label="Part of a session"
+											/>
+										{/if}
+										{t.model ?? '—'}
+									</span>
 								</Table.Cell>
 								<Table.Cell class="text-right text-muted-foreground tabular-nums">
 									{#if t.inputTokens != null || t.outputTokens != null}

@@ -196,6 +196,20 @@ function readApiKey(event: RequestEvent): string | null {
 	return goog ? goog : null;
 }
 
+/**
+ * Read the caller's session/correlation id for trace grouping, from
+ * `x-uprox-trace-id` (preferred) or `x-uprox-session-id`. Lets a client tie the
+ * several gateway calls of one logical run — e.g. a tool-use loop — into a
+ * single timeline in the trace viewer. Length-capped; null when absent.
+ */
+function readTraceGroup(event: RequestEvent): string | null {
+	const raw =
+		event.request.headers.get('x-uprox-trace-id') ??
+		event.request.headers.get('x-uprox-session-id');
+	const trimmed = raw?.trim();
+	return trimmed ? trimmed.slice(0, 200) : null;
+}
+
 export interface GatewayAuth {
 	token: ResolvedToken;
 	ip: string;
@@ -282,6 +296,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	// the in-app trace viewer. auditTrace writes both; pass the response payload on
 	// the paths that produced one (cache hits and completions), request-only elsewhere.
 	const traceOn = token.policy?.tracingEnabled ?? token.defaultTracingEnabled;
+	const traceGroupId = readTraceGroup(event);
 	const auditTrace = async (
 		entry: AuditEntry,
 		resp?: { response?: string | null; format?: 'json' | 'sse' }
@@ -291,6 +306,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 			await recordTrace({
 				auditLogId,
 				serviceId: token.serviceId,
+				groupId: traceGroupId,
 				request: body,
 				response: resp?.response ?? null,
 				format: resp?.format ?? null
@@ -795,6 +811,7 @@ export async function proxyGeminiNative(
 	// Request tracing (see proxyToProvider): pair each audit row with the captured
 	// native request/response payload for the trace viewer when tracing is enabled.
 	const traceOn = token.policy?.tracingEnabled ?? token.defaultTracingEnabled;
+	const traceGroupId = readTraceGroup(event);
 	const auditTrace = async (
 		entry: AuditEntry,
 		resp?: { response?: string | null; format?: 'json' | 'sse' }
@@ -804,6 +821,7 @@ export async function proxyGeminiNative(
 			await recordTrace({
 				auditLogId,
 				serviceId: token.serviceId,
+				groupId: traceGroupId,
 				request: body,
 				response: resp?.response ?? null,
 				format: resp?.format ?? null

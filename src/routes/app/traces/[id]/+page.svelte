@@ -4,7 +4,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { formatDateTime, formatUsd, formatTokens } from '$lib/format';
 	import { eventTone, toneDot, toneText } from '$lib/events';
-	import { requestMessages, responseText, prettyJson } from '$lib/trace';
+	import { requestMessages, responseMessage, prettyJson } from '$lib/trace';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
 
@@ -12,7 +12,12 @@
 	const t = $derived(data.trace);
 
 	const messages = $derived(requestMessages(t.requestBody));
-	const reply = $derived(responseText(t.responseBody, t.format));
+	const reply = $derived(responseMessage(t.responseBody, t.format));
+	// the assistant reply is just another message in the transcript, appended
+	// after the prompt when it carries text or tool calls.
+	const conversation = $derived(
+		reply.text || reply.toolCalls ? [...messages, reply] : messages
+	);
 	const tone = $derived(eventTone(t.status));
 
 	const rawRequest = $derived(prettyJson(t.requestBody));
@@ -29,6 +34,26 @@
 	};
 	const meta = (role: string) =>
 		roleMeta[role] ?? { label: role, accent: 'border-l-muted-foreground/40' };
+
+	// ---- Session tree / waterfall ------------------------------------------------
+	// The proxy observes each call as a flat span; we lay them on a shared time
+	// axis (end = createdAt, start = end − latency) to read like a trace waterfall.
+	type Span = (typeof data.group)[number];
+	const spans = $derived(data.group ?? []);
+	const showSession = $derived(spans.length > 1);
+
+	const endMs = (s: Span) => new Date(s.createdAt).getTime();
+	const startMs = (s: Span) => endMs(s) - (s.latencyMs ?? 0);
+	const windowStart = $derived(showSession ? Math.min(...spans.map(startMs)) : 0);
+	const windowEnd = $derived(showSession ? Math.max(...spans.map(endMs)) : 0);
+	const windowDur = $derived(Math.max(1, windowEnd - windowStart));
+
+	const barLeft = (s: Span) => ((startMs(s) - windowStart) / windowDur) * 100;
+	const barWidth = (s: Span) => Math.max(1.5, ((s.latencyMs ?? 0) / windowDur) * 100);
+
+	const fmtMs = (ms: number | null | undefined) =>
+		ms == null ? '—' : ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${ms}ms`;
+	const spanLabel = (s: Span) => s.model || s.action?.replace(/^gateway\./, '') || 'request';
 </script>
 
 <div class="mx-auto max-w-4xl space-y-6">
@@ -77,15 +102,65 @@
 		</div>
 	</div>
 
+	<!-- Session tree / waterfall -->
+	{#if showSession}
+		<div class="space-y-2">
+			<h3 class="text-sm font-semibold">Session</h3>
+			<div class="overflow-hidden rounded-xl border text-xs">
+				<!-- root span -->
+				<div class="flex items-center gap-2 border-b bg-muted/40 px-3 py-2">
+					<Waypoints class="size-3.5 text-muted-foreground" />
+					<span class="font-medium">Session</span>
+					<span class="truncate font-mono text-muted-foreground">{t.groupId}</span>
+					<span class="ml-auto tabular-nums text-muted-foreground">{fmtMs(windowEnd - windowStart)}</span>
+				</div>
+				{#each spans as s (s.id)}
+					{@const active = s.id === t.id}
+					{@const stone = eventTone(s.status)}
+					<a
+						href={resolve('/app/traces/[id]', { id: s.id })}
+						class="flex items-center gap-3 px-3 py-2 transition-colors hover:bg-muted/50 {active
+							? 'bg-muted/60'
+							: ''}"
+					>
+						<span class="flex w-44 shrink-0 items-center gap-2 truncate pl-4">
+							<span class="size-1.5 shrink-0 rounded-full {toneDot[stone]}" aria-hidden="true"></span>
+							<span
+								class="truncate font-mono {active
+									? 'font-semibold text-foreground'
+									: 'text-muted-foreground'}"
+							>
+								{spanLabel(s)}
+							</span>
+						</span>
+						<span class="relative h-3 flex-1 rounded bg-muted/40">
+							<span
+								class="absolute top-0 h-3 rounded {active ? 'bg-primary' : 'bg-primary/60'}"
+								style="left:{barLeft(s)}%;width:{barWidth(s)}%"
+							></span>
+						</span>
+						<span class="w-12 shrink-0 text-right tabular-nums text-muted-foreground">
+							{fmtMs(s.latencyMs)}
+						</span>
+					</a>
+				{/each}
+			</div>
+			<p class="text-xs text-muted-foreground">
+				Calls sharing this <code>x-uprox-trace-id</code>. Each row is one gateway request on a shared
+				time axis — select one to inspect it.
+			</p>
+		</div>
+	{/if}
+
 	<!-- Conversation -->
 	<div class="space-y-3">
 		<h3 class="text-sm font-semibold">Conversation</h3>
-		{#if messages.length === 0 && !reply}
+		{#if conversation.length === 0}
 			<p class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
 				No conversation could be parsed from this payload — see the raw view below.
 			</p>
 		{:else}
-			{#each messages as m, i (i)}
+			{#each conversation as m, i (i)}
 				{@const mm = meta(m.role)}
 				<div class="rounded-lg border border-l-2 {mm.accent} bg-card p-3">
 					<div class="mb-1 text-xs font-medium text-muted-foreground">{mm.label}</div>
@@ -93,23 +168,16 @@
 						<div class="text-sm whitespace-pre-wrap break-words">{m.text}</div>
 					{/if}
 					{#if m.toolCalls}
-						{#each m.toolCalls as call (call.name)}
-							<div class="mt-2 rounded-md bg-muted/60 p-2 font-mono text-xs">
-								<span class="font-medium">{call.name}(</span>{call.args}<span class="font-medium"
-									>)</span
+						{#each m.toolCalls as call, j (j)}
+							<div class="mt-2 rounded-md bg-muted/60 p-2 font-mono text-xs break-words">
+								<span class="font-medium text-foreground">{call.name}(</span>{call.args}<span
+									class="font-medium text-foreground">)</span
 								>
 							</div>
 						{/each}
 					{/if}
 				</div>
 			{/each}
-			{#if reply}
-				{@const mm = meta('assistant')}
-				<div class="rounded-lg border border-l-2 {mm.accent} bg-card p-3">
-					<div class="mb-1 text-xs font-medium text-muted-foreground">{mm.label}</div>
-					<div class="text-sm whitespace-pre-wrap break-words">{reply}</div>
-				</div>
-			{/if}
 		{/if}
 	</div>
 

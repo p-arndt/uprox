@@ -7,6 +7,8 @@ export interface TraceInput {
 	/** the audit row this trace augments (from {@link audit}'s return value) */
 	auditLogId: string;
 	serviceId?: string | null;
+	/** caller-supplied session/correlation id grouping related calls (header) */
+	groupId?: string | null;
 	/** request body as received; JSON-stringified here. Undefined/null → stored null. */
 	request?: unknown;
 	/** response body returned to the client (buffered JSON or reassembled SSE text) */
@@ -44,6 +46,7 @@ export async function recordTrace(input: TraceInput): Promise<void> {
 		await db.insert(requestTrace).values({
 			auditLogId: input.auditLogId,
 			serviceId: input.serviceId ?? null,
+			traceGroupId: input.groupId ?? null,
 			requestBody: stringifyRequest(input.request),
 			responseBody: clamp(input.response ?? null),
 			responseFormat: input.response != null ? (input.format ?? 'json') : null

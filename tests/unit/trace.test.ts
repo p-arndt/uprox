@@ -5,6 +5,7 @@ import {
 	requestMessages,
 	reconstructSse,
 	responseText,
+	responseMessage,
 	prettyJson
 } from '$lib/trace';
 
@@ -140,6 +141,100 @@ describe('responseText', () => {
 	it('returns empty string for missing or unparseable bodies', () => {
 		expect(responseText(null, 'json')).toBe('');
 		expect(responseText('garbage', 'json')).toBe('');
+	});
+});
+
+describe('tool use — requests', () => {
+	it('reads an OpenAI tool-result message (role tool)', () => {
+		const body = JSON.stringify({
+			messages: [
+				{ role: 'user', content: 'weather?' },
+				{ role: 'tool', tool_call_id: 'c1', content: '{"tempC":21}' }
+			]
+		});
+		const msgs = requestMessages(body);
+		expect(msgs[1]).toMatchObject({ role: 'tool', text: '{"tempC":21}' });
+	});
+
+	it('reads Gemini functionCall and functionResponse parts', () => {
+		const body = JSON.stringify({
+			contents: [
+				{ role: 'model', parts: [{ functionCall: { name: 'get_weather', args: { city: 'Berlin' } } }] },
+				{
+					role: 'user',
+					parts: [{ functionResponse: { name: 'get_weather', response: { tempC: 21 } } }]
+				}
+			]
+		});
+		const msgs = requestMessages(body);
+		expect(msgs[0].toolCalls).toEqual([{ name: 'get_weather', args: '{"city":"Berlin"}' }]);
+		expect(msgs[1].role).toBe('tool');
+		expect(msgs[1].text).toContain('get_weather → {"tempC":21}');
+	});
+});
+
+describe('tool use — responses', () => {
+	it('extracts buffered OpenAI chat tool calls', () => {
+		const body = JSON.stringify({
+			choices: [
+				{
+					message: {
+						content: null,
+						tool_calls: [{ function: { name: 'get_weather', arguments: '{"city":"Berlin"}' } }]
+					}
+				}
+			]
+		});
+		const msg = responseMessage(body, 'json');
+		expect(msg.toolCalls).toEqual([{ name: 'get_weather', args: '{"city":"Berlin"}' }]);
+	});
+
+	it('accumulates streamed OpenAI tool-call name + fragmented args by index', () => {
+		const raw = [
+			'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"get_weather","arguments":"{\\"ci"}}]}}]}',
+			'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"ty\\":\\"Berlin\\"}"}}]}}]}',
+			'data: [DONE]'
+		].join('\n');
+		const msg = responseMessage(raw, 'sse');
+		expect(msg.toolCalls).toEqual([{ name: 'get_weather', args: '{"city":"Berlin"}' }]);
+	});
+
+	it('extracts Responses API function_call items', () => {
+		const body = JSON.stringify({
+			output: [{ type: 'function_call', name: 'get_weather', arguments: '{"city":"NYC"}' }]
+		});
+		expect(responseMessage(body, 'json').toolCalls).toEqual([
+			{ name: 'get_weather', args: '{"city":"NYC"}' }
+		]);
+	});
+
+	it('extracts Gemini functionCall from a buffered response', () => {
+		const body = JSON.stringify({
+			candidates: [{ content: { parts: [{ functionCall: { name: 'get_weather', args: { city: 'Berlin' } } }] } }]
+		});
+		expect(responseMessage(body, 'json').toolCalls).toEqual([
+			{ name: 'get_weather', args: '{"city":"Berlin"}' }
+		]);
+	});
+
+	it('keeps text and tool calls together when both are present', () => {
+		const body = JSON.stringify({
+			choices: [
+				{
+					message: {
+						content: 'let me check',
+						tool_calls: [{ function: { name: 'get_weather', arguments: '{}' } }]
+					}
+				}
+			]
+		});
+		const msg = responseMessage(body, 'json');
+		expect(msg.text).toBe('let me check');
+		expect(msg.toolCalls).toHaveLength(1);
+	});
+
+	it('returns no toolCalls for a plain text reply', () => {
+		expect(responseMessage(JSON.stringify({ output_text: 'hi' }), 'json').toolCalls).toBeUndefined();
 	});
 });
 
