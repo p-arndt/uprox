@@ -15,6 +15,7 @@ import { issueToken } from '$lib/server/tokens';
 import { audit } from '$lib/server/audit';
 import type { BudgetStatus } from '$lib/budget';
 import { cacheRate } from '$lib/cache-rate';
+import type { MetaFilter } from '$lib/trace';
 import {
 	resolveSeriesBucket,
 	type BucketChoice,
@@ -615,7 +616,15 @@ export function listTraces(limit = 100) {
  * collapses into ONE summary row, while ungrouped calls stay individual. The two
  * are merged and sorted by recency. Discriminated by `kind` ('session' | 'call').
  */
-export async function listTraceFeed(limit = 100) {
+export async function listTraceFeed(limit = 100, meta?: MetaFilter | null) {
+	// optional metadata predicate: exact key/value containment, or key existence
+	const metaCond =
+		meta == null
+			? undefined
+			: meta.value != null
+				? sql`${requestTrace.metadata} @> ${JSON.stringify({ [meta.key]: meta.value })}::jsonb`
+				: sql`jsonb_exists(${requestTrace.metadata}, ${meta.key})`;
+
 	const sessions = await db
 		.select({
 			groupId: requestTrace.traceGroupId,
@@ -631,7 +640,7 @@ export async function listTraceFeed(limit = 100) {
 		.from(requestTrace)
 		.innerJoin(auditLog, eq(auditLog.id, requestTrace.auditLogId))
 		.leftJoin(service, eq(service.id, requestTrace.serviceId))
-		.where(isNotNull(requestTrace.traceGroupId))
+		.where(and(isNotNull(requestTrace.traceGroupId), ...(metaCond ? [metaCond] : [])))
 		.groupBy(requestTrace.traceGroupId)
 		.orderBy(desc(sql`max(${requestTrace.createdAt})`))
 		.limit(limit);
@@ -657,7 +666,7 @@ export async function listTraceFeed(limit = 100) {
 		.from(requestTrace)
 		.innerJoin(auditLog, eq(auditLog.id, requestTrace.auditLogId))
 		.leftJoin(service, eq(service.id, requestTrace.serviceId))
-		.where(isNull(requestTrace.traceGroupId))
+		.where(and(isNull(requestTrace.traceGroupId), ...(metaCond ? [metaCond] : [])))
 		.orderBy(desc(requestTrace.createdAt))
 		.limit(limit);
 

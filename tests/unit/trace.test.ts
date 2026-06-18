@@ -8,6 +8,7 @@ import {
 	responseMessage,
 	parseTraceparent,
 	parseTraceMetadata,
+	parseMetaFilter,
 	prettyJson
 } from '$lib/trace';
 
@@ -283,6 +284,25 @@ describe('parseTraceMetadata', () => {
 		expect(parseTraceMetadata('not json')).toBeNull();
 		expect(parseTraceMetadata(null, [])).toBeNull();
 		expect(parseTraceMetadata('[1,2]')).toBeNull();
+	});
+});
+
+describe('parseMetaFilter', () => {
+	it('parses key:value and key=value into an exact pair', () => {
+		expect(parseMetaFilter('user_id:u_42')).toEqual({ key: 'user_id', value: 'u_42' });
+		expect(parseMetaFilter('tenant=acme')).toEqual({ key: 'tenant', value: 'acme' });
+	});
+
+	it('treats a bare key as an existence filter (value null)', () => {
+		expect(parseMetaFilter('chat_id')).toEqual({ key: 'chat_id', value: null });
+	});
+
+	it('trims, tolerates a value with colons, and returns null when empty/invalid', () => {
+		expect(parseMetaFilter('  url : https://x/y ')).toEqual({ key: 'url', value: 'https://x/y' });
+		expect(parseMetaFilter('key:')).toEqual({ key: 'key', value: null });
+		expect(parseMetaFilter('')).toBeNull();
+		expect(parseMetaFilter(null)).toBeNull();
+		expect(parseMetaFilter(':nope')).toBeNull();
 	});
 });
 
