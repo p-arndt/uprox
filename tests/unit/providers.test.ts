@@ -24,12 +24,17 @@ describe('providerSupports', () => {
 		expect(providerSupports(PROVIDERS.openai, 'images')).toBe(true);
 		expect(providerSupports(PROVIDERS.azure, 'images')).toBe(true);
 		expect(providerSupports(PROVIDERS.anthropic, 'images')).toBe(false);
-		// Gemini's OpenAI-compatible surface is chat + embeddings + models +
-		// images, but not the Responses API.
+		// Native Gemini covers chat + embeddings + models, but not the Responses
+		// API or image generation (a separate native endpoint we don't translate).
 		expect(providerSupports(PROVIDERS.gemini, 'chat')).toBe(true);
 		expect(providerSupports(PROVIDERS.gemini, 'embeddings')).toBe(true);
-		expect(providerSupports(PROVIDERS.gemini, 'images')).toBe(true);
+		expect(providerSupports(PROVIDERS.gemini, 'images')).toBe(false);
 		expect(providerSupports(PROVIDERS.gemini, 'responses')).toBe(false);
+		// The custom OpenAI-compatible provider claims every capability — the
+		// operator's endpoint decides what actually works.
+		expect(providerSupports(PROVIDERS.custom, 'chat')).toBe(true);
+		expect(providerSupports(PROVIDERS.custom, 'responses')).toBe(true);
+		expect(providerSupports(PROVIDERS.custom, 'images')).toBe(true);
 	});
 });
 
@@ -41,7 +46,18 @@ describe('resolveBaseUrl', () => {
 			'https://api.anthropic.com/v1'
 		);
 		expect(resolveBaseUrl(PROVIDERS.gemini, null)).toBe(
-			'https://generativelanguage.googleapis.com/v1beta/openai'
+			'https://generativelanguage.googleapis.com/v1beta'
+		);
+	});
+
+	it('uses the custom provider endpoint verbatim (no path normalization)', () => {
+		expect(resolveBaseUrl(PROVIDERS.custom, null)).toBeNull();
+		expect(resolveBaseUrl(PROVIDERS.custom, 'https://api.groq.com/openai/v1')).toBe(
+			'https://api.groq.com/openai/v1'
+		);
+		// trailing slashes are stripped, but the path is otherwise untouched
+		expect(resolveBaseUrl(PROVIDERS.custom, 'https://my-vllm.internal:8000/v1/')).toBe(
+			'https://my-vllm.internal:8000/v1'
 		);
 	});
 
@@ -71,6 +87,10 @@ describe('authHeaders', () => {
 	it('uses an api-key header for the api-key scheme (Azure)', () => {
 		expect(authHeaders(PROVIDERS.azure, 'azkey')).toEqual({ 'api-key': 'azkey' });
 	});
+
+	it('uses an x-goog-api-key header for the google scheme (native Gemini)', () => {
+		expect(authHeaders(PROVIDERS.gemini, 'gkey')).toEqual({ 'x-goog-api-key': 'gkey' });
+	});
 });
 
 describe('providerForModel', () => {
@@ -81,7 +101,6 @@ describe('providerForModel', () => {
 		expect(providerForModel('gemini-2.5-flash')?.id).toBe('gemini');
 		expect(providerForModel('Gemini-3.5-Flash')?.id).toBe('gemini');
 		expect(providerForModel('gemma-3-27b')?.id).toBe('gemini');
-		expect(providerForModel('imagen-4.0-generate')?.id).toBe('gemini');
 		expect(providerForModel('gemini-embedding-001')?.id).toBe('gemini');
 	});
 
@@ -246,7 +265,11 @@ describe('cache default prices', () => {
 	});
 
 	it('seeds Gemini prices with a cache read discount and no write cost', () => {
-		expect(DEFAULT_MODEL_PRICES['gemini-2.5-flash']).toEqual({ in: 0.3, out: 2.5, cacheRead: 0.03 });
+		expect(DEFAULT_MODEL_PRICES['gemini-2.5-flash']).toEqual({
+			in: 0.3,
+			out: 2.5,
+			cacheRead: 0.03
+		});
 		expect(DEFAULT_MODEL_PRICES['gemini-3.5-flash']).toEqual({ in: 1.5, out: 9, cacheRead: 0.15 });
 		// embedding model: input-only, no output cost and no cache rate
 		expect(DEFAULT_MODEL_PRICES['gemini-embedding-001']).toEqual({ in: 0.15, out: 0 });

@@ -238,14 +238,25 @@
 						id="baseUrl"
 						name="baseUrl"
 						type="url"
-						placeholder="https://my-resource.openai.azure.com"
+						placeholder={adding?.provider === 'custom'
+							? 'https://api.groq.com/openai/v1'
+							: 'https://my-resource.openai.azure.com'}
 						autocomplete="off"
 						required
 					/>
-					<p class="text-xs text-muted-foreground">
-						Your Azure resource endpoint. Call models by their deployment name (e.g.
-						<code>gpt-4o</code>) — no prefix. Add one key per resource and pick it on each service.
-					</p>
+					{#if adding?.provider === 'custom'}
+						<p class="text-xs text-muted-foreground">
+							The base URL of any OpenAI-compatible API — Groq, OpenRouter, Together, or a
+							self-hosted vLLM/Ollama/LiteLLM. Used as-is, so include the full path (e.g.
+							<code>/v1</code>). Call models by their exact name.
+						</p>
+					{:else}
+						<p class="text-xs text-muted-foreground">
+							Your Azure resource endpoint. Call models by their deployment name (e.g.
+							<code>gpt-4o</code>) — no prefix. Add one key per resource and pick it on each
+							service.
+						</p>
+					{/if}
 				</div>
 			{/if}
 			<div class="space-y-2">
@@ -357,7 +368,9 @@
 						id="meta-baseUrl"
 						name="baseUrl"
 						type="url"
-						placeholder="https://my-resource.openai.azure.com"
+						placeholder={editingMeta?.provider === 'custom'
+							? 'https://api.groq.com/openai/v1'
+							: 'https://my-resource.openai.azure.com'}
 						value={editingMeta?.baseUrl ?? ''}
 						autocomplete="off"
 						required

@@ -4,6 +4,7 @@ import { db } from '$lib/server/db';
 import { providerSecret } from '$lib/server/db/schema';
 import { decrypt } from '$lib/server/crypto';
 import { PROVIDERS, resolveBaseUrl, authHeaders } from '$lib/server/providers';
+import { getAdapter } from '$lib/server/adapters';
 import { authenticateGateway } from '$lib/server/gateway';
 import { evaluatePolicy } from '$lib/server/policy';
 import { audit } from '$lib/server/audit';
@@ -36,13 +37,18 @@ export const GET: RequestHandler = async (event) => {
 		if (!evaluatePolicy(token, { provider: def.id, model: '', scope: 'models' }).allow) continue;
 		const base = resolveBaseUrl(def, secret.baseUrl);
 		if (!base) continue;
+		// Native providers (Gemini) list models at a different URL and shape; their
+		// adapter supplies both. Pass-through providers use the OpenAI `/models`.
+		const adapter = getAdapter(def.id);
 		try {
-			const res = await fetch(`${base}/models`, {
+			const res = await fetch(adapter ? adapter.modelsUrl(base) : `${base}/models`, {
 				headers: authHeaders(def, decrypt(secret.encryptedSecret))
 			});
 			if (!res.ok) continue;
-			const data = (await res.json()) as { data?: { id: string }[] };
-			for (const m of data.data ?? []) {
+			const listed = adapter
+				? adapter.translateModels(await res.text())
+				: (((await res.json()) as { data?: { id: string }[] }).data ?? []);
+			for (const m of listed) {
 				// Model ids are callable as-is (no provider alias). OpenAI and Azure
 				// share the namespace, so dedupe ids when both are configured.
 				if (seen.has(m.id)) continue;
