@@ -382,6 +382,29 @@ export function parseTraceMetadata(
 	return Object.keys(out).length ? out : null;
 }
 
+export interface MetaFilter {
+	key: string;
+	/** exact value to match; null = match any trace that has the key at all */
+	value: string | null;
+}
+
+/**
+ * Parse a metadata filter expression for the traces list. `key:value` or
+ * `key=value` matches that exact pair; a bare `key` matches any trace carrying
+ * that key. Returns null when there's nothing to filter on.
+ */
+export function parseMetaFilter(input: string | null | undefined): MetaFilter | null {
+	const t = input?.trim();
+	if (!t) return null;
+	const m = /^([^:=]+)[:=](.*)$/.exec(t);
+	if (m) {
+		const key = m[1].trim();
+		const value = m[2].trim();
+		return key ? { key, value: value || null } : null;
+	}
+	return { key: t, value: null };
+}
+
 /** Pretty-print a JSON string for the raw view; returns the input unchanged if not JSON. */
 export function prettyJson(text: string | null | undefined): string {
 	if (!text) return '';
