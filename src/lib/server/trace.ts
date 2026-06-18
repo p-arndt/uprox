@@ -1,6 +1,7 @@
 import { eq, lt } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { requestTrace, settings } from '$lib/server/db/schema';
+import { requestTrace, settings, traceSpan } from '$lib/server/db/schema';
+import type { ParsedSpan } from '$lib/server/otlp/decode';
 
 /** A captured request/response pair, linked to its audit row. */
 export interface TraceInput {
@@ -57,6 +58,50 @@ export async function recordTrace(input: TraceInput): Promise<void> {
 	}
 }
 
+/** Bound any single attribute string so a giant prompt/response can't bloat a row. */
+function clampAttributes(attrs: Record<string, unknown>): Record<string, unknown> {
+	const out: Record<string, unknown> = {};
+	for (const [k, v] of Object.entries(attrs)) {
+		out[k] =
+			typeof v === 'string' && v.length > MAX_PAYLOAD_CHARS
+				? v.slice(0, MAX_PAYLOAD_CHARS) + '…[truncated]'
+				: v;
+	}
+	return out;
+}
+
+/**
+ * Persist OTLP spans ingested from a client app (see /v1/traces). Best-effort,
+ * never throws. Dedupes on (traceId, spanId) so a resend is idempotent. Returns
+ * how many rows were offered for insert.
+ */
+export async function recordSpans(spans: ParsedSpan[], serviceId: string | null): Promise<number> {
+	const rows = spans
+		.filter((s) => s.traceId && s.spanId)
+		.map((s) => ({
+			traceId: s.traceId,
+			spanId: s.spanId,
+			parentSpanId: s.parentSpanId,
+			name: s.name || '(unnamed)',
+			kind: s.kind,
+			startedAt: s.startedAt,
+			durationMs: Number.isFinite(s.durationMs) ? Math.max(0, Math.round(s.durationMs)) : 0,
+			status: s.status,
+			serviceName: s.serviceName,
+			serviceId,
+			attributes: clampAttributes(s.attributes)
+		}));
+	if (!rows.length) return 0;
+	try {
+		await db.insert(traceSpan).values(rows).onConflictDoNothing();
+		void pruneTracesIfDue();
+		return rows.length;
+	} catch (err) {
+		console.error('[trace] failed to record spans', err);
+		return 0;
+	}
+}
+
 // Module-level throttle: the app is a single process with no scheduler, so we
 // sweep expired traces opportunistically (at most once an hour) off the back of
 // a write rather than on every request.
@@ -78,6 +123,7 @@ export async function pruneTracesIfDue(): Promise<void> {
 		if (days <= 0) return;
 		const cutoff = new Date(now - days * 24 * 60 * 60 * 1000);
 		await db.delete(requestTrace).where(lt(requestTrace.createdAt, cutoff));
+		await db.delete(traceSpan).where(lt(traceSpan.createdAt, cutoff));
 	} catch (err) {
 		console.error('[trace] failed to prune traces', err);
 	}

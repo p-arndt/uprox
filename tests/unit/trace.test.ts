@@ -6,6 +6,7 @@ import {
 	reconstructSse,
 	responseText,
 	responseMessage,
+	parseTraceparent,
 	prettyJson
 } from '$lib/trace';
 
@@ -235,6 +236,21 @@ describe('tool use — responses', () => {
 
 	it('returns no toolCalls for a plain text reply', () => {
 		expect(responseMessage(JSON.stringify({ output_text: 'hi' }), 'json').toolCalls).toBeUndefined();
+	});
+});
+
+describe('parseTraceparent', () => {
+	it('extracts the lower-cased trace-id from a valid traceparent', () => {
+		expect(parseTraceparent('00-4BF92F3577B34DA6A3CE929D0E0E4736-00f067aa0ba902b7-01')).toBe(
+			'4bf92f3577b34da6a3ce929d0e0e4736'
+		);
+	});
+
+	it('returns null for malformed or missing values', () => {
+		expect(parseTraceparent('not-a-traceparent')).toBeNull();
+		expect(parseTraceparent('00-tooshort-00f067aa0ba902b7-01')).toBeNull();
+		expect(parseTraceparent(null)).toBeNull();
+		expect(parseTraceparent('')).toBeNull();
 	});
 });
 
