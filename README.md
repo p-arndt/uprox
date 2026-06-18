@@ -61,6 +61,7 @@ the `@google/genai` client works unchanged — point its `baseUrl` at
 | **Response cache** | Exact-match cache (streaming included) replays responses at zero cost.       |
 | **Encrypted keys** | Provider keys sealed with AES-256-GCM; never exposed to clients.             |
 | **Audit log**      | Every request logged with status, cost, and latency.                         |
+| **Tracing**        | Opt-in capture of prompts, responses & tool calls; session trees, plus OTLP ingest for full app traces. |
 | **Teams & SSO**    | Invite-only orgs and roles, with email/password or OIDC sign-in.             |
 
 ## Quick start
@@ -166,6 +167,66 @@ request/response fields.
 
 Everything else (services, tokens, providers, policies, audit) is managed in the dashboard or
 via the session-authenticated REST API under `/api`.
+
+## Tracing & observability
+
+A built-in, Phoenix-style trace viewer — no external observability service required. The
+**Traces** page in the dashboard captures what flows through the gateway and renders it as
+a conversation (prompts, the model's reply, **tool calls and results**), with tokens, cost,
+and latency per call.
+
+**Opt-in & private.** Tracing captures full prompt/response payloads, so it's **off by
+default**. Turn it on instance-wide under **Settings → Request tracing** (with a retention
+window), or override it per policy (inherit / always-on / always-off) under a policy's
+**Tracing** tab. Captured payloads are pruned automatically once past the retention window.
+
+**Sessions — no client changes needed.** Each call is traced on its own; related calls (e.g.
+a tool-use loop) collapse into one **session timeline / waterfall** when they share a
+correlation id. uprox resolves that id automatically, so you usually change nothing:
+
+1. an explicit `x-uprox-trace-id` (or `x-uprox-session-id`) request header, if you set one; else
+2. the W3C **`traceparent`** header your OpenTelemetry-instrumented app already sends — uprox
+   uses its trace-id, which is also how proxy calls stitch into the app trace below.
+
+```ts
+// optional: force a session id for a run (see examples/use-gateway.ts)
+const client = new OpenAI({
+	apiKey: 'uprox_live_…',
+	baseURL: 'http://localhost:5173/v1',
+	defaultHeaders: { 'x-uprox-trace-id': crypto.randomUUID() }
+});
+```
+
+### Full app traces via OpenTelemetry (OTLP ingest)
+
+The proxy only sees the calls that pass through it — not your app's internal steps
+(retriever, embedder, agent, reranker…). To get the **full nested tree**, point your app's
+OpenInference/OpenTelemetry exporter at uprox's OTLP endpoint:
+
+| Endpoint          | Notes                                                                          |
+| ----------------- | ------------------------------------------------------------------------------ |
+| `POST /v1/traces` | OTLP/HTTP span ingest — accepts **protobuf** and **JSON** (gzip ok); OTel-standard path |
+
+Authenticate with the same machine token, as a bearer. Because uprox auto-groups its proxy
+calls by the same `traceparent` trace-id, your app's spans and uprox's captured LLM calls
+**line up under one trace** — the app's spans give the deep tree, uprox's capture fills in the
+prompt/response/cost.
+
+```sh
+# point any OTel/OpenInference exporter at uprox. Use the BASE url — the exporter
+# appends "/v1/traces" itself (→ http://localhost:5173/v1/traces).
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:5173
+export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer uprox_live_…"
+# protobuf is the default; JSON also works:
+# export OTEL_EXPORTER_OTLP_PROTOCOL=http/json
+```
+
+Ingest respects the instance tracing switch (when tracing is off, spans are accepted and
+dropped), and ingested traces appear under **Distributed traces** on the Traces page with the
+full span waterfall and per-span attributes.
+
+See [`examples/use-gateway.ts`](examples/use-gateway.ts) for a tool-use round-trip that shows
+up as one grouped session.
 
 ## Tokens & security
 

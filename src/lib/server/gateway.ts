@@ -20,6 +20,7 @@ import { getAdapter } from '$lib/server/adapters';
 import { mapUsage } from '$lib/server/adapters/gemini';
 import { audit, type AuditEntry } from '$lib/server/audit';
 import { recordTrace } from '$lib/server/trace';
+import { parseTraceparent } from '$lib/trace';
 import { checkRateLimit } from '$lib/server/ratelimit';
 import { checkBudget, reserve } from '$lib/server/budget';
 import { maybeSendBudgetAlert } from '$lib/server/budget-alerts';
@@ -197,17 +198,25 @@ function readApiKey(event: RequestEvent): string | null {
 }
 
 /**
- * Read the caller's session/correlation id for trace grouping, from
- * `x-uprox-trace-id` (preferred) or `x-uprox-session-id`. Lets a client tie the
- * several gateway calls of one logical run — e.g. a tool-use loop — into a
- * single timeline in the trace viewer. Length-capped; null when absent.
+ * Read the caller's session/correlation id for trace grouping. Lets the several
+ * gateway calls of one logical run — e.g. a tool-use loop — collapse into a
+ * single timeline in the trace viewer.
+ *
+ * Resolution order, so grouping needs *no* client changes in the common case:
+ *   1. `x-uprox-trace-id` / `x-uprox-session-id` — explicit opt-in / override.
+ *   2. W3C `traceparent` — every OpenTelemetry-instrumented client already sends
+ *      this; we extract its 32-hex trace-id. This is also the id uprox shares
+ *      with the app's own OTLP spans, so the two stitch into one trace.
+ * Returns null when none is present (the call is traced, just not grouped).
  */
 function readTraceGroup(event: RequestEvent): string | null {
-	const raw =
+	const explicit =
 		event.request.headers.get('x-uprox-trace-id') ??
 		event.request.headers.get('x-uprox-session-id');
-	const trimmed = raw?.trim();
-	return trimmed ? trimmed.slice(0, 200) : null;
+	const trimmed = explicit?.trim();
+	if (trimmed) return trimmed.slice(0, 200);
+
+	return parseTraceparent(event.request.headers.get('traceparent'));
 }
 
 export interface GatewayAuth {

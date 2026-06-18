@@ -11,8 +11,11 @@
 	import X from '@lucide/svelte/icons/x';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import Link2 from '@lucide/svelte/icons/link-2';
+	import Network from '@lucide/svelte/icons/network';
 
 	let { data } = $props();
+
+	const fmtDur = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`);
 
 	let query = $state('');
 	let status = $state('all');
@@ -60,7 +63,69 @@
 		</p>
 	</div>
 
-	{#if !data.tracingEnabled && data.traces.length === 0}
+	{#if data.otelTraces.length > 0}
+		<div class="space-y-2">
+			<h3 class="flex items-center gap-2 text-sm font-semibold">
+				<Network class="size-4 text-muted-foreground" /> Distributed traces
+			</h3>
+			<p class="text-xs text-muted-foreground">
+				Full span trees ingested from your apps via OpenTelemetry (<code>POST /v1/traces</code>).
+			</p>
+			<div class="overflow-hidden rounded-xl border">
+				<Table.Root>
+					<Table.Header>
+						<Table.Row class="hover:bg-transparent">
+							<Table.Head class="bg-muted/40">Time</Table.Head>
+							<Table.Head class="bg-muted/40">Trace</Table.Head>
+							<Table.Head class="bg-muted/40">Service</Table.Head>
+							<Table.Head class="bg-muted/40 text-right">Spans</Table.Head>
+							<Table.Head class="bg-muted/40 text-right">Duration</Table.Head>
+							<Table.Head class="bg-muted/40"></Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#each data.otelTraces as tr (tr.traceId)}
+							<Table.Row
+								class="group cursor-pointer"
+								onclick={() =>
+									(window.location.href = resolve('/app/traces/otel/[traceId]', {
+										traceId: tr.traceId
+									}))}
+							>
+								<Table.Cell class="whitespace-nowrap text-muted-foreground">
+									<span class="text-xs" title={formatDateTime(tr.startedAt)}>
+										{relativeTime(tr.startedAt)}
+									</span>
+								</Table.Cell>
+								<Table.Cell>
+									<span class="flex items-center gap-1.5">
+										{#if tr.errorCount > 0}
+											<span class="size-1.5 rounded-full bg-destructive" aria-hidden="true"></span>
+										{/if}
+										<span class="font-mono text-xs">{tr.rootName}</span>
+									</span>
+								</Table.Cell>
+								<Table.Cell class="text-muted-foreground">{tr.serviceName ?? '—'}</Table.Cell>
+								<Table.Cell class="text-right text-muted-foreground tabular-nums">
+									{tr.spanCount}
+								</Table.Cell>
+								<Table.Cell class="text-right text-muted-foreground tabular-nums">
+									{fmtDur(tr.durationMs)}
+								</Table.Cell>
+								<Table.Cell class="text-right">
+									<ArrowRight
+										class="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+									/>
+								</Table.Cell>
+							</Table.Row>
+						{/each}
+					</Table.Body>
+				</Table.Root>
+			</div>
+		</div>
+	{/if}
+
+	{#if !data.tracingEnabled && data.traces.length === 0 && data.otelTraces.length === 0}
 		<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
 			<Waypoints class="size-8 text-muted-foreground" />
 			<p class="mt-3 text-sm font-medium">Tracing is off</p>
@@ -73,12 +138,17 @@
 			</Button>
 		</div>
 	{:else if data.traces.length === 0}
-		<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
-			<Waypoints class="size-8 text-muted-foreground" />
-			<p class="mt-3 text-sm font-medium">No traces yet</p>
-			<p class="text-sm text-muted-foreground">Traced requests will appear here as they happen.</p>
-		</div>
+		{#if data.otelTraces.length === 0}
+			<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
+				<Waypoints class="size-8 text-muted-foreground" />
+				<p class="mt-3 text-sm font-medium">No traces yet</p>
+				<p class="text-sm text-muted-foreground">
+					Traced requests will appear here as they happen.
+				</p>
+			</div>
+		{/if}
 	{:else}
+		<h3 class="text-sm font-semibold">Gateway calls</h3>
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
 			<div class="relative flex-1">
 				<Search

@@ -342,6 +342,18 @@ export function responseText(
 	return responseMessage(responseBody, format).text;
 }
 
+/**
+ * Extract the 32-hex trace-id from a W3C `traceparent` header value
+ * (`<version>-<trace-id>-<parent-id>-<flags>`), lower-cased, or null if the
+ * value isn't a well-formed traceparent. Used to auto-group gateway calls under
+ * the caller's existing OpenTelemetry trace with no client changes.
+ */
+export function parseTraceparent(value: string | null | undefined): string | null {
+	if (!value) return null;
+	const m = /^[\da-f]{2}-([\da-f]{32})-[\da-f]{16}-[\da-f]{2}$/i.exec(value.trim());
+	return m ? m[1].toLowerCase() : null;
+}
+
 /** Pretty-print a JSON string for the raw view; returns the input unchanged if not JSON. */
 export function prettyJson(text: string | null | undefined): string {
 	if (!text) return '';

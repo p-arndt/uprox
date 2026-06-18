@@ -6,6 +6,7 @@ import {
 	integer,
 	numeric,
 	boolean,
+	jsonb,
 	uniqueIndex,
 	index,
 	type AnyPgColumn
@@ -402,6 +403,51 @@ export const requestTrace = pgTable(
 		uniqueIndex('request_trace_audit_uidx').on(t.auditLogId),
 		index('request_trace_created_idx').on(t.createdAt),
 		index('request_trace_group_idx').on(t.traceGroupId)
+	]
+);
+
+/**
+ * Spans ingested from client applications via the OTLP endpoint (POST
+ * /v1/traces). Where {@link requestTrace} captures the calls uprox itself
+ * proxies, this holds the app's *own* OpenTelemetry/OpenInference spans —
+ * retriever, embedding, agent, LLM steps — so the trace viewer can render the
+ * full nested tree the proxy can't observe on its own. Spans of one trace share
+ * a `traceId`; `parentSpanId` builds the tree. Because uprox auto-groups its
+ * proxy calls by the same W3C trace-id (see readTraceGroup), an app's spans and
+ * uprox's captured calls line up under one id. Pruned by retention like traces.
+ */
+export const traceSpan = pgTable(
+	'trace_span',
+	{
+		id: uuid('id').primaryKey().defaultRandom(),
+		// 32-hex W3C trace id shared by every span of one trace
+		traceId: text('trace_id').notNull(),
+		// 16-hex span id, unique within a trace
+		spanId: text('span_id').notNull(),
+		// parent span within the same trace; NULL for a root span
+		parentSpanId: text('parent_span_id'),
+		name: text('name').notNull(),
+		// OTLP span kind name (INTERNAL | SERVER | CLIENT | …); NULL if unset
+		kind: text('kind'),
+		// span start; OTLP nanos truncated to ms (enough to order a waterfall)
+		startedAt: timestamp('started_at').notNull(),
+		// span duration in milliseconds (end − start)
+		durationMs: integer('duration_ms').notNull().default(0),
+		// "ok" | "error" | "unset" from the OTLP status code
+		status: text('status').notNull().default('unset'),
+		// resource service.name, for display/scoping
+		serviceName: text('service_name'),
+		// the uprox service whose token ingested this span; nulls out if removed
+		serviceId: uuid('service_id').references(() => service.id, { onDelete: 'set null' }),
+		// flattened span attributes (OpenInference keys: llm.model_name, input.value,
+		// output.value, llm.token_count.*, etc.) for the span-detail panel
+		attributes: jsonb('attributes'),
+		createdAt: timestamp('created_at').defaultNow().notNull()
+	},
+	(t) => [
+		uniqueIndex('trace_span_trace_span_uidx').on(t.traceId, t.spanId),
+		index('trace_span_trace_idx').on(t.traceId),
+		index('trace_span_created_idx').on(t.createdAt)
 	]
 );
 

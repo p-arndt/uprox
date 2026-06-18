@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, isNull, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
 	service,
@@ -7,6 +7,7 @@ import {
 	policy,
 	auditLog,
 	requestTrace,
+	traceSpan,
 	settings
 } from '$lib/server/db/schema';
 import { encrypt } from '$lib/server/crypto';
@@ -584,6 +585,64 @@ export function listTraceGroup(groupId: string, limit = 100) {
 		.where(eq(requestTrace.traceGroupId, groupId))
 		.orderBy(requestTrace.createdAt)
 		.limit(limit);
+}
+
+/* --------------------------------- otlp spans --------------------------------- */
+
+/**
+ * One summary row per ingested OTLP trace (newest first): the root span's name,
+ * total span count, wall-clock duration, an error flag, and the service. Two
+ * queries — aggregates grouped by trace id, then the earliest root span's name —
+ * merged in code, since picking the root per group isn't a plain aggregate.
+ */
+export async function listOtelTraces(limit = 100) {
+	const agg = await db
+		.select({
+			traceId: traceSpan.traceId,
+			spanCount: sql<number>`count(*)::int`,
+			errorCount: sql<number>`count(*) filter (where ${traceSpan.status} = 'error')::int`,
+			startedAt: sql<Date>`min(${traceSpan.startedAt})`,
+			// wall clock = latest span end − earliest span start, in ms
+			durationMs: sql<number>`(extract(epoch from max(${traceSpan.startedAt})) * 1000 + max(${traceSpan.durationMs}) - extract(epoch from min(${traceSpan.startedAt})) * 1000)::int`,
+			serviceName: sql<string | null>`max(${traceSpan.serviceName})`
+		})
+		.from(traceSpan)
+		.groupBy(traceSpan.traceId)
+		.orderBy(desc(sql`min(${traceSpan.startedAt})`))
+		.limit(limit);
+
+	if (agg.length === 0) return [];
+
+	// earliest root (parent-less) span per trace → the trace's display name
+	const ids = agg.map((a) => a.traceId);
+	const roots = await db
+		.select({ traceId: traceSpan.traceId, name: traceSpan.name, startedAt: traceSpan.startedAt })
+		.from(traceSpan)
+		.where(and(inArray(traceSpan.traceId, ids), isNull(traceSpan.parentSpanId)))
+		.orderBy(traceSpan.startedAt);
+	const rootName = new Map<string, string>();
+	for (const r of roots) if (!rootName.has(r.traceId)) rootName.set(r.traceId, r.name);
+
+	return agg.map((a) => ({ ...a, rootName: rootName.get(a.traceId) ?? '(trace)' }));
+}
+
+/** All spans of one ingested trace, oldest first, for the tree/waterfall view. */
+export function getOtelTrace(traceId: string) {
+	return db
+		.select({
+			spanId: traceSpan.spanId,
+			parentSpanId: traceSpan.parentSpanId,
+			name: traceSpan.name,
+			kind: traceSpan.kind,
+			status: traceSpan.status,
+			startedAt: traceSpan.startedAt,
+			durationMs: traceSpan.durationMs,
+			serviceName: traceSpan.serviceName,
+			attributes: traceSpan.attributes
+		})
+		.from(traceSpan)
+		.where(eq(traceSpan.traceId, traceId))
+		.orderBy(traceSpan.startedAt);
 }
 
 /** Load a single trace with its full request/response payloads and metadata. */
