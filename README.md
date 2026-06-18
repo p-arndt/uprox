@@ -40,17 +40,22 @@ const client = new OpenAI({
 });
 
 await client.chat.completions.create({
-	model: 'gpt-4o', // claude-* routes to Anthropic automatically
+	model: 'gpt-4o', // claude-* → Anthropic, gemini-* → Google, all routed automatically
 	messages: [{ role: 'user', content: 'Hello' }]
 });
 ```
+
+Prefer a provider's own SDK? uprox also speaks the **native Google Gemini** API, so
+the `@google/genai` client works unchanged — point its `baseUrl` at
+`http://localhost:5173/v1beta` and use an `uprox_live_…` token. See
+[`examples/use-gateway-gemini.ts`](examples/use-gateway-gemini.ts).
 
 ## What you get
 
 |                    |                                                                              |
 | ------------------ | ---------------------------------------------------------------------------- |
 | **Machine tokens** | Revocable `uprox_live_…` tokens per service. Stored as a hash; shown once.   |
-| **Multi-provider** | OpenAI, Anthropic, and Azure OpenAI behind one endpoint, routed by model.    |
+| **Multi-provider** | OpenAI, Anthropic, Azure OpenAI, and Google Gemini behind one endpoint, routed by model. |
 | **Policies**       | Limit which providers/models a service may call, plus per-token rate limits. |
 | **Budgets**        | Daily/monthly USD ceilings per service — over budget returns `402`.          |
 | **Response cache** | Exact-match cache (streaming included) replays responses at zero cost.       |
@@ -123,6 +128,41 @@ then pins which key it uses via the "Upstream key" picker; services left on
 _Automatic_ use the provider's highest-`priority` key. This lets you point different
 services at different Azure resources (regions, quotas, subscriptions) without
 changing any client code.
+
+### Native Google Gemini SDK clients
+
+uprox also exposes a **native Gemini ingress**, so the official `@google/genai`
+SDK works without translation — native-only features survive. Point the client's
+`baseUrl` at your uprox instance **plus `/v1beta`** and use an `uprox_live_…`
+token (the SDK sends it as the `x-goog-api-key` header):
+
+```ts
+import { GoogleGenAI } from '@google/genai';
+
+const ai = new GoogleGenAI({
+	apiKey: 'uprox_live_…',
+	httpOptions: { baseUrl: 'http://localhost:5173/v1beta' } // /v1beta is required
+});
+
+await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: 'Hello' });
+```
+
+> The `/v1beta` segment must be in `baseUrl`: the SDK appends `/models/{model}:{method}`
+> to it verbatim. Omitting it yields `POST /models/…`, which 404s. See
+> [`examples/use-gateway-gemini.ts`](examples/use-gateway-gemini.ts).
+
+| Endpoint                                                | Equivalent of                                  |
+| ------------------------------------------------------- | ---------------------------------------------- |
+| `POST /v1beta/models/{model}:generateContent`           | `ai.models.generateContent`                    |
+| `POST /v1beta/models/{model}:streamGenerateContent`     | `ai.models.generateContentStream` (SSE)        |
+| `POST /v1beta/models/{model}:countTokens`               | `ai.models.countTokens` (free, never billed)   |
+| `POST /v1beta/models/{model}:embedContent` (and `:batchEmbedContents`) | `ai.models.embedContent`        |
+| `GET  /v1beta/models`, `GET /v1beta/models/{model}`     | `ai.models.list` / `ai.models.get`             |
+
+Gemini models also work on the OpenAI-compatible `/v1/*` surface above (e.g.
+`model: 'gemini-2.5-flash'` on `/v1/chat/completions`) — uprox translates between
+the OpenAI and Gemini shapes. Use the native ingress when you want Gemini-specific
+request/response fields.
 
 Everything else (services, tokens, providers, policies, audit) is managed in the dashboard or
 via the session-authenticated REST API under `/api`.
