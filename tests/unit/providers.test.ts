@@ -24,6 +24,12 @@ describe('providerSupports', () => {
 		expect(providerSupports(PROVIDERS.openai, 'images')).toBe(true);
 		expect(providerSupports(PROVIDERS.azure, 'images')).toBe(true);
 		expect(providerSupports(PROVIDERS.anthropic, 'images')).toBe(false);
+		// Gemini's OpenAI-compatible surface is chat + embeddings + models +
+		// images, but not the Responses API.
+		expect(providerSupports(PROVIDERS.gemini, 'chat')).toBe(true);
+		expect(providerSupports(PROVIDERS.gemini, 'embeddings')).toBe(true);
+		expect(providerSupports(PROVIDERS.gemini, 'images')).toBe(true);
+		expect(providerSupports(PROVIDERS.gemini, 'responses')).toBe(false);
 	});
 });
 
@@ -33,6 +39,9 @@ describe('resolveBaseUrl', () => {
 		// an endpoint passed to a static provider is ignored
 		expect(resolveBaseUrl(PROVIDERS.anthropic, 'https://ignored')).toBe(
 			'https://api.anthropic.com/v1'
+		);
+		expect(resolveBaseUrl(PROVIDERS.gemini, null)).toBe(
+			'https://generativelanguage.googleapis.com/v1beta/openai'
 		);
 	});
 
@@ -68,6 +77,12 @@ describe('providerForModel', () => {
 	it('routes by prefix, case-insensitively', () => {
 		expect(providerForModel('claude-opus-4-7')?.id).toBe('anthropic');
 		expect(providerForModel('GPT-4o')?.id).toBe('openai');
+		// Gemini's prefixes don't collide with any other provider's namespace
+		expect(providerForModel('gemini-2.5-flash')?.id).toBe('gemini');
+		expect(providerForModel('Gemini-3.5-Flash')?.id).toBe('gemini');
+		expect(providerForModel('gemma-3-27b')?.id).toBe('gemini');
+		expect(providerForModel('imagen-4.0-generate')?.id).toBe('gemini');
+		expect(providerForModel('gemini-embedding-001')?.id).toBe('gemini');
 	});
 
 	it('returns OpenAI for the shared OpenAI/Azure namespace (declaration order)', () => {
@@ -89,6 +104,13 @@ describe('resolveProvider', () => {
 	it('picks the only configured provider that claims the model', () => {
 		expect(resolveProvider('gpt-4o', ['openai'])?.id).toBe('openai');
 		expect(resolveProvider('claude-opus-4-7', ['anthropic', 'openai'])?.id).toBe('anthropic');
+		expect(resolveProvider('gemini-2.5-pro', ['openai', 'gemini'])?.id).toBe('gemini');
+	});
+
+	it('does not route a gemini model to a configured non-gemini org', () => {
+		expect(resolveProvider('gemini-2.5-pro', ['openai', 'anthropic'])).toBeNull();
+		// ...but a configured Azure catch-all still claims it, as for any unknown name
+		expect(resolveProvider('gemini-2.5-pro', ['azure'])?.id).toBe('azure');
 	});
 
 	it('falls back to declaration order (OpenAI first) when both share the namespace', () => {
@@ -221,6 +243,29 @@ describe('cache default prices', () => {
 	it('seeds OpenAI cache reads with no write cost (GPT-5 0.1×, GPT-4o 0.5×)', () => {
 		expect(DEFAULT_MODEL_PRICES['gpt-5.4']).toEqual({ in: 2.5, out: 15, cacheRead: 0.25 });
 		expect(DEFAULT_MODEL_PRICES['gpt-4o']).toEqual({ in: 2.5, out: 10, cacheRead: 1.25 });
+	});
+
+	it('seeds Gemini prices with a cache read discount and no write cost', () => {
+		expect(DEFAULT_MODEL_PRICES['gemini-2.5-flash']).toEqual({ in: 0.3, out: 2.5, cacheRead: 0.03 });
+		expect(DEFAULT_MODEL_PRICES['gemini-3.5-flash']).toEqual({ in: 1.5, out: 9, cacheRead: 0.15 });
+		// embedding model: input-only, no output cost and no cache rate
+		expect(DEFAULT_MODEL_PRICES['gemini-embedding-001']).toEqual({ in: 0.15, out: 0 });
+	});
+});
+
+describe('gemini price lookup by longest prefix', () => {
+	it('prefers flash-lite over flash for the more specific model name', () => {
+		// flash-lite ($0.10) must not be shadowed by the shorter flash key ($0.30)
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'gemini-2.5-flash-lite')).toBe(
+			DEFAULT_MODEL_PRICES['gemini-2.5-flash-lite']
+		);
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'gemini-2.5-flash')).toBe(
+			DEFAULT_MODEL_PRICES['gemini-2.5-flash']
+		);
+		// a dated/suffixed pro id still resolves to the gemini-3.1-pro base price
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'gemini-3.1-pro-preview')).toBe(
+			DEFAULT_MODEL_PRICES['gemini-3.1-pro']
+		);
 	});
 });
 
