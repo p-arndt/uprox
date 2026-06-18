@@ -645,6 +645,38 @@ export function getOtelTrace(traceId: string) {
 		.orderBy(traceSpan.startedAt);
 }
 
+/**
+ * Every call in a session (by group id), oldest first, WITH payloads — so the
+ * full-session view can stitch the whole run's conversation onto one page.
+ */
+export function getTraceGroupDetail(groupId: string, limit = 200) {
+	return db
+		.select({
+			id: requestTrace.id,
+			createdAt: requestTrace.createdAt,
+			requestBody: requestTrace.requestBody,
+			responseBody: requestTrace.responseBody,
+			format: requestTrace.responseFormat,
+			action: auditLog.action,
+			status: auditLog.status,
+			statusCode: auditLog.statusCode,
+			provider: auditLog.provider,
+			model: auditLog.model,
+			costUsd: auditLog.costUsd,
+			inputTokens: auditLog.inputTokens,
+			outputTokens: auditLog.outputTokens,
+			latencyMs: auditLog.latencyMs,
+			detail: auditLog.detail,
+			serviceName: service.name
+		})
+		.from(requestTrace)
+		.innerJoin(auditLog, eq(auditLog.id, requestTrace.auditLogId))
+		.leftJoin(service, eq(service.id, requestTrace.serviceId))
+		.where(eq(requestTrace.traceGroupId, groupId))
+		.orderBy(requestTrace.createdAt)
+		.limit(limit);
+}
+
 /** Load a single trace with its full request/response payloads and metadata. */
 export async function getTrace(id: string) {
 	const [row] = await db

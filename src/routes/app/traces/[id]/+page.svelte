@@ -4,36 +4,17 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { formatDateTime, formatUsd, formatTokens } from '$lib/format';
 	import { eventTone, toneDot, toneText } from '$lib/events';
-	import { requestMessages, responseMessage, prettyJson } from '$lib/trace';
+	import { prettyJson } from '$lib/trace';
+	import TraceConversation from '$lib/components/trace-conversation.svelte';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
 
 	let { data } = $props();
 	const t = $derived(data.trace);
-
-	const messages = $derived(requestMessages(t.requestBody));
-	const reply = $derived(responseMessage(t.responseBody, t.format));
-	// the assistant reply is just another message in the transcript, appended
-	// after the prompt when it carries text or tool calls.
-	const conversation = $derived(
-		reply.text || reply.toolCalls ? [...messages, reply] : messages
-	);
 	const tone = $derived(eventTone(t.status));
 
 	const rawRequest = $derived(prettyJson(t.requestBody));
 	const rawResponse = $derived(t.format === 'sse' ? (t.responseBody ?? '') : prettyJson(t.responseBody));
-
-	// Role → label + accent, so the conversation reads like a chat transcript.
-	const roleMeta: Record<string, { label: string; accent: string }> = {
-		system: { label: 'System', accent: 'border-l-amber-500' },
-		developer: { label: 'Developer', accent: 'border-l-amber-500' },
-		user: { label: 'User', accent: 'border-l-sky-500' },
-		assistant: { label: 'Assistant', accent: 'border-l-emerald-500' },
-		model: { label: 'Model', accent: 'border-l-emerald-500' },
-		tool: { label: 'Tool', accent: 'border-l-violet-500' }
-	};
-	const meta = (role: string) =>
-		roleMeta[role] ?? { label: role, accent: 'border-l-muted-foreground/40' };
 
 	// ---- Session tree / waterfall ------------------------------------------------
 	// The proxy observes each call as a flat span; we lay them on a shared time
@@ -105,7 +86,17 @@
 	<!-- Session tree / waterfall -->
 	{#if showSession}
 		<div class="space-y-2">
-			<h3 class="text-sm font-semibold">Session</h3>
+			<div class="flex items-center justify-between gap-2">
+				<h3 class="text-sm font-semibold">Session</h3>
+				{#if t.groupId}
+					<a
+						href={resolve('/app/traces/session/[groupId]', { groupId: t.groupId })}
+						class="text-xs font-medium text-primary hover:underline"
+					>
+						View full session →
+					</a>
+				{/if}
+			</div>
 			<div class="overflow-hidden rounded-xl border text-xs">
 				<!-- root span -->
 				<div class="flex items-center gap-2 border-b bg-muted/40 px-3 py-2">
@@ -146,39 +137,17 @@
 				{/each}
 			</div>
 			<p class="text-xs text-muted-foreground">
-				Calls sharing this <code>x-uprox-trace-id</code>. Each row is one gateway request on a shared
-				time axis — select one to inspect it.
+				This call is one of several sharing a session id. The waterfall lays them on a shared time
+				axis — open a row to inspect it, or
+				<strong>View full session</strong> to read the whole run on one page.
 			</p>
 		</div>
 	{/if}
 
-	<!-- Conversation -->
+	<!-- Conversation (this call only; the full run is on the session page) -->
 	<div class="space-y-3">
 		<h3 class="text-sm font-semibold">Conversation</h3>
-		{#if conversation.length === 0}
-			<p class="rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-				No conversation could be parsed from this payload — see the raw view below.
-			</p>
-		{:else}
-			{#each conversation as m, i (i)}
-				{@const mm = meta(m.role)}
-				<div class="rounded-lg border border-l-2 {mm.accent} bg-card p-3">
-					<div class="mb-1 text-xs font-medium text-muted-foreground">{mm.label}</div>
-					{#if m.text}
-						<div class="text-sm whitespace-pre-wrap break-words">{m.text}</div>
-					{/if}
-					{#if m.toolCalls}
-						{#each m.toolCalls as call, j (j)}
-							<div class="mt-2 rounded-md bg-muted/60 p-2 font-mono text-xs break-words">
-								<span class="font-medium text-foreground">{call.name}(</span>{call.args}<span
-									class="font-medium text-foreground">)</span
-								>
-							</div>
-						{/each}
-					{/if}
-				</div>
-			{/each}
-		{/if}
+		<TraceConversation requestBody={t.requestBody} responseBody={t.responseBody} format={t.format} />
 	</div>
 
 	<!-- Raw payloads -->

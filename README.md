@@ -181,8 +181,9 @@ window), or override it per policy (inherit / always-on / always-off) under a po
 **Tracing** tab. Captured payloads are pruned automatically once past the retention window.
 
 **Sessions — no client changes needed.** Each call is traced on its own; related calls (e.g.
-a tool-use loop) collapse into one **session timeline / waterfall** when they share a
-correlation id. uprox resolves that id automatically, so you usually change nothing:
+a tool-use loop) collapse into one **session** when they share a correlation id — a waterfall
+of the calls plus a **full-session view** that stitches every call's conversation onto one
+page. uprox resolves the correlation id automatically, so you usually change nothing:
 
 1. an explicit `x-uprox-trace-id` (or `x-uprox-session-id`) request header, if you set one; else
 2. the W3C **`traceparent`** header your OpenTelemetry-instrumented app already sends — uprox
