@@ -26,8 +26,12 @@ const sessionId = randomUUID();
 const client = new OpenAI({
 	apiKey: process.env.UPROX_TOKEN || 'uprox_live_REPLACE_ME',
 	baseURL: process.env.UPROX_URL || 'http://localhost:5173/v1',
-	// Sent on every request from this client → all calls share one trace session.
-	defaultHeaders: { 'x-uprox-trace-id': sessionId }
+	defaultHeaders: {
+		// all calls share one trace session…
+		'x-uprox-trace-id': sessionId,
+		// …and carry free-form metadata (anything you like — chat id, user, tenant, tags).
+		'x-uprox-metadata': JSON.stringify({ chat_id: sessionId, user_id: 'demo-user' })
+	}
 });
 
 const MODEL = process.env.UPROX_MODEL || 'gpt-5.4-nano';

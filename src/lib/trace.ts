@@ -354,6 +354,34 @@ export function parseTraceparent(value: string | null | undefined): string | nul
 	return m ? m[1].toLowerCase() : null;
 }
 
+/**
+ * Merge caller-supplied trace metadata into one object: the `x-uprox-metadata`
+ * JSON-object header plus any `x-uprox-meta-<key>: <value>` header pairs (string
+ * values). Returns null when nothing usable is present. Generic by design — no
+ * key is special-cased.
+ */
+export function parseTraceMetadata(
+	jsonHeader: string | null | undefined,
+	headerPairs: Iterable<[string, string]> = []
+): Record<string, unknown> | null {
+	const out: Record<string, unknown> = {};
+	if (jsonHeader) {
+		const parsed = safeParse(jsonHeader);
+		if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+			Object.assign(out, parsed as Record<string, unknown>);
+		}
+	}
+	const prefix = 'x-uprox-meta-';
+	for (const [name, value] of headerPairs) {
+		const lower = name.toLowerCase();
+		if (lower.startsWith(prefix)) {
+			const key = lower.slice(prefix.length);
+			if (key) out[key] = value;
+		}
+	}
+	return Object.keys(out).length ? out : null;
+}
+
 /** Pretty-print a JSON string for the raw view; returns the input unchanged if not JSON. */
 export function prettyJson(text: string | null | undefined): string {
 	if (!text) return '';

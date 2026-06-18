@@ -71,6 +71,13 @@
       "when": 1781824171664,
       "tag": "0009_broad_kingpin",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1781824841991,
+      "tag": "0010_wealthy_wasp",
+      "breakpoints": true
     }
   ]
 }

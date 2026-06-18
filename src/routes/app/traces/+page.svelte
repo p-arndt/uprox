@@ -10,7 +10,7 @@
 	import Search from '@lucide/svelte/icons/search';
 	import X from '@lucide/svelte/icons/x';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
-	import Link2 from '@lucide/svelte/icons/link-2';
+	import Layers from '@lucide/svelte/icons/layers';
 	import Network from '@lucide/svelte/icons/network';
 
 	let { data } = $props();
@@ -28,20 +28,35 @@
 	];
 	const statusLabel = $derived(statusOptions.find((o) => o.value === status)?.label ?? '');
 
+	// the feed mixes clustered sessions and standalone calls (discriminated by `kind`)
+	type FeedItem = (typeof data.feed)[number];
+	const itemTone = (it: FeedItem) =>
+		it.kind === 'session' ? (it.errorCount > 0 ? 'error' : 'ok') : eventTone(it.status);
+	const itemHaystack = (it: FeedItem) =>
+		(it.kind === 'session'
+			? ['session', it.groupId, it.serviceName, ...(it.models ?? [])]
+			: [
+					it.action,
+					it.status,
+					it.model,
+					it.serviceName,
+					it.provider,
+					it.detail,
+					it.metadata ? JSON.stringify(it.metadata) : null
+				]
+		)
+			.filter(Boolean)
+			.join(' ')
+			.toLowerCase();
+	const itemKey = (it: FeedItem) => (it.kind === 'session' ? `g:${it.groupId}` : `c:${it.id}`);
+
 	const filtered = $derived(
-		data.traces.filter((t) => {
-			const tone = eventTone(t.status);
+		data.feed.filter((it) => {
+			const tone = itemTone(it);
 			if (status === 'ok' && tone !== 'ok') return false;
 			if (status === 'denied' && tone !== 'denied') return false;
 			if (status === 'error' && tone !== 'error') return false;
-			if (query.trim()) {
-				const q = query.toLowerCase();
-				const haystack = [t.action, t.status, t.model, t.serviceName, t.provider, t.detail]
-					.filter(Boolean)
-					.join(' ')
-					.toLowerCase();
-				if (!haystack.includes(q)) return false;
-			}
+			if (query.trim() && !itemHaystack(it).includes(query.trim().toLowerCase())) return false;
 			return true;
 		})
 	);
@@ -125,7 +140,7 @@
 		</div>
 	{/if}
 
-	{#if !data.tracingEnabled && data.traces.length === 0 && data.otelTraces.length === 0}
+	{#if !data.tracingEnabled && data.feed.length === 0 && data.otelTraces.length === 0}
 		<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
 			<Waypoints class="size-8 text-muted-foreground" />
 			<p class="mt-3 text-sm font-medium">Tracing is off</p>
@@ -137,7 +152,7 @@
 				Go to Settings
 			</Button>
 		</div>
-	{:else if data.traces.length === 0}
+	{:else if data.feed.length === 0}
 		{#if data.otelTraces.length === 0}
 			<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
 				<Waypoints class="size-8 text-muted-foreground" />
@@ -174,7 +189,7 @@
 		<div class="flex items-center justify-between text-xs text-muted-foreground">
 			<span>
 				Showing <span class="font-medium text-foreground tabular-nums">{filtered.length}</span>
-				of {data.traces.length} traces
+				of {data.feed.length} entries
 			</span>
 		</div>
 
@@ -194,56 +209,85 @@
 						</Table.Row>
 					</Table.Header>
 					<Table.Body>
-						{#each filtered as t (t.id)}
-							{@const tone = eventTone(t.status)}
-							<Table.Row
-								class="group cursor-pointer"
-								onclick={() => (window.location.href = resolve('/app/traces/[id]', { id: t.id }))}
-							>
-								<Table.Cell class="whitespace-nowrap text-muted-foreground">
-									<span class="text-xs" title={formatDateTime(t.createdAt)}>
-										{relativeTime(t.createdAt)}
-									</span>
-								</Table.Cell>
-								<Table.Cell>
-									<span class="flex items-center gap-1.5 whitespace-nowrap">
-										<span class="size-1.5 rounded-full {toneDot[tone]}" aria-hidden="true"></span>
-										<span class="text-xs font-medium {toneText[tone]}">
-											{t.status}{t.statusCode ? ` ${t.statusCode}` : ''}
+						{#each filtered as it (itemKey(it))}
+							{@const tone = itemTone(it)}
+							{#if it.kind === 'session'}
+								<Table.Row
+									class="group cursor-pointer"
+									onclick={() =>
+										(window.location.href = resolve('/app/traces/session/[groupId]', {
+											groupId: it.groupId ?? ''
+										}))}
+								>
+									<Table.Cell class="whitespace-nowrap text-muted-foreground">
+										<span class="text-xs" title={formatDateTime(it.at)}>{relativeTime(it.at)}</span>
+									</Table.Cell>
+									<Table.Cell>
+										<span class="flex items-center gap-1.5 whitespace-nowrap">
+											<span class="size-1.5 rounded-full {toneDot[tone]}" aria-hidden="true"></span>
+											<span class="flex items-center gap-1 text-xs font-medium {toneText[tone]}">
+												<Layers class="size-3" /> session
+											</span>
+											<span class="text-xs text-muted-foreground">· {it.calls} calls</span>
 										</span>
-									</span>
-								</Table.Cell>
-								<Table.Cell class="text-muted-foreground">{t.serviceName ?? '—'}</Table.Cell>
-								<Table.Cell class="font-mono text-xs text-muted-foreground">
-									<span class="flex items-center gap-1.5">
-										{#if t.groupId}
-											<Link2
-												class="size-3 shrink-0 text-muted-foreground/70"
-												aria-label="Part of a session"
-											/>
+									</Table.Cell>
+									<Table.Cell class="text-muted-foreground">{it.serviceName ?? '—'}</Table.Cell>
+									<Table.Cell class="max-w-[220px]">
+										<span class="block truncate font-mono text-xs text-muted-foreground">
+											{(it.models ?? []).join(', ') || '—'}
+										</span>
+									</Table.Cell>
+									<Table.Cell class="text-right text-muted-foreground tabular-nums">
+										{formatTokens(it.inputTokens)} → {formatTokens(it.outputTokens)}
+									</Table.Cell>
+									<Table.Cell class="text-right text-muted-foreground tabular-nums">
+										{Number(it.costUsd) ? formatUsd(it.costUsd) : '—'}
+									</Table.Cell>
+									<Table.Cell class="text-right text-muted-foreground tabular-nums">—</Table.Cell>
+									<Table.Cell class="text-right">
+										<ArrowRight
+											class="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+										/>
+									</Table.Cell>
+								</Table.Row>
+							{:else}
+								<Table.Row
+									class="group cursor-pointer"
+									onclick={() => (window.location.href = resolve('/app/traces/[id]', { id: it.id }))}
+								>
+									<Table.Cell class="whitespace-nowrap text-muted-foreground">
+										<span class="text-xs" title={formatDateTime(it.at)}>{relativeTime(it.at)}</span>
+									</Table.Cell>
+									<Table.Cell>
+										<span class="flex items-center gap-1.5 whitespace-nowrap">
+											<span class="size-1.5 rounded-full {toneDot[tone]}" aria-hidden="true"></span>
+											<span class="text-xs font-medium {toneText[tone]}">
+												{it.status}{it.statusCode ? ` ${it.statusCode}` : ''}
+											</span>
+										</span>
+									</Table.Cell>
+									<Table.Cell class="text-muted-foreground">{it.serviceName ?? '—'}</Table.Cell>
+									<Table.Cell class="font-mono text-xs text-muted-foreground">{it.model ?? '—'}</Table.Cell>
+									<Table.Cell class="text-right text-muted-foreground tabular-nums">
+										{#if it.inputTokens != null || it.outputTokens != null}
+											{formatTokens(it.inputTokens)} → {formatTokens(it.outputTokens)}
+										{:else}
+											—
 										{/if}
-										{t.model ?? '—'}
-									</span>
-								</Table.Cell>
-								<Table.Cell class="text-right text-muted-foreground tabular-nums">
-									{#if t.inputTokens != null || t.outputTokens != null}
-										{formatTokens(t.inputTokens)} → {formatTokens(t.outputTokens)}
-									{:else}
-										—
-									{/if}
-								</Table.Cell>
-								<Table.Cell class="text-right text-muted-foreground tabular-nums">
-									{t.costUsd ? formatUsd(t.costUsd) : '—'}
-								</Table.Cell>
-								<Table.Cell class="text-right text-muted-foreground tabular-nums">
-									{t.latencyMs != null ? `${t.latencyMs}ms` : '—'}
-								</Table.Cell>
-								<Table.Cell class="text-right">
-									<ArrowRight
-										class="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-									/>
-								</Table.Cell>
-							</Table.Row>
+									</Table.Cell>
+									<Table.Cell class="text-right text-muted-foreground tabular-nums">
+										{it.costUsd ? formatUsd(it.costUsd) : '—'}
+									</Table.Cell>
+									<Table.Cell class="text-right text-muted-foreground tabular-nums">
+										{it.latencyMs != null ? `${it.latencyMs}ms` : '—'}
+									</Table.Cell>
+									<Table.Cell class="text-right">
+										<ArrowRight
+											class="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
+										/>
+									</Table.Cell>
+								</Table.Row>
+							{/if}
 						{/each}
 					</Table.Body>
 				</Table.Root>

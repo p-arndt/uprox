@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
 	service,
@@ -590,6 +590,7 @@ export function listTraces(limit = 100) {
 			createdAt: requestTrace.createdAt,
 			format: requestTrace.responseFormat,
 			groupId: requestTrace.traceGroupId,
+			metadata: requestTrace.metadata,
 			action: auditLog.action,
 			status: auditLog.status,
 			statusCode: auditLog.statusCode,
@@ -607,6 +608,65 @@ export function listTraces(limit = 100) {
 		.leftJoin(service, eq(service.id, requestTrace.serviceId))
 		.orderBy(desc(requestTrace.createdAt))
 		.limit(limit);
+}
+
+/**
+ * Clustered feed for the traces list: each session (calls sharing a group id)
+ * collapses into ONE summary row, while ungrouped calls stay individual. The two
+ * are merged and sorted by recency. Discriminated by `kind` ('session' | 'call').
+ */
+export async function listTraceFeed(limit = 100) {
+	const sessions = await db
+		.select({
+			groupId: requestTrace.traceGroupId,
+			calls: sql<number>`count(*)::int`,
+			errorCount: sql<number>`count(*) filter (where ${auditLog.status} not in ('ok', 'allow'))::int`,
+			at: sql<Date>`max(${requestTrace.createdAt})`,
+			costUsd: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)`,
+			inputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}), 0)::int`,
+			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::int`,
+			models: sql<string[]>`array_remove(array_agg(distinct ${auditLog.model}), null)`,
+			serviceName: sql<string | null>`max(${service.name})`
+		})
+		.from(requestTrace)
+		.innerJoin(auditLog, eq(auditLog.id, requestTrace.auditLogId))
+		.leftJoin(service, eq(service.id, requestTrace.serviceId))
+		.where(isNotNull(requestTrace.traceGroupId))
+		.groupBy(requestTrace.traceGroupId)
+		.orderBy(desc(sql`max(${requestTrace.createdAt})`))
+		.limit(limit);
+
+	const calls = await db
+		.select({
+			id: requestTrace.id,
+			createdAt: requestTrace.createdAt,
+			format: requestTrace.responseFormat,
+			metadata: requestTrace.metadata,
+			action: auditLog.action,
+			status: auditLog.status,
+			statusCode: auditLog.statusCode,
+			provider: auditLog.provider,
+			model: auditLog.model,
+			costUsd: auditLog.costUsd,
+			inputTokens: auditLog.inputTokens,
+			outputTokens: auditLog.outputTokens,
+			latencyMs: auditLog.latencyMs,
+			detail: auditLog.detail,
+			serviceName: service.name
+		})
+		.from(requestTrace)
+		.innerJoin(auditLog, eq(auditLog.id, requestTrace.auditLogId))
+		.leftJoin(service, eq(service.id, requestTrace.serviceId))
+		.where(isNull(requestTrace.traceGroupId))
+		.orderBy(desc(requestTrace.createdAt))
+		.limit(limit);
+
+	const feed = [
+		...sessions.map((s) => ({ kind: 'session' as const, ...s })),
+		...calls.map((c) => ({ kind: 'call' as const, at: c.createdAt, ...c }))
+	];
+	feed.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+	return feed.slice(0, limit);
 }
 
 /**
@@ -703,6 +763,7 @@ export function getTraceGroupDetail(groupId: string, limit = 200) {
 			requestBody: requestTrace.requestBody,
 			responseBody: requestTrace.responseBody,
 			format: requestTrace.responseFormat,
+			metadata: requestTrace.metadata,
 			action: auditLog.action,
 			status: auditLog.status,
 			statusCode: auditLog.statusCode,
@@ -733,6 +794,7 @@ export async function getTrace(id: string) {
 			responseBody: requestTrace.responseBody,
 			format: requestTrace.responseFormat,
 			groupId: requestTrace.traceGroupId,
+			metadata: requestTrace.metadata,
 			action: auditLog.action,
 			status: auditLog.status,
 			statusCode: auditLog.statusCode,

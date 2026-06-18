@@ -1,13 +1,13 @@
 import type { PageServerLoad } from './$types';
 import { requireOrg } from '$lib/server/org';
-import { listTraces, listOtelTraces, getSettings } from '$lib/server/data';
+import { listTraceFeed, listOtelTraces, getSettings } from '$lib/server/data';
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
-	const [traces, otelTraces, settings] = await Promise.all([
-		listTraces(200),
+	const [feed, otelTraces, settings] = await Promise.all([
+		listTraceFeed(200),
 		listOtelTraces(100),
 		getSettings()
 	]);
-	return { traces, otelTraces, tracingEnabled: settings.tracingEnabled };
+	return { feed, otelTraces, tracingEnabled: settings.tracingEnabled };
 };

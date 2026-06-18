@@ -6,6 +6,7 @@
 	import { eventTone, toneDot, toneText } from '$lib/events';
 	import { prettyJson } from '$lib/trace';
 	import TraceConversation from '$lib/components/trace-conversation.svelte';
+	import TraceMetadata from '$lib/components/trace-metadata.svelte';
 	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
 
@@ -81,6 +82,7 @@
 		<div class="text-xs text-muted-foreground">
 			{formatDateTime(t.createdAt)}{t.detail ? ` · ${t.detail}` : ''}
 		</div>
+		<TraceMetadata metadata={t.metadata} />
 	</div>
 
 	<!-- Session tree / waterfall -->
