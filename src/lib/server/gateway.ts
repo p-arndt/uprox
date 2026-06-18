@@ -20,7 +20,7 @@ import { getAdapter } from '$lib/server/adapters';
 import { mapUsage } from '$lib/server/adapters/gemini';
 import { audit, type AuditEntry } from '$lib/server/audit';
 import { recordTrace } from '$lib/server/trace';
-import { parseTraceparent } from '$lib/trace';
+import { parseTraceparent, parseTraceMetadata } from '$lib/trace';
 import { checkRateLimit } from '$lib/server/ratelimit';
 import { checkBudget, reserve } from '$lib/server/budget';
 import { maybeSendBudgetAlert } from '$lib/server/budget-alerts';
@@ -219,6 +219,19 @@ function readTraceGroup(event: RequestEvent): string | null {
 	return parseTraceparent(event.request.headers.get('traceparent'));
 }
 
+/**
+ * Read caller-supplied trace metadata — free-form key/values attached to the
+ * trace (the OpenInference `metadata` equivalent): a chat id, end-user id,
+ * tenant, experiment, tags, anything. Two sources, merged:
+ *   - `x-uprox-metadata`: a JSON object header (richest; nested values allowed).
+ *   - `x-uprox-meta-<key>: <value>`: one header per key (string values).
+ * Returns null when nothing was sent. Deliberately generic — uprox never
+ * special-cases particular keys.
+ */
+function readTraceMetadata(event: RequestEvent): Record<string, unknown> | null {
+	return parseTraceMetadata(event.request.headers.get('x-uprox-metadata'), event.request.headers);
+}
+
 export interface GatewayAuth {
 	token: ResolvedToken;
 	ip: string;
@@ -306,6 +319,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	// the paths that produced one (cache hits and completions), request-only elsewhere.
 	const traceOn = token.policy?.tracingEnabled ?? token.defaultTracingEnabled;
 	const traceGroupId = readTraceGroup(event);
+	const traceMetadata = readTraceMetadata(event);
 	const auditTrace = async (
 		entry: AuditEntry,
 		resp?: { response?: string | null; format?: 'json' | 'sse' }
@@ -316,6 +330,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 				auditLogId,
 				serviceId: token.serviceId,
 				groupId: traceGroupId,
+				metadata: traceMetadata,
 				request: body,
 				response: resp?.response ?? null,
 				format: resp?.format ?? null
@@ -821,6 +836,7 @@ export async function proxyGeminiNative(
 	// native request/response payload for the trace viewer when tracing is enabled.
 	const traceOn = token.policy?.tracingEnabled ?? token.defaultTracingEnabled;
 	const traceGroupId = readTraceGroup(event);
+	const traceMetadata = readTraceMetadata(event);
 	const auditTrace = async (
 		entry: AuditEntry,
 		resp?: { response?: string | null; format?: 'json' | 'sse' }
@@ -831,6 +847,7 @@ export async function proxyGeminiNative(
 				auditLogId,
 				serviceId: token.serviceId,
 				groupId: traceGroupId,
+				metadata: traceMetadata,
 				request: body,
 				response: resp?.response ?? null,
 				format: resp?.format ?? null

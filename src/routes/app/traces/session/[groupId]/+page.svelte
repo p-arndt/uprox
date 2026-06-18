@@ -4,6 +4,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import TraceConversation from '$lib/components/trace-conversation.svelte';
+	import TraceMetadata from '$lib/components/trace-metadata.svelte';
 	import { formatUsd, formatTokens, formatDateTime } from '$lib/format';
 	import { eventTone, toneDot, toneText } from '$lib/events';
 	import { prettyJson } from '$lib/trace';
@@ -223,6 +224,7 @@
 						<span>{formatDateTime(selected.createdAt)}</span>
 						{#if selected.detail}<span>· {selected.detail}</span>{/if}
 					</div>
+					<TraceMetadata metadata={selected.metadata} />
 				</div>
 
 				<TraceConversation

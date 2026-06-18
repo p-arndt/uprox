@@ -7,6 +7,7 @@ import {
 	responseText,
 	responseMessage,
 	parseTraceparent,
+	parseTraceMetadata,
 	prettyJson
 } from '$lib/trace';
 
@@ -251,6 +252,37 @@ describe('parseTraceparent', () => {
 		expect(parseTraceparent('00-tooshort-00f067aa0ba902b7-01')).toBeNull();
 		expect(parseTraceparent(null)).toBeNull();
 		expect(parseTraceparent('')).toBeNull();
+	});
+});
+
+describe('parseTraceMetadata', () => {
+	it('reads the JSON header object', () => {
+		expect(parseTraceMetadata('{"chat_id":"c1","user_id":"u9"}')).toEqual({
+			chat_id: 'c1',
+			user_id: 'u9'
+		});
+	});
+
+	it('merges x-uprox-meta-* header pairs (string values)', () => {
+		const pairs: [string, string][] = [
+			['x-uprox-meta-tenant', 'acme'],
+			['X-Uprox-Meta-Experiment', 'b'],
+			['authorization', 'Bearer x']
+		];
+		expect(parseTraceMetadata(null, pairs)).toEqual({ tenant: 'acme', experiment: 'b' });
+	});
+
+	it('combines both sources, with per-key headers alongside JSON', () => {
+		expect(parseTraceMetadata('{"chat_id":"c1"}', [['x-uprox-meta-tenant', 'acme']])).toEqual({
+			chat_id: 'c1',
+			tenant: 'acme'
+		});
+	});
+
+	it('ignores a malformed JSON header and returns null when empty', () => {
+		expect(parseTraceMetadata('not json')).toBeNull();
+		expect(parseTraceMetadata(null, [])).toBeNull();
+		expect(parseTraceMetadata('[1,2]')).toBeNull();
 	});
 });
 

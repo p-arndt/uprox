@@ -10,6 +10,8 @@ export interface TraceInput {
 	serviceId?: string | null;
 	/** caller-supplied session/correlation id grouping related calls (header) */
 	groupId?: string | null;
+	/** free-form caller metadata (chat id, user id, tags, …) from request headers */
+	metadata?: Record<string, unknown> | null;
 	/** request body as received; JSON-stringified here. Undefined/null → stored null. */
 	request?: unknown;
 	/** response body returned to the client (buffered JSON or reassembled SSE text) */
@@ -48,6 +50,7 @@ export async function recordTrace(input: TraceInput): Promise<void> {
 			auditLogId: input.auditLogId,
 			serviceId: input.serviceId ?? null,
 			traceGroupId: input.groupId ?? null,
+			metadata: input.metadata ?? null,
 			requestBody: stringifyRequest(input.request),
 			responseBody: clamp(input.response ?? null),
 			responseFormat: input.response != null ? (input.format ?? 'json') : null

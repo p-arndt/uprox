@@ -189,12 +189,23 @@ page. uprox resolves the correlation id automatically, so you usually change not
 2. the W3C **`traceparent`** header your OpenTelemetry-instrumented app already sends — uprox
    uses its trace-id, which is also how proxy calls stitch into the app trace below.
 
+In the Traces list, a session's calls **collapse into one row** (open it for the waterfall +
+full transcript); standalone calls stay individual.
+
+**Custom metadata.** Attach free-form key/values to a trace — a chat id, end-user id, tenant,
+experiment, tags, anything (the OpenInference `metadata` equivalent). Send a JSON object in
+`x-uprox-metadata`, and/or one `x-uprox-meta-<key>: <value>` header per field. It shows on the
+trace and is searchable. uprox never special-cases particular keys.
+
 ```ts
-// optional: force a session id for a run (see examples/use-gateway.ts)
+// optional: force a session id + attach metadata for a run (see examples/use-gateway.ts)
 const client = new OpenAI({
 	apiKey: 'uprox_live_…',
 	baseURL: 'http://localhost:5173/v1',
-	defaultHeaders: { 'x-uprox-trace-id': crypto.randomUUID() }
+	defaultHeaders: {
+		'x-uprox-trace-id': crypto.randomUUID(),
+		'x-uprox-metadata': JSON.stringify({ chat_id: 'abc', user_id: 'u_42' })
+	}
 });
 ```
 

@@ -401,6 +401,10 @@ export const requestTrace = pgTable(
 		// logical run — e.g. a tool-use loop — into a single timeline in the viewer.
 		// NULL when the caller sent no header. Free-form; not validated.
 		traceGroupId: text('trace_group_id'),
+		// arbitrary caller-supplied metadata — the OpenInference `metadata` equivalent.
+		// Free-form key/values from the x-uprox-metadata JSON header and any x-uprox-meta-*
+		// headers (e.g. a chat id, user id, tenant, experiment, tags). NULL when none sent.
+		metadata: jsonb('metadata'),
 		// the request body as the gateway received it (OpenAI or native Gemini shape),
 		// verbatim JSON. NULL for requests with no JSON body (rare on traced routes).
 		requestBody: text('request_body'),

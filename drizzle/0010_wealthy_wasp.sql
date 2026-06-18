@@ -1,0 +1,1 @@
+ALTER TABLE "request_trace" ADD COLUMN "metadata" jsonb;
