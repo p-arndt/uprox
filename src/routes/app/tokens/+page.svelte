@@ -20,6 +20,7 @@
 	import Copy from '@lucide/svelte/icons/copy';
 	import Ban from '@lucide/svelte/icons/ban';
 	import Pencil from '@lucide/svelte/icons/pencil';
+	import Eye from '@lucide/svelte/icons/eye';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 
 	let { data, form } = $props();
@@ -32,8 +33,12 @@
 		{ value: '90', label: 'In 90 days' },
 		{ value: '365', label: 'In 1 year' }
 	];
-	let secret = $state<{ name: string; plaintext: string } | null>(null);
+	// `recopyable` switches the dialog copy between "stored only as a hash, gone
+	// forever" and "you can reveal this again later".
+	let secret = $state<{ name: string; plaintext: string; recopyable?: boolean } | null>(null);
 	let editing = $state<TokenFormValues | null>(null);
+	// pre-checks the create-form "allow re-copying" box from the instance default
+	let recopyable = $state(false);
 
 	const createValues: TokenFormValues = {
 		name: '',
@@ -50,6 +55,18 @@
 			secret = form.created;
 			createOpen = false;
 		}
+	});
+
+	// A re-copy reveal returns the stored secret again.
+	$effect(() => {
+		if (form?.revealed) {
+			secret = { ...form.revealed, recopyable: true };
+		}
+	});
+
+	// Seed the create-form checkbox from the instance default each time it opens.
+	$effect(() => {
+		if (createOpen) recopyable = data.recopyDefault;
 	});
 
 	// Close the edit dialog once an update succeeds.
@@ -177,6 +194,17 @@
 										{/each}
 									</Select.Content>
 								</Select.Root>
+							</div>
+							<input type="hidden" name="recopyable" value={String(recopyable)} />
+							<div class="space-y-1.5 rounded-lg border p-3">
+								<div class="flex items-center justify-between gap-4">
+									<Label for="recopyable">Allow re-copying later</Label>
+									<Switch id="recopyable" bind:checked={recopyable} />
+								</div>
+								<p class="text-xs text-muted-foreground">
+									Stores the secret encrypted so you can reveal and copy it again from this page.
+									Off keeps it hash-only — shown once, then unrecoverable (more secure).
+								</p>
 							</div>
 							{#if form?.message}
 								<p class="text-sm text-destructive">{form.message}</p>
@@ -309,6 +337,26 @@
 							<Table.Cell>
 								{#if !t.revokedAt && canManage}
 									<div class="flex items-center justify-end gap-0.5">
+										{#if t.recopyable}
+											<form
+												method="post"
+												action="?/reveal"
+												use:enhance={() =>
+													async ({ update }) =>
+														update({ reset: false })}
+											>
+												<input type="hidden" name="id" value={t.id} />
+												<Button
+													type="submit"
+													variant="ghost"
+													size="icon"
+													class="size-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+													title="Reveal & copy token"
+												>
+													<Eye class="size-4" />
+												</Button>
+											</form>
+										{/if}
 										<Button
 											variant="ghost"
 											size="icon"
@@ -414,17 +462,26 @@
 >
 	<Dialog.Content class="sm:max-w-lg">
 		<Dialog.Header>
-			<Dialog.Title>Token created</Dialog.Title>
+			<Dialog.Title>{secret?.recopyable ? 'Token secret' : 'Token created'}</Dialog.Title>
 			<Dialog.Description>
-				Copy <span class="font-medium text-foreground">{secret?.name}</span> now. You won't be able to
-				see it again.
+				{#if secret?.recopyable}
+					The full secret for <span class="font-medium text-foreground">{secret?.name}</span>. You
+					can reveal it again any time from this page.
+				{:else}
+					Copy <span class="font-medium text-foreground">{secret?.name}</span> now. You won't be able
+					to see it again.
+				{/if}
 			</Dialog.Description>
 		</Dialog.Header>
 		<div
 			class="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
 		>
 			<TriangleAlert class="mt-0.5 size-4 shrink-0 text-amber-600" />
-			<span>This secret is stored only as a hash. There is no way to recover it later.</span>
+			{#if secret?.recopyable}
+				<span>This token is stored encrypted so it can be re-copied. Keep it secret.</span>
+			{:else}
+				<span>This secret is stored only as a hash. There is no way to recover it later.</span>
+			{/if}
 		</div>
 		<div class="relative min-w-0">
 			<code class="block overflow-x-auto rounded-lg bg-muted py-2.5 pr-11 pl-3 text-xs"

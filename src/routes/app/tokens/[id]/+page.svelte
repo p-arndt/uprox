@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
+	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import CustomRangePicker from '$lib/components/custom-range-picker.svelte';
@@ -9,10 +10,13 @@
 	import UsageTrendCard from '$lib/components/usage-trend-card.svelte';
 	import UsageBreakdown, { type BreakdownSection } from '$lib/components/usage-breakdown.svelte';
 	import { resolve } from '$app/paths';
+	import { enhance } from '$app/forms';
 	import { goto, invalidateAll } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
+	import { toast } from 'svelte-sonner';
 	import { formatUsd, formatTokens, relativeTime } from '$lib/format';
 	import { cacheRate } from '$lib/cache-rate';
+	import { can } from '$lib/permissions';
 	import Cpu from '@lucide/svelte/icons/cpu';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import Server from '@lucide/svelte/icons/server';
@@ -22,8 +26,23 @@
 	import Sigma from '@lucide/svelte/icons/sigma';
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import Eye from '@lucide/svelte/icons/eye';
+	import Copy from '@lucide/svelte/icons/copy';
+	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 
-	let { data } = $props();
+	let { data, form } = $props();
+
+	const canManage = $derived(can(data.role, 'tokens:manage', data.memberPermissions));
+
+	// Holds the revealed secret for the copy dialog (re-copyable tokens only).
+	let secret = $state<{ name: string; plaintext: string } | null>(null);
+	$effect(() => {
+		if (form?.revealed) secret = form.revealed;
+	});
+	async function copy(text: string, msg = 'Copied to clipboard') {
+		await navigator.clipboard.writeText(text);
+		toast.success(msg);
+	}
 
 	const rangeLabel = $derived(
 		data.range === 'custom'
@@ -162,6 +181,19 @@
 					>
 						{data.token.display}
 					</span>
+					{#if data.token.recopyable && canManage}
+						<form
+							method="post"
+							action="?/reveal"
+							use:enhance={() =>
+								async ({ update }) =>
+									update({ reset: false })}
+						>
+							<Button type="submit" variant="outline" size="sm" class="h-7 gap-1.5 text-xs">
+								<Eye class="size-3.5" /> Reveal
+							</Button>
+						</form>
+					{/if}
 				</div>
 				<p class="text-xs text-muted-foreground">
 					Service:
@@ -306,3 +338,44 @@
 		/>
 	{/if}
 </div>
+
+<!-- re-copy reveal: shows the stored secret again for a re-copyable token -->
+<Dialog.Root
+	open={secret !== null}
+	onOpenChange={(v) => {
+		if (!v) secret = null;
+	}}
+>
+	<Dialog.Content class="sm:max-w-lg">
+		<Dialog.Header>
+			<Dialog.Title>Token secret</Dialog.Title>
+			<Dialog.Description>
+				The full secret for <span class="font-medium text-foreground">{secret?.name}</span>. You can
+				reveal it again any time from this page.
+			</Dialog.Description>
+		</Dialog.Header>
+		<div
+			class="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+		>
+			<TriangleAlert class="mt-0.5 size-4 shrink-0 text-amber-600" />
+			<span>This token is stored encrypted so it can be re-copied. Keep it secret.</span>
+		</div>
+		<div class="relative min-w-0">
+			<code class="block overflow-x-auto rounded-lg bg-muted py-2.5 pr-11 pl-3 text-xs"
+				>{secret?.plaintext}</code
+			>
+			<Button
+				size="icon"
+				variant="ghost"
+				class="absolute top-1/2 right-1.5 size-7 -translate-y-1/2"
+				onclick={() => secret && copy(secret.plaintext, 'Token copied')}
+				title="Copy token"
+			>
+				<Copy class="size-3.5" />
+			</Button>
+		</div>
+		<Dialog.Footer>
+			<Button onclick={() => (secret = null)}>Done</Button>
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

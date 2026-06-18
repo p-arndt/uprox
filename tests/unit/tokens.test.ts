@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { issueToken, TOKEN_PREFIX } from '$lib/server/tokens';
-import { sha256 } from '$lib/server/crypto';
+import { sha256, encrypt, decrypt } from '$lib/server/crypto';
 
 describe('issueToken', () => {
 	it('mints a plaintext behind the recognizable prefix', () => {
@@ -36,5 +36,23 @@ describe('issueToken', () => {
 		const b = issueToken();
 		expect(a.plaintext).not.toBe(b.plaintext);
 		expect(a.hashedToken).not.toBe(b.hashedToken);
+	});
+});
+
+describe('re-copyable token storage', () => {
+	// A re-copyable token stores encrypt(plaintext) alongside the hash so the
+	// secret can be revealed again (see createToken / revealToken). Auth still
+	// matches on the hash, never the encrypted copy.
+	it('round-trips the stored secret so it can be revealed again', () => {
+		const { plaintext } = issueToken();
+		const stored = encrypt(plaintext);
+		expect(stored).not.toContain(plaintext); // ciphertext, not plaintext at rest
+		expect(decrypt(stored)).toBe(plaintext); // recoverable for re-copy
+	});
+
+	it('leaves the auth path unchanged — the hash still matches the revealed secret', () => {
+		const { plaintext, hashedToken } = issueToken();
+		const revealed = decrypt(encrypt(plaintext));
+		expect(sha256(revealed)).toBe(hashedToken);
 	});
 });

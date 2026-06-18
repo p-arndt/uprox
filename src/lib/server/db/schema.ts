@@ -56,6 +56,14 @@ export const machineToken = pgTable(
 		// non-secret prefix kept for display, e.g. "uprox_live_a1b2…"
 		display: text('display').notNull(),
 		hashedToken: text('hashed_token').notNull().unique(),
+		// Optional reversible copy of the raw token, AES-256-GCM encrypted (same
+		// `iv.authTag.ciphertext` payload as provider secrets). Populated ONLY when
+		// the token was issued as re-copyable, so operators can reveal the secret
+		// again later instead of reissuing. NULL = secure default, the plaintext is
+		// recoverable from nowhere (hash only). Trades the can't-leak guarantee for
+		// convenience: DB + ENCRYPTION_KEY together expose these. Never used for
+		// auth — resolveToken always matches on hashedToken.
+		encryptedToken: text('encrypted_token'),
 		// per-token scopes, e.g. ["chat", "models", "embeddings"]
 		scopes: text('scopes')
 			.array()
@@ -212,6 +220,12 @@ export const settings = pgTable('settings', {
 	// may perform the corresponding action. Default off = members are read-only.
 	membersCanManageTokens: boolean('members_can_manage_tokens').notNull().default(false),
 	membersCanManageServices: boolean('members_can_manage_services').notNull().default(false),
+	// default for the "allow re-copying" checkbox when issuing a new token. When on,
+	// new tokens are stored re-copyable (encrypted at rest) unless the issuer opts
+	// out per token; when off, new tokens are hash-only unless the issuer opts in.
+	// Off by default — the secure hash-only behaviour stays the default. Only the
+	// default; never forces existing or individual tokens. See machineToken.encryptedToken.
+	tokensRecopyableDefault: boolean('tokens_recopyable_default').notNull().default(false),
 	// budget alerts: when on, a service crossing the warn threshold (or its
 	// ceiling) emails the instance's owners/admins (plus budgetAlertEmail if set).
 	// Opt-in because it sends mail; threshold is a percentage of the ceiling.
