@@ -21,10 +21,11 @@ export interface ProviderDef {
 	capabilities: Capability[];
 	/**
 	 * How the upstream authenticates. 'bearer' sends `Authorization: Bearer <key>`
-	 * (OpenAI, Anthropic); 'api-key' sends an `api-key: <key>` header (Azure).
+	 * (OpenAI, Anthropic); 'api-key' sends an `api-key: <key>` header (Azure);
+	 * 'google' sends an `x-goog-api-key: <key>` header (native Gemini API).
 	 * Defaults to 'bearer'.
 	 */
-	authScheme?: 'bearer' | 'api-key';
+	authScheme?: 'bearer' | 'api-key' | 'google';
 	/**
 	 * When true the provider has no usable static `baseUrl`: each org configures
 	 * its own endpoint (e.g. an Azure resource URL), stored on the secret and
@@ -76,19 +77,19 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 	gemini: {
 		id: 'gemini',
 		label: 'Google Gemini',
-		// Google ships an OpenAI-compatible surface for the Gemini API under
-		// /v1beta/openai (https://ai.google.dev/gemini-api/docs/openai), covering
-		// chat completions, embeddings, image generation and model listing — but
-		// not the Responses API. It authenticates with the standard `Authorization:
-		// Bearer <GEMINI_API_KEY>` header, so the default bearer scheme applies. The
-		// native generateContent API is a different request shape and isn't proxied.
-		baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+		// Native Gemini REST API (https://ai.google.dev/gemini-api/docs#rest). It is
+		// NOT OpenAI-compatible — requests/responses are translated by the Gemini
+		// provider adapter (see $lib/server/adapters/gemini.ts), which rewrites the
+		// URL to `/models/{model}:generateContent` etc. and maps the bodies both
+		// ways. Covers chat (generateContent), embeddings (batchEmbedContents) and
+		// model listing; no Responses API. Auth is the `x-goog-api-key` header.
+		baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
 		// Gemini chat models and the gemini-embedding family share the `gemini-`
-		// prefix; `gemma-` are the open-weight models served on the API and
-		// `imagen-` the image-generation models. None collide with the OpenAI or
-		// Anthropic namespaces, so routing is unambiguous.
-		modelPrefixes: ['gemini-', 'gemma-', 'imagen-'],
-		capabilities: ['chat', 'embeddings', 'models', 'images']
+		// prefix; `gemma-` are the open-weight models served on the API. Neither
+		// collides with the OpenAI/Anthropic namespaces, so routing is unambiguous.
+		modelPrefixes: ['gemini-', 'gemma-'],
+		capabilities: ['chat', 'embeddings', 'models'],
+		authScheme: 'google'
 	},
 	azure: {
 		id: 'azure',
@@ -106,6 +107,20 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 		modelPrefixes: OPENAI_MODEL_PREFIXES,
 		capabilities: ['chat', 'responses', 'embeddings', 'models', 'images'],
 		authScheme: 'api-key',
+		requiresEndpoint: true,
+		acceptsAnyModel: true
+	},
+	custom: {
+		id: 'custom',
+		label: 'Custom (OpenAI-compatible)',
+		// A bring-your-own-endpoint provider for any OpenAI-compatible upstream —
+		// Groq, OpenRouter, Together, Fireworks, a self-hosted vLLM/Ollama/LiteLLM,
+		// etc. The org supplies the full base URL (e.g. https://api.groq.com/openai/v1)
+		// on its secret; unlike Azure it's used as-is, with no path normalization.
+		// Bearer auth, and it claims any model no other provider's prefix matches.
+		baseUrl: '',
+		modelPrefixes: [],
+		capabilities: ['chat', 'responses', 'embeddings', 'models', 'images'],
 		requiresEndpoint: true,
 		acceptsAnyModel: true
 	}
@@ -153,10 +168,11 @@ export function selectProviderSecret<T extends SelectableSecret>(
 }
 
 /**
- * The effective OpenAI-compatible base URL for a provider. Providers without
- * `requiresEndpoint` use their static `baseUrl`. Endpoint-based providers
- * (Azure) take the org-supplied resource URL and normalize it to the v1
- * surface; returns null when no endpoint is configured.
+ * The effective base URL for a provider. Providers without `requiresEndpoint`
+ * use their static `baseUrl`. Endpoint-based providers take the org-supplied URL:
+ * Azure normalizes it to the `/openai/v1` surface, while the custom
+ * OpenAI-compatible provider uses it verbatim (the operator points it wherever
+ * their endpoint lives). Returns null when no endpoint is configured.
  */
 export function resolveBaseUrl(provider: ProviderDef, endpoint: string | null): string | null {
 	if (!provider.requiresEndpoint) return provider.baseUrl;
@@ -169,9 +185,14 @@ export function resolveBaseUrl(provider: ProviderDef, endpoint: string | null): 
 
 /** Auth header(s) for an upstream request, per the provider's auth scheme. */
 export function authHeaders(provider: ProviderDef, apiKey: string): Record<string, string> {
-	return provider.authScheme === 'api-key'
-		? { 'api-key': apiKey }
-		: { authorization: `Bearer ${apiKey}` };
+	switch (provider.authScheme) {
+		case 'api-key':
+			return { 'api-key': apiKey };
+		case 'google':
+			return { 'x-goog-api-key': apiKey };
+		default:
+			return { authorization: `Bearer ${apiKey}` };
+	}
 }
 
 export const PROVIDER_IDS = Object.keys(PROVIDERS);

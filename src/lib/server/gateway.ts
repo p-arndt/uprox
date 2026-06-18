@@ -16,6 +16,7 @@ import {
 	type Capability,
 	type ProviderDef
 } from '$lib/server/providers';
+import { getAdapter } from '$lib/server/adapters';
 import { audit } from '$lib/server/audit';
 import { checkRateLimit } from '$lib/server/ratelimit';
 import { checkBudget, reserve } from '$lib/server/budget';
@@ -495,25 +496,36 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		);
 	}
 
+	// A provider with an adapter speaks a non-OpenAI native API; it builds its own
+	// URL and translates the request/response bodies. Pass-through providers send
+	// the OpenAI request verbatim to `${baseUrl}${path}`.
+	const adapter = getAdapter(provider.id);
+
 	let outboundBody = body;
 	// For streamed chat completions, ask the upstream to emit a final usage
 	// chunk; otherwise streaming responses carry no token counts and we can't
-	// compute cost. Don't clobber a caller-supplied stream_options.
-	if (stream && path.endsWith('/chat/completions') && isRecord(outboundBody)) {
+	// compute cost. Don't clobber a caller-supplied stream_options. Adapters emit
+	// their own usage chunk, so this OpenAI-only knob is skipped for them.
+	if (!adapter && stream && path.endsWith('/chat/completions') && isRecord(outboundBody)) {
 		const existing = isRecord(outboundBody.stream_options) ? outboundBody.stream_options : {};
 		outboundBody = { ...outboundBody, stream_options: { ...existing, include_usage: true } };
 	}
 
+	const upstreamUrl = adapter
+		? adapter.buildUrl({ baseUrl, scope, model: sendModel, stream })
+		: `${baseUrl}${path}`;
+	const upstreamBody = adapter ? adapter.translateRequest(scope, outboundBody) : outboundBody;
+
 	// proxy upstream
 	let upstream: Response;
 	try {
-		upstream = await fetch(`${baseUrl}${path}`, {
+		upstream = await fetch(upstreamUrl, {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
 				...authHeaders(provider, creds.apiKey)
 			},
-			body: JSON.stringify(outboundBody)
+			body: JSON.stringify(upstreamBody)
 		});
 	} catch (err) {
 		releaseReservation();
@@ -534,9 +546,14 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 
 	// streaming: tee the body — one branch goes to the client untouched, the
 	// other is drained in the background to extract the final usage chunk so we
-	// can still record cost. The audit fires once the stream finishes.
+	// can still record cost. The audit fires once the stream finishes. For an
+	// adapter provider we first translate the native event stream into OpenAI SSE,
+	// so both the client branch and the usage drain see the familiar shape.
 	if (stream && upstream.ok && upstream.body) {
-		const [clientBranch, costBranch] = upstream.body.tee();
+		const sourceStream = adapter
+			? adapter.translateStream({ model: sendModel }, upstream.body)
+			: upstream.body;
+		const [clientBranch, costBranch] = sourceStream.tee();
 		void (async () => {
 			try {
 				const { usage, raw, complete } = await readSseUsage(costBranch);
@@ -596,8 +613,13 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		});
 	}
 
-	// buffered response: parse usage for cost tracking
-	const text = await upstream.text();
+	// buffered response: translate (for adapter providers) then parse usage for
+	// cost tracking. After translation the body is OpenAI-shaped, so usage parsing,
+	// caching and the returned payload all use the same code path as pass-through.
+	const rawText = await upstream.text();
+	const text = adapter
+		? adapter.translateResponse({ scope, model: sendModel, text: rawText, ok: upstream.ok })
+		: rawText;
 	let cost: number | null = null;
 	let cachedTokens: number | null = null;
 	let cacheWriteTokens: number | null = null;
