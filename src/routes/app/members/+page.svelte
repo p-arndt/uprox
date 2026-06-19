@@ -4,12 +4,14 @@
 	import { toast } from 'svelte-sonner';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as Table from '$lib/components/ui/table/index.js';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
+	import PageHeader from '$lib/components/page-header.svelte';
+	import EmptyState from '$lib/components/empty-state.svelte';
+	import ConfirmAction from '$lib/components/confirm-action.svelte';
 	import { can } from '$lib/permissions';
 	import { formatDateTime } from '$lib/format';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -68,70 +70,66 @@
 </script>
 
 <div class="mx-auto max-w-5xl space-y-6">
-	<div class="flex items-start justify-between gap-4">
-		<div>
-			<h2 class="text-xl font-semibold tracking-tight">Members</h2>
-			<p class="text-sm text-muted-foreground">
-				People with access to this workspace and their roles.
-			</p>
-		</div>
-		{#if canManage}
-			<Dialog.Root bind:open={inviteOpen}>
-				<Dialog.Trigger>
-					{#snippet child({ props })}
-						<Button {...props}>
-							<Plus class="size-4" /> Invite member
-						</Button>
-					{/snippet}
-				</Dialog.Trigger>
-				<Dialog.Content>
-					<Dialog.Header>
-						<Dialog.Title>Invite a member</Dialog.Title>
-						<Dialog.Description>
-							We'll email an invite. If email isn't configured, copy the invite link from the
-							pending list below.
-						</Dialog.Description>
-					</Dialog.Header>
-					<form
-						method="post"
-						action="?/invite"
-						class="space-y-4"
-						use:enhance={() =>
-							async ({ update }) =>
-								update({ reset: true })}
-					>
-						<div class="space-y-2">
-							<Label for="email">Email</Label>
-							<Input
-								id="email"
-								name="email"
-								type="email"
-								placeholder="person@example.com"
-								required
-							/>
-						</div>
-						<div class="space-y-2">
-							<Label for="role">Role</Label>
-							<Select.Root type="single" name="role" bind:value={inviteRole}>
-								<Select.Trigger id="role" class="w-full">{roleLabel(inviteRole)}</Select.Trigger>
-								<Select.Content>
-									{#each roleOptions as o (o.value)}
-										<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
-									{/each}
-								</Select.Content>
-							</Select.Root>
-						</div>
-						{#if form?.message}
-							<p class="text-sm text-destructive">{form.message}</p>
-						{/if}
-						<Dialog.Footer>
-							<Button type="submit">Send invitation</Button>
-						</Dialog.Footer>
-					</form>
-				</Dialog.Content>
-			</Dialog.Root>
-		{/if}
-	</div>
+	<PageHeader title="Members" description="People with access to this workspace and their roles.">
+		{#snippet action()}
+			{#if canManage}
+				<Dialog.Root bind:open={inviteOpen}>
+					<Dialog.Trigger>
+						{#snippet child({ props })}
+							<Button {...props}>
+								<Plus class="size-4" /> Invite member
+							</Button>
+						{/snippet}
+					</Dialog.Trigger>
+					<Dialog.Content>
+						<Dialog.Header>
+							<Dialog.Title>Invite a member</Dialog.Title>
+							<Dialog.Description>
+								We'll email an invite. If email isn't configured, copy the invite link from the
+								pending list below.
+							</Dialog.Description>
+						</Dialog.Header>
+						<form
+							method="post"
+							action="?/invite"
+							class="space-y-4"
+							use:enhance={() =>
+								async ({ update }) =>
+									update({ reset: true })}
+						>
+							<div class="space-y-2">
+								<Label for="email">Email</Label>
+								<Input
+									id="email"
+									name="email"
+									type="email"
+									placeholder="person@example.com"
+									required
+								/>
+							</div>
+							<div class="space-y-2">
+								<Label for="role">Role</Label>
+								<Select.Root type="single" name="role" bind:value={inviteRole}>
+									<Select.Trigger id="role" class="w-full">{roleLabel(inviteRole)}</Select.Trigger>
+									<Select.Content>
+										{#each roleOptions as o (o.value)}
+											<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+										{/each}
+									</Select.Content>
+								</Select.Root>
+							</div>
+							{#if form?.message}
+								<p class="text-sm text-destructive">{form.message}</p>
+							{/if}
+							<Dialog.Footer>
+								<Button type="submit">Send invitation</Button>
+							</Dialog.Footer>
+						</form>
+					</Dialog.Content>
+				</Dialog.Root>
+			{/if}
+		{/snippet}
+	</PageHeader>
 
 	<!-- members -->
 	<div class="rounded-xl border">
@@ -186,45 +184,27 @@
 						<Table.Cell class="text-muted-foreground">{formatDateTime(m.createdAt)}</Table.Cell>
 						<Table.Cell>
 							{#if canManage && !isSelf && m.role !== 'owner'}
-								<AlertDialog.Root>
-									<AlertDialog.Trigger>
-										{#snippet child({ props })}
-											<Button
-												{...props}
-												variant="ghost"
-												size="icon"
-												class="size-8 text-muted-foreground hover:text-destructive"
-												title="Remove member"
-											>
-												<Trash2 class="size-4" />
-											</Button>
-										{/snippet}
-									</AlertDialog.Trigger>
-									<AlertDialog.Content>
-										<AlertDialog.Header>
-											<AlertDialog.Title>Remove {m.name}?</AlertDialog.Title>
-											<AlertDialog.Description>
-												They immediately lose access to this workspace. You can re-invite them
-												later.
-											</AlertDialog.Description>
-										</AlertDialog.Header>
-										<AlertDialog.Footer>
-											<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-											<form
-												method="post"
-												action="?/remove"
-												use:enhance={() =>
-													async ({ update }) =>
-														update()}
-											>
-												<input type="hidden" name="memberIdOrEmail" value={m.id} />
-												<AlertDialog.Action type="submit" variant="destructive">
-													Remove member
-												</AlertDialog.Action>
-											</form>
-										</AlertDialog.Footer>
-									</AlertDialog.Content>
-								</AlertDialog.Root>
+								<ConfirmAction
+									action="?/remove"
+									title={`Remove ${m.name}?`}
+									description="They immediately lose access to this workspace. You can re-invite them later."
+									actionLabel="Remove member"
+								>
+									{#snippet trigger({ props })}
+										<Button
+											{...props}
+											variant="ghost"
+											size="icon"
+											class="size-8 text-muted-foreground hover:text-destructive"
+											title="Remove member"
+										>
+											<Trash2 class="size-4" />
+										</Button>
+									{/snippet}
+									{#snippet fields()}
+										<input type="hidden" name="memberIdOrEmail" value={m.id} />
+									{/snippet}
+								</ConfirmAction>
 							{/if}
 						</Table.Cell>
 					</Table.Row>
@@ -272,44 +252,27 @@
 											<Copy class="size-4" />
 										</Button>
 										{#if canManage}
-											<AlertDialog.Root>
-												<AlertDialog.Trigger>
-													{#snippet child({ props })}
-														<Button
-															{...props}
-															variant="ghost"
-															size="icon"
-															class="size-8 text-muted-foreground hover:text-destructive"
-															title="Revoke invitation"
-														>
-															<Ban class="size-4" />
-														</Button>
-													{/snippet}
-												</AlertDialog.Trigger>
-												<AlertDialog.Content>
-													<AlertDialog.Header>
-														<AlertDialog.Title>Revoke invitation?</AlertDialog.Title>
-														<AlertDialog.Description>
-															The invite link for {inv.email} stops working. You can send a new one anytime.
-														</AlertDialog.Description>
-													</AlertDialog.Header>
-													<AlertDialog.Footer>
-														<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-														<form
-															method="post"
-															action="?/revokeInvite"
-															use:enhance={() =>
-																async ({ update }) =>
-																	update()}
-														>
-															<input type="hidden" name="invitationId" value={inv.id} />
-															<AlertDialog.Action type="submit" variant="destructive">
-																Revoke invite
-															</AlertDialog.Action>
-														</form>
-													</AlertDialog.Footer>
-												</AlertDialog.Content>
-											</AlertDialog.Root>
+											<ConfirmAction
+												action="?/revokeInvite"
+												title="Revoke invitation?"
+												description={`The invite link for ${inv.email} stops working. You can send a new one anytime.`}
+												actionLabel="Revoke invite"
+											>
+												{#snippet trigger({ props })}
+													<Button
+														{...props}
+														variant="ghost"
+														size="icon"
+														class="size-8 text-muted-foreground hover:text-destructive"
+														title="Revoke invitation"
+													>
+														<Ban class="size-4" />
+													</Button>
+												{/snippet}
+												{#snippet fields()}
+													<input type="hidden" name="invitationId" value={inv.id} />
+												{/snippet}
+											</ConfirmAction>
 										{/if}
 									</div>
 								</Table.Cell>
@@ -322,9 +285,6 @@
 	{/if}
 
 	{#if data.members.length === 0}
-		<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
-			<Users class="size-8 text-muted-foreground" />
-			<p class="mt-3 text-sm font-medium">No members yet</p>
-		</div>
+		<EmptyState icon={Users} title="No members yet" />
 	{/if}
 </div>

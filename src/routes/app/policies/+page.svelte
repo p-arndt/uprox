@@ -1,11 +1,12 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import PageHeader from '$lib/components/page-header.svelte';
+	import EmptyState from '$lib/components/empty-state.svelte';
+	import ConfirmAction from '$lib/components/confirm-action.svelte';
 	import PolicyForm, { type PolicyFormValues } from '$lib/components/policy-form.svelte';
 	import { can } from '$lib/permissions';
 	import ShieldHalf from '@lucide/svelte/icons/shield-half';
@@ -54,46 +55,43 @@
 </script>
 
 <div class="mx-auto max-w-4xl space-y-6">
-	<div class="flex items-start justify-between gap-4">
-		<div>
-			<h2 class="text-xl font-semibold tracking-tight">Policies</h2>
-			<p class="text-sm text-muted-foreground">
-				Constrain which providers and models a service can reach. Empty lists mean "allow all".
-			</p>
-		</div>
-		{#if canManage}
-			<Dialog.Root bind:open>
-				<Dialog.Trigger>
-					{#snippet child({ props })}
-						<Button {...props}><Plus class="size-4" /> New policy</Button>
-					{/snippet}
-				</Dialog.Trigger>
-				<Dialog.Content>
-					<Dialog.Header>
-						<Dialog.Title>Create policy</Dialog.Title>
-						<Dialog.Description>Attach a policy to a service to enforce it.</Dialog.Description>
-					</Dialog.Header>
-					<PolicyForm
-						providers={data.providers}
-						action="?/create"
-						submitLabel="Create policy"
-						idPrefix="create"
-						values={createValues}
-						resetOnSuccess
-					/>
-				</Dialog.Content>
-			</Dialog.Root>
-		{/if}
-	</div>
+	<PageHeader title="Policies">
+		{#snippet description()}
+			Constrain which providers and models a service can reach. Empty lists mean "allow all".
+		{/snippet}
+		{#snippet action()}
+			{#if canManage}
+				<Dialog.Root bind:open>
+					<Dialog.Trigger>
+						{#snippet child({ props })}
+							<Button {...props}><Plus class="size-4" /> New policy</Button>
+						{/snippet}
+					</Dialog.Trigger>
+					<Dialog.Content>
+						<Dialog.Header>
+							<Dialog.Title>Create policy</Dialog.Title>
+							<Dialog.Description>Attach a policy to a service to enforce it.</Dialog.Description>
+						</Dialog.Header>
+						<PolicyForm
+							providers={data.providers}
+							action="?/create"
+							submitLabel="Create policy"
+							idPrefix="create"
+							values={createValues}
+							resetOnSuccess
+						/>
+					</Dialog.Content>
+				</Dialog.Root>
+			{/if}
+		{/snippet}
+	</PageHeader>
 
 	{#if data.policies.length === 0}
-		<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
-			<ShieldHalf class="size-8 text-muted-foreground" />
-			<p class="mt-3 text-sm font-medium">No policies yet</p>
-			<p class="text-sm text-muted-foreground">
-				Create a policy to restrict provider and model access.
-			</p>
-		</div>
+		<EmptyState
+			icon={ShieldHalf}
+			title="No policies yet"
+			description="Create a policy to restrict provider and model access."
+		/>
 	{:else}
 		<div class="grid gap-4 sm:grid-cols-2">
 			{#each data.policies as p (p.id)}
@@ -128,45 +126,27 @@
 								>
 									<Pencil class="size-4" />
 								</Button>
-								<AlertDialog.Root>
-									<AlertDialog.Trigger>
-										{#snippet child({ props })}
-											<Button
-												{...props}
-												variant="ghost"
-												size="icon"
-												class="size-8 text-muted-foreground hover:text-destructive"
-												title="Delete policy"
-											>
-												<Trash2 class="size-4" />
-											</Button>
-										{/snippet}
-									</AlertDialog.Trigger>
-									<AlertDialog.Content>
-										<AlertDialog.Header>
-											<AlertDialog.Title>Delete “{p.name}”?</AlertDialog.Title>
-											<AlertDialog.Description>
-												Services assigned to this policy will no longer be governed by it. This
-												can't be undone.
-											</AlertDialog.Description>
-										</AlertDialog.Header>
-										<AlertDialog.Footer>
-											<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-											<form
-												method="post"
-												action="?/delete"
-												use:enhance={() =>
-													async ({ update }) =>
-														update()}
-											>
-												<input type="hidden" name="id" value={p.id} />
-												<AlertDialog.Action type="submit" variant="destructive">
-													Delete policy
-												</AlertDialog.Action>
-											</form>
-										</AlertDialog.Footer>
-									</AlertDialog.Content>
-								</AlertDialog.Root>
+								<ConfirmAction
+									action="?/delete"
+									title={`Delete “${p.name}”?`}
+									description="Services assigned to this policy will no longer be governed by it. This can't be undone."
+									actionLabel="Delete policy"
+								>
+									{#snippet trigger({ props })}
+										<Button
+											{...props}
+											variant="ghost"
+											size="icon"
+											class="size-8 text-muted-foreground hover:text-destructive"
+											title="Delete policy"
+										>
+											<Trash2 class="size-4" />
+										</Button>
+									{/snippet}
+									{#snippet fields()}
+										<input type="hidden" name="id" value={p.id} />
+									{/snippet}
+								</ConfirmAction>
 							</div>
 						{/if}
 					</Card.Header>

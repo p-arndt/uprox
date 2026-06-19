@@ -5,6 +5,7 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import CustomRangePicker from '$lib/components/custom-range-picker.svelte';
 	import DeltaPill from '$lib/components/delta-pill.svelte';
+	import StatCard from '$lib/components/stat-card.svelte';
 	import TokenSplit from '$lib/components/token-split.svelte';
 	import UsageReliability from '$lib/components/usage-reliability.svelte';
 	import UsageTrendCard from '$lib/components/usage-trend-card.svelte';
@@ -22,9 +23,6 @@
 	import Server from '@lucide/svelte/icons/server';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import Coins from '@lucide/svelte/icons/coins';
-	import Activity from '@lucide/svelte/icons/activity';
-	import Sigma from '@lucide/svelte/icons/sigma';
-	import DatabaseZap from '@lucide/svelte/icons/database-zap';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 	import Eye from '@lucide/svelte/icons/eye';
 	import Copy from '@lucide/svelte/icons/copy';
@@ -275,48 +273,32 @@
 				</Card.Content>
 			</Card.Root>
 
-			<Card.Root>
-				<Card.Header class="flex flex-row items-center justify-between space-y-0 pb-2">
-					<Card.Description>Requests</Card.Description>
-					<Activity class="size-4 text-muted-foreground" />
-				</Card.Header>
-				<Card.Content>
-					<div class="text-2xl font-semibold tabular-nums">{totals.requests.toLocaleString()}</div>
-					<div class="mt-1"><DeltaPill value={requestDelta} /></div>
-					<p class="mt-1 text-xs text-muted-foreground tabular-nums">
-						{(errorRate * 100).toFixed(1)}% errors · {totals.denied.toLocaleString()} denied
-					</p>
-				</Card.Content>
-			</Card.Root>
+			<StatCard label="Requests">
+				<div class="mt-1 text-2xl font-semibold tabular-nums">
+					{totals.requests.toLocaleString()}
+				</div>
+				<div class="mt-1"><DeltaPill value={requestDelta} /></div>
+				<p class="mt-1 text-xs text-muted-foreground tabular-nums">
+					{(errorRate * 100).toFixed(1)}% errors · {totals.denied.toLocaleString()} denied
+				</p>
+			</StatCard>
 
-			<Card.Root>
-				<Card.Header class="flex flex-row items-center justify-between space-y-0 pb-2">
-					<Card.Description>Total tokens</Card.Description>
-					<Sigma class="size-4 text-muted-foreground" />
-				</Card.Header>
-				<Card.Content>
-					<div class="text-2xl font-semibold tabular-nums">{formatTokens(totalTokens)}</div>
-					<div class="mt-1"><DeltaPill value={tokenDelta} /></div>
-					<TokenSplit input={totals.inputTokens} output={totals.outputTokens} />
-				</Card.Content>
-			</Card.Root>
+			<StatCard label="Total tokens">
+				<div class="mt-1 text-2xl font-semibold tabular-nums">{formatTokens(totalTokens)}</div>
+				<div class="mt-1"><DeltaPill value={tokenDelta} /></div>
+				<TokenSplit input={totals.inputTokens} output={totals.outputTokens} />
+			</StatCard>
 
-			<Card.Root>
-				<Card.Header class="flex flex-row items-center justify-between space-y-0 pb-2">
-					<Card.Description>Token cache rate</Card.Description>
-					<DatabaseZap class="size-4 text-muted-foreground" />
-				</Card.Header>
-				<Card.Content>
-					<div class="text-2xl font-semibold tabular-nums">
-						{(tokenCacheRate * 100).toFixed(1)}%
-					</div>
-					<p class="mt-1 text-xs text-muted-foreground tabular-nums">
-						{formatTokens(totals.savedInputTokens)} uprox · {formatTokens(
-							totals.providerCachedTokens
-						)} provider
-					</p>
-				</Card.Content>
-			</Card.Root>
+			<StatCard label="Token cache rate">
+				<div class="mt-1 text-2xl font-semibold tabular-nums">
+					{(tokenCacheRate * 100).toFixed(1)}%
+				</div>
+				<p class="mt-1 text-xs text-muted-foreground tabular-nums">
+					{formatTokens(totals.savedInputTokens)} uprox · {formatTokens(
+						totals.providerCachedTokens
+					)} provider
+				</p>
+			</StatCard>
 		</div>
 
 		<UsageReliability {totals} />

@@ -15,7 +15,9 @@
 	const tone = $derived(eventTone(t.status));
 
 	const rawRequest = $derived(prettyJson(t.requestBody));
-	const rawResponse = $derived(t.format === 'sse' ? (t.responseBody ?? '') : prettyJson(t.responseBody));
+	const rawResponse = $derived(
+		t.format === 'sse' ? (t.responseBody ?? '') : prettyJson(t.responseBody)
+	);
 
 	// ---- Session tree / waterfall ------------------------------------------------
 	// The proxy observes each call as a flat span; we lay them on a shared time
@@ -68,7 +70,9 @@
 			</div>
 			<div>
 				<div class="text-xs text-muted-foreground">Tokens (in → out)</div>
-				<div class="tabular-nums">{formatTokens(t.inputTokens)} → {formatTokens(t.outputTokens)}</div>
+				<div class="tabular-nums">
+					{formatTokens(t.inputTokens)} → {formatTokens(t.outputTokens)}
+				</div>
 			</div>
 			<div>
 				<div class="text-xs text-muted-foreground">Cost</div>
@@ -105,7 +109,9 @@
 					<Waypoints class="size-3.5 text-muted-foreground" />
 					<span class="font-medium">Session</span>
 					<span class="truncate font-mono text-muted-foreground">{t.groupId}</span>
-					<span class="ml-auto tabular-nums text-muted-foreground">{fmtMs(windowEnd - windowStart)}</span>
+					<span class="ml-auto tabular-nums text-muted-foreground"
+						>{fmtMs(windowEnd - windowStart)}</span
+					>
 				</div>
 				{#each spans as s (s.id)}
 					{@const active = s.id === t.id}
@@ -117,7 +123,8 @@
 							: ''}"
 					>
 						<span class="flex w-44 shrink-0 items-center gap-2 truncate pl-4">
-							<span class="size-1.5 shrink-0 rounded-full {toneDot[stone]}" aria-hidden="true"></span>
+							<span class="size-1.5 shrink-0 rounded-full {toneDot[stone]}" aria-hidden="true"
+							></span>
 							<span
 								class="truncate font-mono {active
 									? 'font-semibold text-foreground'
@@ -149,7 +156,11 @@
 	<!-- Conversation (this call only; the full run is on the session page) -->
 	<div class="space-y-3">
 		<h3 class="text-sm font-semibold">Conversation</h3>
-		<TraceConversation requestBody={t.requestBody} responseBody={t.responseBody} format={t.format} />
+		<TraceConversation
+			requestBody={t.requestBody}
+			responseBody={t.responseBody}
+			format={t.format}
+		/>
 	</div>
 
 	<!-- Raw payloads -->

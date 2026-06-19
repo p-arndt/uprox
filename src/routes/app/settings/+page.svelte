@@ -8,6 +8,7 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
+	import PageHeader from '$lib/components/page-header.svelte';
 	import { can } from '$lib/permissions';
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
 	import Users from '@lucide/svelte/icons/users';
@@ -44,10 +45,7 @@
 </script>
 
 <div class="mx-auto max-w-2xl space-y-6">
-	<div>
-		<h2 class="text-xl font-semibold tracking-tight">Settings</h2>
-		<p class="text-sm text-muted-foreground">Org-wide gateway defaults.</p>
-	</div>
+	<PageHeader title="Settings" description="Org-wide gateway defaults." />
 
 	<Card.Root>
 		<Card.Header>

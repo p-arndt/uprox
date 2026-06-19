@@ -17,16 +17,15 @@
 	// the selected span's detail; default to the first LLM span, else the root
 	let selectedId = $state<string | null>(null);
 	const selected = $derived(
-		flat.find((s) => s.spanId === selectedId) ??
-			flat.find((s) => spanKind(s) === 'LLM') ??
-			flat[0]
+		flat.find((s) => s.spanId === selectedId) ?? flat.find((s) => spanKind(s) === 'LLM') ?? flat[0]
 	);
 	const detail = $derived(selected ? spanDetail(selected) : null);
 
 	const startMs = (s: { startedAt: string | Date }) => new Date(s.startedAt).getTime();
 	const barLeft = (s: (typeof flat)[number]) => ((startMs(s) - win.start) / span) * 100;
 	const barWidth = (s: (typeof flat)[number]) => Math.max(0.5, ((s.durationMs || 0) / span) * 100);
-	const fmtDur = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`);
+	const fmtDur = (ms: number) =>
+		ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`;
 
 	const statusTone = (s: string) => (s === 'error' ? 'error' : s === 'ok' ? 'ok' : 'neutral');
 
@@ -82,7 +81,10 @@
 							{s.name}
 						</span>
 						{#if kind}
-							<span class="shrink-0 text-[10px] font-medium {kindAccent[kind] ?? 'text-muted-foreground'}">
+							<span
+								class="shrink-0 text-[10px] font-medium {kindAccent[kind] ??
+									'text-muted-foreground'}"
+							>
 								{kind}
 							</span>
 						{/if}
@@ -137,8 +139,7 @@
 
 				<div>
 					<div class="mb-1 text-xs font-medium text-muted-foreground">Attributes</div>
-					<pre
-						class="max-h-64 overflow-auto rounded-lg border bg-muted/40 p-2 text-xs">{prettyJson(
+					<pre class="max-h-64 overflow-auto rounded-lg border bg-muted/40 p-2 text-xs">{prettyJson(
 							JSON.stringify(selected.attributes ?? {})
 						)}</pre>
 				</div>
