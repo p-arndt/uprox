@@ -48,6 +48,33 @@ const handleSetup: Handle = async ({ event, resolve }) => {
 	return resolve(event);
 };
 
+/**
+ * Block public self-registration to keep the product invite-only.
+ *
+ * better-auth exposes `POST /api/auth/sign-up/email` (under the `/api/auth/sign-up`
+ * prefix) whenever email/password auth is enabled, and we deliberately do not set
+ * `disableSignUp`. Left open, anyone could self-register a `member` account and read
+ * sensitive dashboard data (captured traces, audit logs, usage).
+ *
+ * The legitimate email-signup flows (first admin in `/setup`, invited users in
+ * `/invite/[id]`) call `auth.api.signUpEmail(...)` as a direct server function. Those
+ * calls never traverse SvelteKit's `handle` hook, so blocking the incoming HTTP request
+ * path here does NOT affect them. OIDC sign-in uses `/api/auth/oauth2/**` and
+ * `/api/auth/callback/**`, which this guard leaves untouched.
+ *
+ * Must run BEFORE `handleBetterAuth` so the request is rejected before better-auth
+ * processes it.
+ */
+const handleBlockPublicSignup: Handle = async ({ event, resolve }) => {
+	if (event.request.method === 'POST' && event.url.pathname.startsWith('/api/auth/sign-up')) {
+		return new Response(JSON.stringify({ error: 'Registration is invite-only.' }), {
+			status: 403,
+			headers: { 'content-type': 'application/json' }
+		});
+	}
+	return resolve(event);
+};
+
 const handleBetterAuth: Handle = async ({ event, resolve }) => {
 	const session = await auth.api.getSession({ headers: event.request.headers });
 
@@ -113,5 +140,6 @@ export const handle: Handle = sequence(
 	handleAccessLog,
 	handleGatewayNotFound,
 	handleSetup,
+	handleBlockPublicSignup,
 	handleBetterAuth
 );

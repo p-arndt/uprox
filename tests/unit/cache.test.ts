@@ -34,35 +34,43 @@ describe('cacheKeyFor', () => {
 	const body = { model: 'gpt-4o', messages: [{ role: 'user', content: 'hi' }], temperature: 0 };
 
 	it('is a stable sha256 hex digest', () => {
-		const key = cacheKeyFor('openai', '/chat/completions', body);
+		const key = cacheKeyFor('openai', '/chat/completions', body, null);
 		expect(key).toMatch(/^[0-9a-f]{64}$/);
-		expect(cacheKeyFor('openai', '/chat/completions', body)).toBe(key);
+		expect(cacheKeyFor('openai', '/chat/completions', body, null)).toBe(key);
 	});
 
 	it('is invariant to object key ordering (canonicalized)', () => {
 		const reordered = { temperature: 0, messages: body.messages, model: 'gpt-4o' };
-		expect(cacheKeyFor('openai', '/chat/completions', reordered)).toBe(
-			cacheKeyFor('openai', '/chat/completions', body)
+		expect(cacheKeyFor('openai', '/chat/completions', reordered, null)).toBe(
+			cacheKeyFor('openai', '/chat/completions', body, null)
 		);
 	});
 
 	it('ignores output-irrelevant fields (user, metadata, store)', () => {
 		const noisy = { ...body, user: 'abuse-tag', metadata: { x: 1 }, store: false };
-		expect(cacheKeyFor('openai', '/chat/completions', noisy)).toBe(
-			cacheKeyFor('openai', '/chat/completions', body)
+		expect(cacheKeyFor('openai', '/chat/completions', noisy, null)).toBe(
+			cacheKeyFor('openai', '/chat/completions', body, null)
 		);
 	});
 
 	it('still distinguishes requests by a meaningful field', () => {
 		const other = { ...body, messages: [{ role: 'user', content: 'bye' }] };
-		expect(cacheKeyFor('openai', '/chat/completions', other)).not.toBe(
-			cacheKeyFor('openai', '/chat/completions', body)
+		expect(cacheKeyFor('openai', '/chat/completions', other, null)).not.toBe(
+			cacheKeyFor('openai', '/chat/completions', body, null)
 		);
 	});
 
 	it('keys on provider and path so formats/providers never collide', () => {
-		const base = cacheKeyFor('openai', '/chat/completions', body);
-		expect(cacheKeyFor('azure', '/chat/completions', body)).not.toBe(base);
-		expect(cacheKeyFor('openai', '/embeddings', body)).not.toBe(base);
+		const base = cacheKeyFor('openai', '/chat/completions', body, null);
+		expect(cacheKeyFor('azure', '/chat/completions', body, null)).not.toBe(base);
+		expect(cacheKeyFor('openai', '/embeddings', body, null)).not.toBe(base);
+	});
+
+	it('keys on the provider secret so different upstream accounts never collide', () => {
+		const base = cacheKeyFor('openai', '/chat/completions', body, null);
+		expect(cacheKeyFor('openai', '/chat/completions', body, 'secret-a')).not.toBe(base);
+		expect(cacheKeyFor('openai', '/chat/completions', body, 'secret-b')).not.toBe(
+			cacheKeyFor('openai', '/chat/completions', body, 'secret-a')
+		);
 	});
 });

@@ -42,4 +42,35 @@ test.describe('authentication', () => {
 		await page.goto('/login');
 		await expect(page).toHaveURL(/\/app$/);
 	});
+
+	// Regression: uprox is invite-only. The legitimate signup flows (setup wizard,
+	// invite acceptance) call auth.api.signUpEmail server-side, which bypasses the
+	// HTTP handle chain; the public better-auth endpoint must be closed so a
+	// stranger can't self-register a (read-capable) member account.
+	test('public sign-up endpoint is blocked (invite-only)', async ({ request }) => {
+		const user = newUser();
+		const res = await request.post('/api/auth/sign-up/email', {
+			data: { name: user.name, email: user.email, password: user.password },
+			headers: { 'content-type': 'application/json' },
+			failOnStatusCode: false
+		});
+		expect(res.status()).toBe(403);
+
+		// and the account must not have been created — signing in with it fails
+		await page_signInShouldFail(request, user.email, user.password);
+	});
 });
+
+/** Assert credentials don't authenticate (account was never created). */
+async function page_signInShouldFail(
+	request: import('@playwright/test').APIRequestContext,
+	email: string,
+	password: string
+) {
+	const res = await request.post('/api/auth/sign-in/email', {
+		data: { email, password },
+		headers: { 'content-type': 'application/json' },
+		failOnStatusCode: false
+	});
+	expect(res.ok()).toBe(false);
+}
