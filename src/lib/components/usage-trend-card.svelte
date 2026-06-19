@@ -64,9 +64,7 @@
 		<div>
 			<Card.Title>Trend over time</Card.Title>
 			<Card.Description>
-				{metricLabel} · {cumulative
-					? 'cumulative'
-					: (UNIT_ADVERB[unit] ?? unit)} · {rangeLabel}
+				{metricLabel} · {cumulative ? 'cumulative' : (UNIT_ADVERB[unit] ?? unit)} · {rangeLabel}
 			</Card.Description>
 		</div>
 		<div class="flex shrink-0 items-center gap-2">

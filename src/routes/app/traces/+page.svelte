@@ -7,6 +7,9 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import PageHeader from '$lib/components/page-header.svelte';
+	import EmptyState from '$lib/components/empty-state.svelte';
+	import SearchInput from '$lib/components/search-input.svelte';
 	import { formatDateTime, relativeTime, formatUsd, formatTokens } from '$lib/format';
 	import { eventTone, toneDot, toneText } from '$lib/events';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
@@ -19,7 +22,8 @@
 
 	let { data } = $props();
 
-	const fmtDur = (ms: number) => (ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`);
+	const fmtDur = (ms: number) =>
+		ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`;
 	const shortId = (s: string) => (s.length > 14 ? `${s.slice(0, 10)}…` : s);
 
 	let query = $state('');
@@ -99,13 +103,12 @@
 </script>
 
 <div class="mx-auto max-w-6xl space-y-6">
-	<div>
-		<h2 class="text-xl font-semibold tracking-tight">Traces</h2>
-		<p class="text-sm text-muted-foreground">
+	<PageHeader title="Traces">
+		{#snippet description()}
 			Captured request &amp; response payloads for gateway calls. Open a trace to inspect the
 			prompt, the model's reply, and token usage.
-		</p>
-	</div>
+		{/snippet}
+	</PageHeader>
 
 	{#if data.metaFilter}
 		<div class="flex items-center gap-2 rounded-lg border bg-muted/30 px-3 py-2 text-sm">
@@ -200,23 +203,20 @@
 		</div>
 	{:else if data.feed.length === 0}
 		{#if data.otelTraces.length === 0}
-			<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
-				<Waypoints class="size-8 text-muted-foreground" />
-				<p class="mt-3 text-sm font-medium">No traces yet</p>
-				<p class="text-sm text-muted-foreground">
-					Traced requests will appear here as they happen.
-				</p>
-			</div>
+			<EmptyState
+				icon={Waypoints}
+				title="No traces yet"
+				description="Traced requests will appear here as they happen."
+			/>
 		{/if}
 	{:else}
 		<h3 class="text-sm font-semibold">Gateway calls</h3>
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-			<div class="relative flex-1">
-				<Search
-					class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-				/>
-				<Input bind:value={query} placeholder="Search model, service, provider…" class="pl-9" />
-			</div>
+			<SearchInput
+				bind:value={query}
+				placeholder="Search model, service, provider…"
+				class="flex-1"
+			/>
 			<div class="relative sm:w-60">
 				<Filter
 					class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
@@ -278,7 +278,9 @@
 										}))}
 								>
 									<Table.Cell class="whitespace-nowrap text-muted-foreground">
-										<span class="block text-xs" title={formatDateTime(it.at)}>{relativeTime(it.at)}</span>
+										<span class="block text-xs" title={formatDateTime(it.at)}
+											>{relativeTime(it.at)}</span
+										>
 										<span class="block text-[10px] text-muted-foreground/60">
 											{formatDateTime(it.at)}
 										</span>
@@ -317,10 +319,13 @@
 							{:else}
 								<Table.Row
 									class="group cursor-pointer"
-									onclick={() => (window.location.href = resolve('/app/traces/[id]', { id: it.id }))}
+									onclick={() =>
+										(window.location.href = resolve('/app/traces/[id]', { id: it.id }))}
 								>
 									<Table.Cell class="whitespace-nowrap text-muted-foreground">
-										<span class="block text-xs" title={formatDateTime(it.at)}>{relativeTime(it.at)}</span>
+										<span class="block text-xs" title={formatDateTime(it.at)}
+											>{relativeTime(it.at)}</span
+										>
 										<span class="block text-[10px] text-muted-foreground/60">
 											{formatDateTime(it.at)}
 										</span>
@@ -337,7 +342,9 @@
 										<span title={it.id}>{shortId(it.id)}</span>
 									</Table.Cell>
 									<Table.Cell class="text-muted-foreground">{it.serviceName ?? '—'}</Table.Cell>
-									<Table.Cell class="font-mono text-xs text-muted-foreground">{it.model ?? '—'}</Table.Cell>
+									<Table.Cell class="font-mono text-xs text-muted-foreground"
+										>{it.model ?? '—'}</Table.Cell
+									>
 									<Table.Cell class="text-right text-muted-foreground tabular-nums">
 										{#if it.inputTokens != null || it.outputTokens != null}
 											{formatTokens(it.inputTokens)} → {formatTokens(it.outputTokens)}

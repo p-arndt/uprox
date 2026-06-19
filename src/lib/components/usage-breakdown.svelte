@@ -115,7 +115,8 @@
 						<button
 							type="button"
 							onclick={() => (sortBy = s.key)}
-							class="rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors {s.key === sortBy
+							class="rounded-md px-2.5 py-0.5 text-xs font-medium transition-colors {s.key ===
+							sortBy
 								? 'bg-accent text-accent-foreground'
 								: 'text-muted-foreground hover:text-foreground'}"
 						>

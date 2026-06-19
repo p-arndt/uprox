@@ -146,172 +146,174 @@
 		<div class="text-sm text-muted-foreground">No activity in this window</div>
 	</div>
 {:else}
-
-<div class="space-y-1.5">
-	<div
-		class="flex items-center justify-between text-[10px] uppercase tracking-wide text-muted-foreground"
-	>
-		<span>{cumulative ? 'cumulative total' : `per ${unit}`}</span>
-		{#if totalLabel}
-			<span class="tabular-nums normal-case">{totalLabel} total</span>
-		{/if}
-	</div>
-
-	<div class="flex gap-2">
-		<!-- y-axis labels, aligned to the gridlines in the plot -->
-		<div class="relative h-44 w-14 shrink-0">
-			{#each yLabels as v, i (i)}
-				<span
-					class="absolute right-0 -translate-y-1/2 text-[10px] text-muted-foreground tabular-nums"
-					style="top: {(i / (yLabels.length - 1)) * 100}%"
-				>
-					{formatValue(v)}
-				</span>
-			{/each}
+	<div class="space-y-1.5">
+		<div
+			class="flex items-center justify-between text-[10px] uppercase tracking-wide text-muted-foreground"
+		>
+			<span>{cumulative ? 'cumulative total' : `per ${unit}`}</span>
+			{#if totalLabel}
+				<span class="tabular-nums normal-case">{totalLabel} total</span>
+			{/if}
 		</div>
 
-		<!-- plot -->
-		<div class="relative h-44 flex-1">
-			<!-- horizontal gridlines at each y-axis level -->
-			<div class="pointer-events-none absolute inset-0">
-				{#each yLabels as _, i (i)}
-					<div
-						class="absolute right-0 left-0 border-t {i === yLabels.length - 1
-							? 'border-border'
-							: 'border-border/40'}"
+		<div class="flex gap-2">
+			<!-- y-axis labels, aligned to the gridlines in the plot -->
+			<div class="relative h-44 w-14 shrink-0">
+				{#each yLabels as v, i (i)}
+					<span
+						class="absolute right-0 -translate-y-1/2 text-[10px] text-muted-foreground tabular-nums"
 						style="top: {(i / (yLabels.length - 1)) * 100}%"
-					></div>
+					>
+						{formatValue(v)}
+					</span>
 				{/each}
 			</div>
 
-			<!-- Floating tooltip for the hovered bucket. -->
-			{#if active && hovered !== null}
-				<div
-					class="pointer-events-none absolute z-10 -translate-x-1/2 rounded-md border bg-popover px-2 py-1 text-xs whitespace-nowrap shadow-md"
-					style="left: {Math.min(
-						85,
-						Math.max(15, ((hovered + 0.5) / points.length) * 100)
-					)}%; top: 0;"
-				>
-					<div class="font-medium">{bucketLabel(active.bucket)}</div>
-					<div class="text-muted-foreground tabular-nums">
-						{#if metric === 'cost'}
-							{formatUsd(values[hovered])} · {active.requests.toLocaleString()} req
-						{:else if metric === 'requests'}
-							{values[hovered].toLocaleString()} requests{#if active.denied > 0}
-								· <span class="text-destructive">{active.denied.toLocaleString()} denied</span>{/if}
-						{:else}
-							{formatTokens(active.inputTokens)} in · {formatTokens(active.outputTokens)} out
+			<!-- plot -->
+			<div class="relative h-44 flex-1">
+				<!-- horizontal gridlines at each y-axis level -->
+				<div class="pointer-events-none absolute inset-0">
+					{#each yLabels as _, i (i)}
+						<div
+							class="absolute right-0 left-0 border-t {i === yLabels.length - 1
+								? 'border-border'
+								: 'border-border/40'}"
+							style="top: {(i / (yLabels.length - 1)) * 100}%"
+						></div>
+					{/each}
+				</div>
+
+				<!-- Floating tooltip for the hovered bucket. -->
+				{#if active && hovered !== null}
+					<div
+						class="pointer-events-none absolute z-10 -translate-x-1/2 rounded-md border bg-popover px-2 py-1 text-xs whitespace-nowrap shadow-md"
+						style="left: {Math.min(
+							85,
+							Math.max(15, ((hovered + 0.5) / points.length) * 100)
+						)}%; top: 0;"
+					>
+						<div class="font-medium">{bucketLabel(active.bucket)}</div>
+						<div class="text-muted-foreground tabular-nums">
+							{#if metric === 'cost'}
+								{formatUsd(values[hovered])} · {active.requests.toLocaleString()} req
+							{:else if metric === 'requests'}
+								{values[hovered].toLocaleString()} requests{#if active.denied > 0}
+									· <span class="text-destructive">{active.denied.toLocaleString()} denied</span
+									>{/if}
+							{:else}
+								{formatTokens(active.inputTokens)} in · {formatTokens(active.outputTokens)} out
+							{/if}
+						</div>
+						{#if activePrev && activeDelta !== null}
+							<div class="tabular-nums">
+								<span class="text-muted-foreground"
+									>prev {formatValue(compareValues![hovered])}</span
+								>
+								<span class={activeDelta > 0 ? 'text-destructive' : 'text-emerald-500'}>
+									{activeDelta > 0 ? '+' : ''}{activeDelta.toFixed(1)}%
+								</span>
+							</div>
 						{/if}
 					</div>
-					{#if activePrev && activeDelta !== null}
-						<div class="tabular-nums">
-							<span class="text-muted-foreground">prev {formatValue(compareValues![hovered])}</span>
-							<span class={activeDelta > 0 ? 'text-destructive' : 'text-emerald-500'}>
-								{activeDelta > 0 ? '+' : ''}{activeDelta.toFixed(1)}%
-							</span>
-						</div>
-					{/if}
-				</div>
-			{/if}
-
-			<!-- The chart itself. preserveAspectRatio="none" lets the 0–100 viewBox
-			     stretch to the container; non-scaling-stroke keeps line widths even. -->
-			<svg
-				class="absolute inset-0 h-full w-full"
-				viewBox="0 0 100 100"
-				preserveAspectRatio="none"
-				aria-hidden="true"
-			>
-				{#if comparePoints}
-					<!-- Previous period: faint dashed line behind the current series. -->
-					<path
-						d={linePath(compareValues ?? [])}
-						fill="none"
-						class="stroke-muted-foreground/40"
-						stroke-width="1.25"
-						stroke-dasharray="3 2"
-						vector-effect="non-scaling-stroke"
-					/>
 				{/if}
 
-				{#if type === 'bar'}
-					{#each points as p, i (p.bucket)}
-						{@const h = barHeight(values[i])}
-						{@const reqDenied = p.requests > 0 ? p.denied / p.requests : 0}
-						{#if h > 0}
-							<rect
-								x={(i * band + band * 0.15).toFixed(3)}
-								y={(100 - h).toFixed(3)}
-								width={(band * 0.7).toFixed(3)}
-								height={h.toFixed(3)}
-								rx="0.4"
-								class="transition-[fill] {hovered === i ? 'fill-chart-1' : 'fill-chart-1/70'}"
-							/>
-							{#if showDenied && reqDenied > 0}
+				<!-- The chart itself. preserveAspectRatio="none" lets the 0–100 viewBox
+			     stretch to the container; non-scaling-stroke keeps line widths even. -->
+				<svg
+					class="absolute inset-0 h-full w-full"
+					viewBox="0 0 100 100"
+					preserveAspectRatio="none"
+					aria-hidden="true"
+				>
+					{#if comparePoints}
+						<!-- Previous period: faint dashed line behind the current series. -->
+						<path
+							d={linePath(compareValues ?? [])}
+							fill="none"
+							class="stroke-muted-foreground/40"
+							stroke-width="1.25"
+							stroke-dasharray="3 2"
+							vector-effect="non-scaling-stroke"
+						/>
+					{/if}
+
+					{#if type === 'bar'}
+						{#each points as p, i (p.bucket)}
+							{@const h = barHeight(values[i])}
+							{@const reqDenied = p.requests > 0 ? p.denied / p.requests : 0}
+							{#if h > 0}
 								<rect
 									x={(i * band + band * 0.15).toFixed(3)}
 									y={(100 - h).toFixed(3)}
 									width={(band * 0.7).toFixed(3)}
-									height={(h * reqDenied).toFixed(3)}
-									class="fill-destructive/80"
+									height={h.toFixed(3)}
+									rx="0.4"
+									class="transition-[fill] {hovered === i ? 'fill-chart-1' : 'fill-chart-1/70'}"
 								/>
+								{#if showDenied && reqDenied > 0}
+									<rect
+										x={(i * band + band * 0.15).toFixed(3)}
+										y={(100 - h).toFixed(3)}
+										width={(band * 0.7).toFixed(3)}
+										height={(h * reqDenied).toFixed(3)}
+										class="fill-destructive/80"
+									/>
+								{/if}
 							{/if}
+						{/each}
+					{:else}
+						{#if type === 'area'}
+							<path d={areaPath(values)} class="fill-chart-1/15" />
 						{/if}
-					{/each}
-				{:else}
-					{#if type === 'area'}
-						<path d={areaPath(values)} class="fill-chart-1/15" />
-					{/if}
-					<path
-						d={linePath(values)}
-						fill="none"
-						class="stroke-chart-1"
-						stroke-width="1.5"
-						stroke-linejoin="round"
-						stroke-linecap="round"
-						vector-effect="non-scaling-stroke"
-					/>
-					{#if hovered !== null && values[hovered] > 0}
-						<circle
-							cx={xCenter(hovered)}
-							cy={yOf(values[hovered])}
-							r="2.5"
-							class="fill-chart-1"
+						<path
+							d={linePath(values)}
+							fill="none"
+							class="stroke-chart-1"
+							stroke-width="1.5"
+							stroke-linejoin="round"
+							stroke-linecap="round"
 							vector-effect="non-scaling-stroke"
 						/>
+						{#if hovered !== null && values[hovered] > 0}
+							<circle
+								cx={xCenter(hovered)}
+								cy={yOf(values[hovered])}
+								r="2.5"
+								class="fill-chart-1"
+								vector-effect="non-scaling-stroke"
+							/>
+						{/if}
 					{/if}
-				{/if}
-			</svg>
+				</svg>
 
-			<!-- Transparent hit columns drive the hover state regardless of chart type. -->
-			<div class="absolute inset-0 flex">
-				{#each points as p, i (p.bucket)}
-					<button
-						type="button"
-						class="h-full flex-1 cursor-default border-0 bg-transparent {hovered === i
-							? 'bg-foreground/[0.03]'
-							: ''}"
-						onmouseenter={() => (hovered = i)}
-						onmouseleave={() => (hovered = null)}
-						onfocus={() => (hovered = i)}
-						onblur={() => (hovered = null)}
-						aria-label="{bucketLabel(p.bucket)}: {formatValue(values[i])}"
-					></button>
-				{/each}
+				<!-- Transparent hit columns drive the hover state regardless of chart type. -->
+				<div class="absolute inset-0 flex">
+					{#each points as p, i (p.bucket)}
+						<button
+							type="button"
+							class="h-full flex-1 cursor-default border-0 bg-transparent {hovered === i
+								? 'bg-foreground/[0.03]'
+								: ''}"
+							onmouseenter={() => (hovered = i)}
+							onmouseleave={() => (hovered = null)}
+							onfocus={() => (hovered = i)}
+							onblur={() => (hovered = null)}
+							aria-label="{bucketLabel(p.bucket)}: {formatValue(values[i])}"
+						></button>
+					{/each}
+				</div>
 			</div>
 		</div>
+
+		{#if ticks.length > 0}
+			<div class="flex">
+				<div class="w-14 shrink-0"></div>
+				<div class="flex flex-1 justify-between text-[10px] text-muted-foreground">
+					{#each ticks as t (t.i)}
+						<span>{bucketLabel(t.p.bucket)}</span>
+					{/each}
+				</div>
+			</div>
+		{/if}
 	</div>
-
-	{#if ticks.length > 0}
-		<div class="flex">
-			<div class="w-14 shrink-0"></div>
-			<div class="flex flex-1 justify-between text-[10px] text-muted-foreground">
-				{#each ticks as t (t.i)}
-					<span>{bucketLabel(t.p.bucket)}</span>
-				{/each}
-			</div>
-		</div>
-	{/if}
-</div>
 {/if}

@@ -1,51 +1,29 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { page } from '$app/state';
-	import { toast } from 'svelte-sonner';
-	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import * as Table from '$lib/components/ui/table/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
-	import TokenForm, { type TokenFormValues } from '$lib/components/token-form.svelte';
+	import PageHeader from '$lib/components/page-header.svelte';
+	import EmptyState from '$lib/components/empty-state.svelte';
+	import StatCard from '$lib/components/stat-card.svelte';
+	import TokenRow from '$lib/components/token-row.svelte';
+	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
+	import EditTokenDialog from '$lib/components/edit-token-dialog.svelte';
+	import SecretDialog from '$lib/components/secret-dialog.svelte';
+	import { type TokenFormValues } from '$lib/components/token-form.svelte';
+	import { tokenStats, type RevealedSecret, type Token } from '$lib/tokens';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
-	import Plus from '@lucide/svelte/icons/plus';
 	import KeyRound from '@lucide/svelte/icons/key-round';
-	import Copy from '@lucide/svelte/icons/copy';
-	import Ban from '@lucide/svelte/icons/ban';
-	import Pencil from '@lucide/svelte/icons/pencil';
-	import Eye from '@lucide/svelte/icons/eye';
-	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 
 	let { data, form } = $props();
 	let createOpen = $state(false);
-	let serviceId = $state('');
-	let expiresInDays = $state('0');
-	const expiryOptions = [
-		{ value: '0', label: 'Never' },
-		{ value: '30', label: 'In 30 days' },
-		{ value: '90', label: 'In 90 days' },
-		{ value: '365', label: 'In 1 year' }
-	];
 	// `recopyable` switches the dialog copy between "stored only as a hash, gone
 	// forever" and "you can reveal this again later".
-	let secret = $state<{ name: string; plaintext: string; recopyable?: boolean } | null>(null);
+	let secret = $state<RevealedSecret | null>(null);
 	let editing = $state<TokenFormValues | null>(null);
-	// pre-checks the create-form "allow re-copying" box from the instance default
-	let recopyable = $state(false);
-
-	const createValues: TokenFormValues = {
-		name: '',
-		scopes: [],
-		allowedModels: '',
-		policyId: ''
-	};
 
 	const canManage = $derived(can(data.role, 'tokens:manage', data.memberPermissions));
 
@@ -64,11 +42,6 @@
 		}
 	});
 
-	// Seed the create-form checkbox from the instance default each time it opens.
-	$effect(() => {
-		if (createOpen) recopyable = data.recopyDefault;
-	});
-
 	// Close the edit dialog once an update succeeds.
 	$effect(() => {
 		if (form?.success) {
@@ -77,45 +50,7 @@
 		}
 	});
 
-	async function copy(text: string, msg = 'Copied to clipboard') {
-		await navigator.clipboard.writeText(text);
-		toast.success(msg);
-	}
-
-	const apiBase = $derived(`${page.url.origin}/v1`);
-	function curlFor(token: string) {
-		return `curl ${apiBase}/chat/completions \\
-  -H "Authorization: Bearer ${token}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'`;
-	}
-
-	function status(t: (typeof data.tokens)[number]): {
-		label: string;
-		dot: string;
-		pulse?: boolean;
-	} {
-		if (t.revokedAt) return { label: 'revoked', dot: 'bg-red-500' };
-		if (t.expiresAt && new Date(t.expiresAt).getTime() < Date.now())
-			return { label: 'expired', dot: 'bg-amber-500' };
-		return { label: 'active', dot: 'bg-emerald-500', pulse: true };
-	}
-
-	const stats = $derived.by(() => {
-		const now = Date.now();
-		let active = 0;
-		let inactive = 0;
-		let lastUsed: number | null = null;
-		for (const t of data.tokens) {
-			if (t.revokedAt || (t.expiresAt && new Date(t.expiresAt).getTime() < now)) inactive++;
-			else active++;
-			if (t.lastUsedAt) {
-				const ts = new Date(t.lastUsedAt).getTime();
-				if (lastUsed === null || ts > lastUsed) lastUsed = ts;
-			}
-		}
-		return { total: data.tokens.length, active, inactive, lastUsed };
-	});
+	const stats = $derived(tokenStats(data.tokens));
 
 	// Revoked tokens are kept for the audit trail but hidden by default —
 	// the row is functionally dead the moment it's revoked.
@@ -125,7 +60,7 @@
 		showRevoked ? data.tokens : data.tokens.filter((t) => !t.revokedAt)
 	);
 
-	function startEdit(t: (typeof data.tokens)[number]) {
+	function startEdit(t: Token) {
 		editing = {
 			id: t.id,
 			name: t.name,
@@ -137,123 +72,57 @@
 </script>
 
 <div class="mx-auto max-w-5xl space-y-6">
-	<div class="flex items-start justify-between gap-4">
-		<div>
-			<h2 class="text-xl font-semibold tracking-tight">Machine Tokens</h2>
-			<p class="text-sm text-muted-foreground">
-				Opaque, hashed-at-rest tokens your services use to authenticate to the gateway.
-			</p>
-		</div>
-		{#if canManage}
-			<Dialog.Root bind:open={createOpen}>
-				<Dialog.Trigger>
-					{#snippet child({ props })}
-						<Button {...props} disabled={data.services.length === 0}>
-							<Plus class="size-4" /> New token
-						</Button>
-					{/snippet}
-				</Dialog.Trigger>
-				<Dialog.Content>
-					<Dialog.Header>
-						<Dialog.Title>Create machine token</Dialog.Title>
-						<Dialog.Description>The secret is shown once — store it safely.</Dialog.Description>
-					</Dialog.Header>
-					<TokenForm
-						action="?/create"
-						submitLabel="Create token"
-						idPrefix="create"
-						values={createValues}
-						policies={data.policies}
-						resetOnSuccess
-					>
-						{#snippet topFields()}
-							<div class="space-y-2">
-								<Label for="serviceId">Service</Label>
-								<Select.Root type="single" name="serviceId" required bind:value={serviceId}>
-									<Select.Trigger id="serviceId" class="w-full">
-										{data.services.find((s) => s.id === serviceId)?.name ?? 'Select a service'}
-									</Select.Trigger>
-									<Select.Content>
-										{#each data.services as s (s.id)}
-											<Select.Item value={s.id} label={s.name}>{s.name}</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-							</div>
-						{/snippet}
-						{#snippet bottomFields()}
-							<div class="space-y-2">
-								<Label for="expiresInDays">Expires</Label>
-								<Select.Root type="single" name="expiresInDays" bind:value={expiresInDays}>
-									<Select.Trigger id="expiresInDays" class="w-full">
-										{expiryOptions.find((o) => o.value === expiresInDays)?.label}
-									</Select.Trigger>
-									<Select.Content>
-										{#each expiryOptions as o (o.value)}
-											<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-							</div>
-							<input type="hidden" name="recopyable" value={String(recopyable)} />
-							<div class="space-y-1.5 rounded-lg border p-3">
-								<div class="flex items-center justify-between gap-4">
-									<Label for="recopyable">Allow re-copying later</Label>
-									<Switch id="recopyable" bind:checked={recopyable} />
-								</div>
-								<p class="text-xs text-muted-foreground">
-									Stores the secret encrypted so you can reveal and copy it again from this page.
-									Off keeps it hash-only — shown once, then unrecoverable (more secure).
-								</p>
-							</div>
-							{#if form?.message}
-								<p class="text-sm text-destructive">{form.message}</p>
-							{/if}
-						{/snippet}
-					</TokenForm>
-				</Dialog.Content>
-			</Dialog.Root>
-		{/if}
-	</div>
+	<PageHeader
+		title="Machine Tokens"
+		description="Opaque, hashed-at-rest tokens your services use to authenticate to the gateway."
+	>
+		{#snippet action()}
+			{#if canManage}
+				<CreateTokenDialog
+					bind:open={createOpen}
+					disabled={data.services.length === 0}
+					services={data.services}
+					policies={data.policies}
+					recopyDefault={data.recopyDefault}
+					message={form?.message}
+				/>
+			{/if}
+		{/snippet}
+	</PageHeader>
 
 	{#if data.services.length === 0}
-		<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
-			<KeyRound class="size-8 text-muted-foreground" />
-			<p class="mt-3 text-sm font-medium">Create a service first</p>
-			<p class="text-sm text-muted-foreground">Tokens are issued against a service.</p>
-			<Button href="/app/services" variant="outline" size="sm" class="mt-4">Go to services</Button>
-		</div>
+		<EmptyState
+			icon={KeyRound}
+			title="Create a service first"
+			description="Tokens are issued against a service."
+		>
+			<Button href={resolve('/app/services')} variant="outline" size="sm">Go to services</Button>
+		</EmptyState>
 	{:else if data.tokens.length === 0}
-		<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
-			<KeyRound class="size-8 text-muted-foreground" />
-			<p class="mt-3 text-sm font-medium">No tokens yet</p>
-			<p class="text-sm text-muted-foreground">Issue a token to authenticate a service.</p>
-		</div>
+		<EmptyState
+			icon={KeyRound}
+			title="No tokens yet"
+			description="Issue a token to authenticate a service."
+		/>
 	{:else}
 		<div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-			<div class="rounded-xl border bg-card p-4">
-				<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Total</p>
-				<p class="mt-1 text-2xl font-semibold tabular-nums">{stats.total}</p>
-			</div>
-			<div class="rounded-xl border bg-card p-4">
-				<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Active</p>
+			<StatCard label="Total" value={stats.total} />
+			<StatCard label="Active">
 				<p class="mt-1 flex items-center gap-2 text-2xl font-semibold tabular-nums">
 					<span class="dot-pulse size-2 rounded-full bg-emerald-500"></span>
 					{stats.active}
 				</p>
-			</div>
-			<div class="rounded-xl border bg-card p-4">
-				<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Inactive</p>
-				<p class="mt-1 text-2xl font-semibold text-muted-foreground tabular-nums">
-					{stats.inactive}
-				</p>
-			</div>
-			<div class="rounded-xl border bg-card p-4">
-				<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Last used</p>
-				<p class="mt-1.5 truncate text-lg font-semibold">
-					{relativeTime(stats.lastUsed ? new Date(stats.lastUsed) : null)}
-				</p>
-			</div>
+			</StatCard>
+			<StatCard
+				label="Inactive"
+				value={stats.inactive}
+				valueClass="text-2xl text-muted-foreground"
+			/>
+			<StatCard
+				label="Last used"
+				value={relativeTime(stats.lastUsed ? new Date(stats.lastUsed) : null)}
+				valueClass="text-lg"
+			/>
 		</div>
 
 		{#if revokedCount > 0}
@@ -288,127 +157,7 @@
 						</Table.Row>
 					{/if}
 					{#each visibleTokens as t (t.id)}
-						{@const st = status(t)}
-						<Table.Row class="group transition-colors hover:bg-accent/40">
-							<Table.Cell class="font-medium">
-								<a href={resolve('/app/tokens/[id]', { id: t.id })} class="hover:underline">
-									{t.name}
-								</a>
-							</Table.Cell>
-							<Table.Cell>
-								<span
-									title="Token prefix (the full token is shown only once at creation)"
-									class="inline-flex items-center rounded-md bg-muted/60 px-2 py-1 font-mono text-xs text-muted-foreground"
-								>
-									{t.display}
-								</span>
-							</Table.Cell>
-							<Table.Cell class="text-muted-foreground">{t.serviceName}</Table.Cell>
-							<Table.Cell>
-								{#if t.scopes.length === 0}
-									<Badge variant="outline">all</Badge>
-								{:else}
-									<div class="flex flex-wrap gap-1">
-										{#each t.scopes as s (s)}<Badge variant="outline">{s}</Badge>{/each}
-									</div>
-								{/if}
-							</Table.Cell>
-							<Table.Cell>
-								{#if t.policyId}
-									<Badge variant="secondary">{t.policyName}</Badge>
-								{:else}
-									<span class="text-xs text-muted-foreground">service policy</span>
-								{/if}
-								{#if t.allowedModels.length > 0}
-									<div class="mt-1 flex flex-wrap gap-1">
-										{#each t.allowedModels as m (m)}
-											<Badge variant="outline" class="font-mono text-[10px]">{m}</Badge>
-										{/each}
-									</div>
-								{/if}
-							</Table.Cell>
-							<Table.Cell class="text-muted-foreground">{relativeTime(t.lastUsedAt)}</Table.Cell>
-							<Table.Cell>
-								<span class="inline-flex items-center gap-1.5 text-sm capitalize">
-									<span class="size-1.5 rounded-full {st.dot} {st.pulse ? 'dot-pulse' : ''}"></span>
-									{st.label}
-								</span>
-							</Table.Cell>
-							<Table.Cell>
-								{#if !t.revokedAt && canManage}
-									<div class="flex items-center justify-end gap-0.5">
-										{#if t.recopyable}
-											<form
-												method="post"
-												action="?/reveal"
-												use:enhance={() =>
-													async ({ update }) =>
-														update({ reset: false })}
-											>
-												<input type="hidden" name="id" value={t.id} />
-												<Button
-													type="submit"
-													variant="ghost"
-													size="icon"
-													class="size-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
-													title="Reveal & copy token"
-												>
-													<Eye class="size-4" />
-												</Button>
-											</form>
-										{/if}
-										<Button
-											variant="ghost"
-											size="icon"
-											class="size-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
-											title="Edit token"
-											onclick={() => startEdit(t)}
-										>
-											<Pencil class="size-4" />
-										</Button>
-										<AlertDialog.Root>
-											<AlertDialog.Trigger>
-												{#snippet child({ props })}
-													<Button
-														{...props}
-														variant="ghost"
-														size="icon"
-														class="size-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 hover:text-destructive"
-														title="Revoke token"
-													>
-														<Ban class="size-4" />
-													</Button>
-												{/snippet}
-											</AlertDialog.Trigger>
-											<AlertDialog.Content>
-												<AlertDialog.Header>
-													<AlertDialog.Title>Revoke “{t.name}”?</AlertDialog.Title>
-													<AlertDialog.Description>
-														Any service still using this token will immediately fail to
-														authenticate. This can't be undone.
-													</AlertDialog.Description>
-												</AlertDialog.Header>
-												<AlertDialog.Footer>
-													<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-													<form
-														method="post"
-														action="?/revoke"
-														use:enhance={() =>
-															async ({ update }) =>
-																update()}
-													>
-														<input type="hidden" name="id" value={t.id} />
-														<AlertDialog.Action type="submit" variant="destructive">
-															Revoke token
-														</AlertDialog.Action>
-													</form>
-												</AlertDialog.Footer>
-											</AlertDialog.Content>
-										</AlertDialog.Root>
-									</div>
-								{/if}
-							</Table.Cell>
-						</Table.Row>
+						<TokenRow token={t} {canManage} onEdit={startEdit} />
 					{/each}
 				</Table.Body>
 			</Table.Root>
@@ -416,112 +165,18 @@
 	{/if}
 </div>
 
-<!-- edit token: change its policy, model allowlist, scopes, and name in place -->
-<Dialog.Root
-	open={editing !== null}
-	onOpenChange={(v) => {
-		if (!v) editing = null;
-	}}
->
-	<Dialog.Content>
-		<Dialog.Header>
-			<Dialog.Title>Edit token</Dialog.Title>
-			<Dialog.Description>
-				Adjust this token's access. The secret itself never changes.
-			</Dialog.Description>
-		</Dialog.Header>
-		{#if editing}
-			{#key editing.id}
-				<TokenForm
-					action="?/update"
-					submitLabel="Save token"
-					idPrefix="edit"
-					values={editing}
-					policies={data.policies}
-				>
-					{#snippet bottomFields()}
-						{#if form?.message}
-							<p class="text-sm text-destructive">{form.message}</p>
-						{/if}
-					{/snippet}
-				</TokenForm>
-			{/key}
-		{/if}
-	</Dialog.Content>
-</Dialog.Root>
-
 <!-- one-time secret reveal -->
-<Dialog.Root
-	open={secret !== null}
-	onOpenChange={(v) => {
-		if (!v) {
-			secret = null;
-			invalidateAll();
-		}
+<SecretDialog
+	{secret}
+	onClose={() => {
+		secret = null;
+		invalidateAll();
 	}}
->
-	<Dialog.Content class="sm:max-w-lg">
-		<Dialog.Header>
-			<Dialog.Title>{secret?.recopyable ? 'Token secret' : 'Token created'}</Dialog.Title>
-			<Dialog.Description>
-				{#if secret?.recopyable}
-					The full secret for <span class="font-medium text-foreground">{secret?.name}</span>. You
-					can reveal it again any time from this page.
-				{:else}
-					Copy <span class="font-medium text-foreground">{secret?.name}</span> now. You won't be able
-					to see it again.
-				{/if}
-			</Dialog.Description>
-		</Dialog.Header>
-		<div
-			class="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
-		>
-			<TriangleAlert class="mt-0.5 size-4 shrink-0 text-amber-600" />
-			{#if secret?.recopyable}
-				<span>This token is stored encrypted so it can be re-copied. Keep it secret.</span>
-			{:else}
-				<span>This secret is stored only as a hash. There is no way to recover it later.</span>
-			{/if}
-		</div>
-		<div class="relative min-w-0">
-			<code class="block overflow-x-auto rounded-lg bg-muted py-2.5 pr-11 pl-3 text-xs"
-				>{secret?.plaintext}</code
-			>
-			<Button
-				size="icon"
-				variant="ghost"
-				class="absolute top-1/2 right-1.5 size-7 -translate-y-1/2"
-				onclick={() => secret && copy(secret.plaintext, 'Token copied')}
-				title="Copy token"
-			>
-				<Copy class="size-3.5" />
-			</Button>
-		</div>
+/>
 
-		<div class="min-w-0 space-y-1.5">
-			<p class="text-xs font-medium text-muted-foreground">Drop it straight into a request</p>
-			<div class="relative min-w-0">
-				<pre class="overflow-x-auto rounded-lg bg-muted p-3 pr-10 text-xs leading-relaxed"><code
-						>{secret ? curlFor(secret.plaintext) : ''}</code
-					></pre>
-				<Button
-					size="icon"
-					variant="ghost"
-					class="absolute top-1.5 right-1.5 size-7"
-					onclick={() => secret && copy(curlFor(secret.plaintext), 'Command copied')}
-					title="Copy command"
-				>
-					<Copy class="size-3.5" />
-				</Button>
-			</div>
-		</div>
-		<Dialog.Footer>
-			<Button
-				onclick={() => {
-					secret = null;
-					invalidateAll();
-				}}>Done</Button
-			>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+<EditTokenDialog
+	{editing}
+	onClose={() => (editing = null)}
+	policies={data.policies}
+	message={form?.message}
+/>

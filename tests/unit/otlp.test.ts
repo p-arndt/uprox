@@ -113,10 +113,38 @@ describe('parseOtlpJson', () => {
 
 describe('span tree', () => {
 	const spans = [
-		{ spanId: 'a', parentSpanId: null, name: 'root', status: 'ok', startedAt: new Date(0), durationMs: 100 },
-		{ spanId: 'b', parentSpanId: 'a', name: 'child1', status: 'ok', startedAt: new Date(10), durationMs: 40 },
-		{ spanId: 'c', parentSpanId: 'a', name: 'child2', status: 'ok', startedAt: new Date(5), durationMs: 20 },
-		{ spanId: 'd', parentSpanId: 'b', name: 'grandchild', status: 'ok', startedAt: new Date(12), durationMs: 10 }
+		{
+			spanId: 'a',
+			parentSpanId: null,
+			name: 'root',
+			status: 'ok',
+			startedAt: new Date(0),
+			durationMs: 100
+		},
+		{
+			spanId: 'b',
+			parentSpanId: 'a',
+			name: 'child1',
+			status: 'ok',
+			startedAt: new Date(10),
+			durationMs: 40
+		},
+		{
+			spanId: 'c',
+			parentSpanId: 'a',
+			name: 'child2',
+			status: 'ok',
+			startedAt: new Date(5),
+			durationMs: 20
+		},
+		{
+			spanId: 'd',
+			parentSpanId: 'b',
+			name: 'grandchild',
+			status: 'ok',
+			startedAt: new Date(12),
+			durationMs: 10
+		}
 	];
 
 	it('nests by parent and orders siblings by start time', () => {
@@ -135,7 +163,14 @@ describe('span tree', () => {
 
 	it('treats orphaned spans (missing parent) as roots', () => {
 		const roots = buildSpanTree([
-			{ spanId: 'x', parentSpanId: 'gone', name: 'orphan', status: 'ok', startedAt: new Date(0), durationMs: 1 }
+			{
+				spanId: 'x',
+				parentSpanId: 'gone',
+				name: 'orphan',
+				status: 'ok',
+				startedAt: new Date(0),
+				durationMs: 1
+			}
 		]);
 		expect(roots).toHaveLength(1);
 		expect(roots[0].spanId).toBe('x');

@@ -162,7 +162,10 @@ describe('tool use — requests', () => {
 	it('reads Gemini functionCall and functionResponse parts', () => {
 		const body = JSON.stringify({
 			contents: [
-				{ role: 'model', parts: [{ functionCall: { name: 'get_weather', args: { city: 'Berlin' } } }] },
+				{
+					role: 'model',
+					parts: [{ functionCall: { name: 'get_weather', args: { city: 'Berlin' } } }]
+				},
 				{
 					role: 'user',
 					parts: [{ functionResponse: { name: 'get_weather', response: { tempC: 21 } } }]
@@ -213,7 +216,11 @@ describe('tool use — responses', () => {
 
 	it('extracts Gemini functionCall from a buffered response', () => {
 		const body = JSON.stringify({
-			candidates: [{ content: { parts: [{ functionCall: { name: 'get_weather', args: { city: 'Berlin' } } }] } }]
+			candidates: [
+				{
+					content: { parts: [{ functionCall: { name: 'get_weather', args: { city: 'Berlin' } } }] }
+				}
+			]
 		});
 		expect(responseMessage(body, 'json').toolCalls).toEqual([
 			{ name: 'get_weather', args: '{"city":"Berlin"}' }
@@ -237,7 +244,9 @@ describe('tool use — responses', () => {
 	});
 
 	it('returns no toolCalls for a plain text reply', () => {
-		expect(responseMessage(JSON.stringify({ output_text: 'hi' }), 'json').toolCalls).toBeUndefined();
+		expect(
+			responseMessage(JSON.stringify({ output_text: 'hi' }), 'json').toolCalls
+		).toBeUndefined();
 	});
 });
 

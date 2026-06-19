@@ -52,17 +52,17 @@ the `@google/genai` client works unchanged — point its `baseUrl` at
 
 ## What you get
 
-|                    |                                                                              |
-| ------------------ | ---------------------------------------------------------------------------- |
-| **Machine tokens** | Revocable `uprox_live_…` tokens per service. Stored as a hash; shown once.   |
-| **Multi-provider** | OpenAI, Anthropic, Azure OpenAI, and Google Gemini behind one endpoint, routed by model. |
-| **Policies**       | Limit which providers/models a service may call, plus per-token rate limits. |
-| **Budgets**        | Daily/monthly USD ceilings per service — over budget returns `402`.          |
-| **Response cache** | Exact-match cache (streaming included) replays responses at zero cost.       |
-| **Encrypted keys** | Provider keys sealed with AES-256-GCM; never exposed to clients.             |
-| **Audit log**      | Every request logged with status, cost, and latency.                         |
+|                    |                                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| **Machine tokens** | Revocable `uprox_live_…` tokens per service. Stored as a hash; shown once.                              |
+| **Multi-provider** | OpenAI, Anthropic, Azure OpenAI, and Google Gemini behind one endpoint, routed by model.                |
+| **Policies**       | Limit which providers/models a service may call, plus per-token rate limits.                            |
+| **Budgets**        | Daily/monthly USD ceilings per service — over budget returns `402`.                                     |
+| **Response cache** | Exact-match cache (streaming included) replays responses at zero cost.                                  |
+| **Encrypted keys** | Provider keys sealed with AES-256-GCM; never exposed to clients.                                        |
+| **Audit log**      | Every request logged with status, cost, and latency.                                                    |
 | **Tracing**        | Opt-in capture of prompts, responses & tool calls; session trees, plus OTLP ingest for full app traces. |
-| **Teams & SSO**    | Invite-only orgs and roles, with email/password or OIDC sign-in.             |
+| **Teams & SSO**    | Invite-only orgs and roles, with email/password or OIDC sign-in.                                        |
 
 ## Quick start
 
@@ -152,13 +152,13 @@ await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: 'Hello' }
 > to it verbatim. Omitting it yields `POST /models/…`, which 404s. See
 > [`examples/use-gateway-gemini.ts`](examples/use-gateway-gemini.ts).
 
-| Endpoint                                                | Equivalent of                                  |
-| ------------------------------------------------------- | ---------------------------------------------- |
-| `POST /v1beta/models/{model}:generateContent`           | `ai.models.generateContent`                    |
-| `POST /v1beta/models/{model}:streamGenerateContent`     | `ai.models.generateContentStream` (SSE)        |
-| `POST /v1beta/models/{model}:countTokens`               | `ai.models.countTokens` (free, never billed)   |
-| `POST /v1beta/models/{model}:embedContent` (and `:batchEmbedContents`) | `ai.models.embedContent`        |
-| `GET  /v1beta/models`, `GET /v1beta/models/{model}`     | `ai.models.list` / `ai.models.get`             |
+| Endpoint                                                               | Equivalent of                                |
+| ---------------------------------------------------------------------- | -------------------------------------------- |
+| `POST /v1beta/models/{model}:generateContent`                          | `ai.models.generateContent`                  |
+| `POST /v1beta/models/{model}:streamGenerateContent`                    | `ai.models.generateContentStream` (SSE)      |
+| `POST /v1beta/models/{model}:countTokens`                              | `ai.models.countTokens` (free, never billed) |
+| `POST /v1beta/models/{model}:embedContent` (and `:batchEmbedContents`) | `ai.models.embedContent`                     |
+| `GET  /v1beta/models`, `GET /v1beta/models/{model}`                    | `ai.models.list` / `ai.models.get`           |
 
 Gemini models also work on the OpenAI-compatible `/v1/*` surface above (e.g.
 `model: 'gemini-2.5-flash'` on `/v1/chat/completions`) — uprox translates between
@@ -215,8 +215,8 @@ The proxy only sees the calls that pass through it — not your app's internal s
 (retriever, embedder, agent, reranker…). To get the **full nested tree**, point your app's
 OpenInference/OpenTelemetry exporter at uprox's OTLP endpoint:
 
-| Endpoint          | Notes                                                                          |
-| ----------------- | ------------------------------------------------------------------------------ |
+| Endpoint          | Notes                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------- |
 | `POST /v1/traces` | OTLP/HTTP span ingest — accepts **protobuf** and **JSON** (gzip ok); OTel-standard path |
 
 Authenticate with the same machine token, as a bearer. Because uprox auto-groups its proxy

@@ -31,9 +31,9 @@
 	<span class="text-xs text-muted-foreground">no prior data</span>
 {:else}
 	<span class="inline-flex items-center gap-0.5 text-xs font-medium tabular-nums {cls}">
-		{#if up}<TrendingUp class="size-3" />{:else if down}<TrendingDown
+		{#if up}<TrendingUp class="size-3" />{:else if down}<TrendingDown class="size-3" />{:else}<Minus
 				class="size-3"
-			/>{:else}<Minus class="size-3" />{/if}
+			/>{/if}
 		{value > 0 ? '+' : ''}{value.toFixed(1)}%
 	</span>
 {/if}

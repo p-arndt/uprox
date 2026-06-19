@@ -1,47 +1,30 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
-	import { invalidateAll } from '$app/navigation';
 	import * as Table from '$lib/components/ui/table/index.js';
-	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import { Label } from '$lib/components/ui/label/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
-	import { formatUsd } from '$lib/format';
+	import PageHeader from '$lib/components/page-header.svelte';
+	import EmptyState from '$lib/components/empty-state.svelte';
+	import SearchInput from '$lib/components/search-input.svelte';
+	import PriceRow from '$lib/components/price-row.svelte';
+	import AddModelDialog from '$lib/components/add-model-dialog.svelte';
+	import { createTableState } from '$lib/state/table.svelte';
+	import { inferProviderId } from '$lib/pricing';
 	import { can } from '$lib/permissions';
 	import Coins from '@lucide/svelte/icons/coins';
-	import Pencil from '@lucide/svelte/icons/pencil';
-	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import Search from '@lucide/svelte/icons/search';
 	import Plus from '@lucide/svelte/icons/plus';
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
 	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
-	import Check from '@lucide/svelte/icons/check';
-	import X from '@lucide/svelte/icons/x';
 
 	let { data, form } = $props();
-
-	type Price = (typeof data.prices)[number];
-	type Row = Price & { providerKey: string; providerLabel: string };
 
 	const OTHER_KEY = '__other';
 
 	const providerLabel = $derived(new Map(data.providers.map((p) => [p.id, p.label] as const)));
 
-	/** Best-effort provider id from a model name, for rows without an explicit one. */
-	function inferProviderId(model: string): string | null {
-		const m = model.toLowerCase();
-		if (m.startsWith('claude')) return 'anthropic';
-		if (m.startsWith('gpt') || /^o\d/.test(m)) return 'openai';
-		return null;
-	}
-
 	/** Every price tagged with its provider (explicit, else inferred from name). */
-	const rows = $derived<Row[]>(
+	const rows = $derived(
 		data.prices.map((p) => {
 			const id = p.provider || inferProviderId(p.model);
 			return {
@@ -71,97 +54,47 @@
 	});
 
 	let providerFilter = $state('all');
-	let query = $state('');
-	let sortKey = $state<
-		'model' | 'inputPerMtok' | 'outputPerMtok' | 'cacheReadPerMtok' | 'cacheWritePerMtok'
-	>('model');
-	let sortDir = $state<'asc' | 'desc'>('asc');
 
-	function toggleSort(key: typeof sortKey) {
-		if (sortKey === key) sortDir = sortDir === 'asc' ? 'desc' : 'asc';
-		else {
-			sortKey = key;
-			sortDir = key === 'model' ? 'asc' : 'desc';
-		}
-	}
-
-	const visible = $derived.by(() => {
-		const q = query.trim().toLowerCase();
-		let out = rows.filter((r) => {
-			if (providerFilter !== 'all' && r.providerKey !== providerFilter) return false;
-			if (q && !r.model.toLowerCase().includes(q)) return false;
-			return true;
-		});
-		const dir = sortDir === 'asc' ? 1 : -1;
-		out = [...out].sort((a, b) => {
-			if (sortKey === 'model') return a.model.localeCompare(b.model) * dir;
+	const num = (a: number | null, b: number | null) => (a ?? 0) - (b ?? 0);
+	const table = createTableState({
+		rows: () => rows,
+		matches: (r, q) => r.model.toLowerCase().includes(q),
+		predicate: () => (r) => providerFilter === 'all' || r.providerKey === providerFilter,
+		sorters: {
+			model: (a, b) => a.model.localeCompare(b.model),
+			inputPerMtok: (a, b) => num(a.inputPerMtok, b.inputPerMtok),
+			outputPerMtok: (a, b) => num(a.outputPerMtok, b.outputPerMtok),
 			// cache prices can be null (fall back to the input multiplier); sort those last
-			return (((a[sortKey] as number | null) ?? 0) - ((b[sortKey] as number | null) ?? 0)) * dir;
-		});
-		return out;
+			cacheReadPerMtok: (a, b) => num(a.cacheReadPerMtok, b.cacheReadPerMtok),
+			cacheWritePerMtok: (a, b) => num(a.cacheWritePerMtok, b.cacheWritePerMtok)
+		},
+		initialSort: 'model',
+		dirFor: (key) => (key === 'model' ? 'asc' : 'desc')
 	});
 
 	const customCount = $derived(data.prices.filter((p) => p.source === 'custom').length);
 	const showProviderCol = $derived(providerFilter === 'all');
 	const canManage = $derived(can(data.role, 'pricing:manage', data.memberPermissions));
 
-	// Inline price editing: the pencil swaps a single row's price cells for
-	// number inputs. Works for custom rows (update) and default rows (override
-	// via create). Provider is carried through unchanged; the only field most
-	// edits touch is the two numbers, so the dialog is reserved for adding.
-	let editRow = $state<string | null>(null);
-	let draftIn = $state('');
-	let draftOut = $state('');
-	let draftCacheRead = $state('');
-	let draftCacheWrite = $state('');
-
-	function startEdit(p: Price) {
-		editRow = p.model;
-		draftIn = String(p.inputPerMtok);
-		draftOut = String(p.outputPerMtok);
-		draftCacheRead = p.cacheReadPerMtok != null ? String(p.cacheReadPerMtok) : '';
-		draftCacheWrite = p.cacheWritePerMtok != null ? String(p.cacheWritePerMtok) : '';
-	}
-	const inlineFormId = (model: string) => `edit-${model.replace(/[^a-z0-9]+/gi, '-')}`;
-
-	type Editing = {
-		provider: string;
-		inputPerMtok: string;
-		outputPerMtok: string;
-	};
-	let adding = $state<Editing | null>(null);
-	let addProvider = $state('');
-
-	function openAdd() {
-		editRow = null;
-		adding = {
-			provider: providerFilter !== 'all' && providerFilter !== OTHER_KEY ? providerFilter : '',
-			inputPerMtok: '',
-			outputPerMtok: ''
-		};
-		addProvider = adding.provider;
-	}
-
-	$effect(() => {
-		if (form?.success) {
-			adding = null;
-			editRow = null;
-			invalidateAll();
-		}
-	});
+	let addOpen = $state(false);
+	const addProvider = $derived(
+		providerFilter !== 'all' && providerFilter !== OTHER_KEY ? providerFilter : ''
+	);
 </script>
 
-{#snippet sortHead(label: string, key: typeof sortKey, align: 'left' | 'right')}
+{#snippet sortHead(label: string, key: string, align: 'left' | 'right')}
 	<button
 		type="button"
-		onclick={() => toggleSort(key)}
+		onclick={() => table.toggleSort(key)}
 		class="inline-flex items-center gap-1 hover:text-foreground {align === 'right'
 			? 'flex-row-reverse'
-			: ''} {sortKey === key ? 'text-foreground' : ''}"
+			: ''} {table.sortKey === key ? 'text-foreground' : ''}"
 	>
 		{label}
-		{#if sortKey === key}
-			{#if sortDir === 'asc'}<ArrowUp class="size-3.5" />{:else}<ArrowDown class="size-3.5" />{/if}
+		{#if table.sortKey === key}
+			{#if table.sortDir === 'asc'}<ArrowUp class="size-3.5" />{:else}<ArrowDown
+					class="size-3.5"
+				/>{/if}
 		{:else}
 			<ChevronsUpDown class="size-3.5 opacity-40" />
 		{/if}
@@ -169,28 +102,27 @@
 {/snippet}
 
 <div class="mx-auto max-w-5xl space-y-5">
-	<div class="flex items-start justify-between gap-4">
-		<div>
-			<h2 class="text-xl font-semibold tracking-tight">Model Prices</h2>
-			<p class="text-sm text-muted-foreground">
-				Token prices in USD per 1M tokens, used to estimate request cost for spend tracking and
-				budgets. Platform defaults apply unless your organization sets its own price.
-			</p>
-		</div>
-		{#if canManage}
-			<Button onclick={openAdd}>
-				<Plus class="size-4" />
-				Add model
-			</Button>
-		{/if}
-	</div>
+	<PageHeader title="Model Prices">
+		{#snippet description()}
+			Token prices in USD per 1M tokens, used to estimate request cost for spend tracking and
+			budgets. Platform defaults apply unless your organization sets its own price.
+		{/snippet}
+		{#snippet action()}
+			{#if canManage}
+				<Button onclick={() => (addOpen = true)}>
+					<Plus class="size-4" />
+					Add model
+				</Button>
+			{/if}
+		{/snippet}
+	</PageHeader>
 
 	{#if data.prices.length === 0}
-		<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
-			<Coins class="size-8 text-muted-foreground" />
-			<p class="mt-3 text-sm font-medium">No model prices</p>
-			<p class="text-sm text-muted-foreground">Add a model to start tracking its cost.</p>
-		</div>
+		<EmptyState
+			icon={Coins}
+			title="No model prices"
+			description="Add a model to start tracking its cost."
+		/>
 	{:else}
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<Tabs.Root bind:value={providerFilter}>
@@ -208,17 +140,12 @@
 				</Tabs.List>
 			</Tabs.Root>
 
-			<div class="relative w-full max-w-xs sm:w-64">
-				<Search
-					class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-				/>
-				<Input
-					bind:value={query}
-					placeholder="Search models…"
-					class="pl-9"
-					aria-label="Search models"
-				/>
-			</div>
+			<SearchInput
+				bind:value={table.query}
+				placeholder="Search models…"
+				class="w-full max-w-xs sm:w-64"
+				ariaLabel="Search models"
+			/>
 		</div>
 
 		<div class="rounded-xl border">
@@ -246,326 +173,33 @@
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
-					{#each visible as p (p.model)}
-						{@const isEditing = editRow === p.model}
-						{@const fid = inlineFormId(p.model)}
-						<Table.Row class="group">
-							<Table.Cell class="font-medium">{p.model}</Table.Cell>
-							{#if showProviderCol}
-								<Table.Cell class="text-muted-foreground">{p.providerLabel}</Table.Cell>
-							{/if}
-							<Table.Cell class="text-right tabular-nums">
-								{#if isEditing}
-									<Input
-										form={fid}
-										name="inputPerMtok"
-										type="number"
-										step="0.0001"
-										min="0"
-										bind:value={draftIn}
-										required
-										aria-label="Input price per 1M tokens"
-										class="ml-auto h-8 w-28 text-right"
-									/>
-								{:else}
-									{formatUsd(p.inputPerMtok)}
-									{#if p.source === 'custom' && p.defaultInputPerMtok !== null && p.defaultInputPerMtok !== p.inputPerMtok}
-										<div class="text-xs text-muted-foreground line-through">
-											{formatUsd(p.defaultInputPerMtok)}
-										</div>
-									{/if}
-								{/if}
-							</Table.Cell>
-							<Table.Cell class="text-right tabular-nums">
-								{#if isEditing}
-									<Input
-										form={fid}
-										name="outputPerMtok"
-										type="number"
-										step="0.0001"
-										min="0"
-										bind:value={draftOut}
-										required
-										aria-label="Output price per 1M tokens"
-										class="ml-auto h-8 w-28 text-right"
-									/>
-								{:else}
-									{formatUsd(p.outputPerMtok)}
-									{#if p.source === 'custom' && p.defaultOutputPerMtok !== null && p.defaultOutputPerMtok !== p.outputPerMtok}
-										<div class="text-xs text-muted-foreground line-through">
-											{formatUsd(p.defaultOutputPerMtok)}
-										</div>
-									{/if}
-								{/if}
-							</Table.Cell>
-							<Table.Cell class="text-right tabular-nums">
-								{#if isEditing}
-									<Input
-										form={fid}
-										name="cacheReadPerMtok"
-										type="number"
-										step="0.0001"
-										min="0"
-										placeholder="auto"
-										bind:value={draftCacheRead}
-										aria-label="Cache read price per 1M tokens"
-										class="ml-auto h-8 w-28 text-right"
-									/>
-								{:else if p.cacheReadPerMtok !== null}
-									{formatUsd(p.cacheReadPerMtok)}
-								{:else}
-									<span class="text-muted-foreground">—</span>
-								{/if}
-							</Table.Cell>
-							<Table.Cell class="text-right tabular-nums">
-								{#if isEditing}
-									<Input
-										form={fid}
-										name="cacheWritePerMtok"
-										type="number"
-										step="0.0001"
-										min="0"
-										placeholder="auto"
-										bind:value={draftCacheWrite}
-										aria-label="Cache write price per 1M tokens"
-										class="ml-auto h-8 w-28 text-right"
-									/>
-								{:else if p.cacheWritePerMtok !== null}
-									{formatUsd(p.cacheWritePerMtok)}
-								{:else}
-									<span class="text-muted-foreground">—</span>
-								{/if}
-							</Table.Cell>
-							<Table.Cell>
-								{#if p.source === 'custom'}
-									<Badge variant="secondary">custom</Badge>
-								{:else}
-									<Badge variant="outline" class="text-muted-foreground">default</Badge>
-								{/if}
-							</Table.Cell>
-							<Table.Cell class="text-right whitespace-nowrap">
-								{#if canManage}
-									{#if isEditing}
-										<form
-											id={fid}
-											method="post"
-											action={p.id ? '?/update' : '?/create'}
-											class="flex justify-end gap-1"
-											use:enhance={() =>
-												async ({ update }) =>
-													update()}
-										>
-											{#if p.id}
-												<input type="hidden" name="id" value={p.id} />
-											{:else}
-												<input type="hidden" name="model" value={p.model} />
-											{/if}
-											<input type="hidden" name="provider" value={p.provider ?? ''} />
-											<Button type="submit" variant="ghost" size="icon" class="size-8" title="Save">
-												<Check class="size-4 text-primary" />
-											</Button>
-											<Button
-												type="button"
-												variant="ghost"
-												size="icon"
-												class="size-8 text-muted-foreground"
-												title="Cancel"
-												onclick={() => (editRow = null)}
-											>
-												<X class="size-4" />
-											</Button>
-										</form>
-									{:else}
-										<div
-											class="flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
-										>
-											<Button
-												variant="ghost"
-												size="icon"
-												class="size-8"
-												title={p.source === 'custom' ? 'Edit price' : 'Override default'}
-												onclick={() => startEdit(p)}
-											>
-												<Pencil class="size-4" />
-											</Button>
-											{#if p.source === 'custom'}
-												<AlertDialog.Root>
-													<AlertDialog.Trigger>
-														{#snippet child({ props })}
-															<Button
-																{...props}
-																variant="ghost"
-																size="icon"
-																class="size-8 text-muted-foreground hover:text-destructive"
-																title={p.defaultInputPerMtok !== null
-																	? 'Reset to platform default'
-																	: 'Remove price'}
-															>
-																<RotateCcw class="size-4" />
-															</Button>
-														{/snippet}
-													</AlertDialog.Trigger>
-													<AlertDialog.Content>
-														<AlertDialog.Header>
-															<AlertDialog.Title>
-																{p.defaultInputPerMtok !== null
-																	? 'Reset to platform default?'
-																	: 'Remove this price?'}
-															</AlertDialog.Title>
-															<AlertDialog.Description>
-																{p.defaultInputPerMtok !== null
-																	? 'Your custom price is discarded and the platform default is restored.'
-																	: 'The custom price is deleted. Requests for this model may be rejected until a price exists.'}
-															</AlertDialog.Description>
-														</AlertDialog.Header>
-														<AlertDialog.Footer>
-															<AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-															<form
-																method="post"
-																action="?/delete"
-																class="inline"
-																use:enhance={() =>
-																	async ({ update }) =>
-																		update()}
-															>
-																<input type="hidden" name="id" value={p.id} />
-																<AlertDialog.Action type="submit" variant="destructive">
-																	{p.defaultInputPerMtok !== null ? 'Reset' : 'Remove'}
-																</AlertDialog.Action>
-															</form>
-														</AlertDialog.Footer>
-													</AlertDialog.Content>
-												</AlertDialog.Root>
-											{/if}
-										</div>
-									{/if}
-								{/if}
-							</Table.Cell>
-						</Table.Row>
+					{#each table.visible as p (p.model)}
+						<PriceRow price={p} showProvider={showProviderCol} {canManage} />
 					{/each}
 				</Table.Body>
 			</Table.Root>
 
-			{#if visible.length === 0}
+			{#if table.visible.length === 0}
 				<div class="flex flex-col items-center justify-center py-12">
 					<Search class="size-6 text-muted-foreground" />
 					<p class="mt-2 text-sm text-muted-foreground">
-						No models match {query ? `“${query}”` : 'this filter'}.
+						No models match {table.query ? `“${table.query}”` : 'this filter'}.
 					</p>
 				</div>
 			{/if}
 		</div>
 
 		<p class="text-xs text-muted-foreground">
-			Showing {visible.length} of {rows.length} models{customCount > 0
+			Showing {table.visible.length} of {rows.length} models{customCount > 0
 				? ` · ${customCount} custom`
 				: ''}.
 		</p>
 	{/if}
 </div>
 
-<Dialog.Root
-	open={adding !== null}
-	onOpenChange={(v) => {
-		if (!v) adding = null;
-	}}
->
-	<Dialog.Content>
-		<Dialog.Header>
-			<Dialog.Title>Add model price</Dialog.Title>
-			<Dialog.Description>Prices are in USD per 1,000,000 tokens.</Dialog.Description>
-		</Dialog.Header>
-		<form
-			method="post"
-			action="?/create"
-			class="space-y-4"
-			use:enhance={() =>
-				async ({ update }) =>
-					update()}
-		>
-			<div class="space-y-2">
-				<Label for="model">Model</Label>
-				<Input id="model" name="model" placeholder="gpt-4o" required />
-				<p class="text-xs text-muted-foreground">
-					Matched by longest prefix, e.g. <code>gpt-4o</code> covers
-					<code>gpt-4o-2024-08-06</code>.
-				</p>
-			</div>
-			<div class="space-y-2">
-				<Label for="provider">Provider (optional)</Label>
-				<Select.Root type="single" name="provider" bind:value={addProvider}>
-					<Select.Trigger id="provider" class="w-full">
-						{data.providers.find((p) => p.id === addProvider)?.label ?? '—'}
-					</Select.Trigger>
-					<Select.Content>
-						<Select.Item value="" label="—">—</Select.Item>
-						{#each data.providers as prov (prov.id)}
-							<Select.Item value={prov.id} label={prov.label}>{prov.label}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
-			</div>
-			<div class="grid grid-cols-2 gap-4">
-				<div class="space-y-2">
-					<Label for="inputPerMtok">Input $ / 1M</Label>
-					<Input
-						id="inputPerMtok"
-						name="inputPerMtok"
-						type="number"
-						step="0.0001"
-						min="0"
-						placeholder="2.5"
-						required
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label for="outputPerMtok">Output $ / 1M</Label>
-					<Input
-						id="outputPerMtok"
-						name="outputPerMtok"
-						type="number"
-						step="0.0001"
-						min="0"
-						placeholder="10"
-						required
-					/>
-				</div>
-			</div>
-			<div class="grid grid-cols-2 gap-4">
-				<div class="space-y-2">
-					<Label for="cacheReadPerMtok">Cache read $ / 1M</Label>
-					<Input
-						id="cacheReadPerMtok"
-						name="cacheReadPerMtok"
-						type="number"
-						step="0.0001"
-						min="0"
-						placeholder="auto (0.1× input)"
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label for="cacheWritePerMtok">Cache write $ / 1M</Label>
-					<Input
-						id="cacheWritePerMtok"
-						name="cacheWritePerMtok"
-						type="number"
-						step="0.0001"
-						min="0"
-						placeholder="auto (1.25× input)"
-					/>
-				</div>
-			</div>
-			<p class="text-xs text-muted-foreground">
-				Cache prices are optional — leave blank to fall back to a multiple of the input price (read
-				0.1×, write 1.25×). Cache writes apply to Anthropic only; OpenAI/Azure don't charge to write
-				a cache entry.
-			</p>
-			{#if form?.message}
-				<p class="text-sm text-destructive">{form.message}</p>
-			{/if}
-			<Dialog.Footer>
-				<Button type="submit">Add model</Button>
-			</Dialog.Footer>
-		</form>
-	</Dialog.Content>
-</Dialog.Root>
+<AddModelDialog
+	bind:open={addOpen}
+	providers={data.providers}
+	defaultProvider={addProvider}
+	message={form?.message}
+/>

@@ -1,8 +1,10 @@
 <script lang="ts">
 	import * as Table from '$lib/components/ui/table/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import PageHeader from '$lib/components/page-header.svelte';
+	import EmptyState from '$lib/components/empty-state.svelte';
+	import SearchInput from '$lib/components/search-input.svelte';
 	import { formatDateTime, relativeTime, formatUsd } from '$lib/format';
 	import { eventTone, toneDot, toneText, actionIcon, isGatewayAction } from '$lib/events';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
@@ -59,27 +61,24 @@
 </script>
 
 <div class="mx-auto max-w-6xl space-y-6">
-	<div>
-		<h2 class="text-xl font-semibold tracking-tight">Audit Log</h2>
-		<p class="text-sm text-muted-foreground">
-			Append-only record of gateway requests and administrative actions.
-		</p>
-	</div>
+	<PageHeader
+		title="Audit Log"
+		description="Append-only record of gateway requests and administrative actions."
+	/>
 
 	{#if data.entries.length === 0}
-		<div class="flex flex-col items-center justify-center rounded-xl border border-dashed py-16">
-			<ScrollText class="size-8 text-muted-foreground" />
-			<p class="mt-3 text-sm font-medium">No events yet</p>
-			<p class="text-sm text-muted-foreground">Activity will appear here as it happens.</p>
-		</div>
+		<EmptyState
+			icon={ScrollText}
+			title="No events yet"
+			description="Activity will appear here as it happens."
+		/>
 	{:else}
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
-			<div class="relative flex-1">
-				<Search
-					class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-				/>
-				<Input bind:value={query} placeholder="Search action, model, service, IP…" class="pl-9" />
-			</div>
+			<SearchInput
+				bind:value={query}
+				placeholder="Search action, model, service, IP…"
+				class="flex-1"
+			/>
 			<Select.Root type="single" bind:value={kind}>
 				<Select.Trigger class="w-full sm:w-40">{kindLabel}</Select.Trigger>
 				<Select.Content>
