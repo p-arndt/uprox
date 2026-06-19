@@ -67,15 +67,29 @@ function canonicalize(value: unknown): unknown {
 	return value;
 }
 
-/** Build the cache key for a request, ignoring output-irrelevant noise fields. */
-export function cacheKeyFor(provider: string, path: string, body: unknown): string {
+/**
+ * Build the cache key for a request, ignoring output-irrelevant noise fields.
+ *
+ * `secretId` is the upstream provider secret/account that served (or would
+ * serve) the response. It's folded into the key so two byte-identical requests
+ * pinned to *different* provider secrets never share a cache entry — a request
+ * routed to one account can't be served another account's cached response.
+ */
+export function cacheKeyFor(
+	provider: string,
+	path: string,
+	body: unknown,
+	secretId: string | null
+): string {
 	let normalized = body;
 	if (body && typeof body === 'object' && !Array.isArray(body)) {
 		normalized = Object.fromEntries(
 			Object.entries(body as Record<string, unknown>).filter(([k]) => !IGNORED_KEYS.has(k))
 		);
 	}
-	return sha256(`${provider}\n${path}\n${JSON.stringify(canonicalize(normalized))}`);
+	return sha256(
+		`${provider}\n${path}\n${secretId ?? ''}\n${JSON.stringify(canonicalize(normalized))}`
+	);
 }
 
 export interface CachedResponse {
