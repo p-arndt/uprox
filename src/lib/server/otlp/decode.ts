@@ -25,6 +25,12 @@ export interface ParsedSpan {
 
 const SPAN_KINDS = ['UNSPECIFIED', 'INTERNAL', 'SERVER', 'CLIENT', 'PRODUCER', 'CONSUMER'];
 
+// Cap on OTLP AnyValue nesting (array/kvlist) the decoders will descend into.
+// A maliciously deep payload (protobuf or JSON) would otherwise recurse until
+// the call stack overflows and crashes the process; past this depth we stop
+// descending and substitute a truncation marker instead.
+const MAX_DEPTH = 32;
+
 function kindName(kind: number | null): string | null {
 	if (kind == null || kind <= 0) return null;
 	return SPAN_KINDS[kind] ?? null;
@@ -102,7 +108,10 @@ function readDouble(bits: bigint): number {
 }
 
 /** Decode an OTLP `AnyValue` to a plain JS scalar/array/object. */
-function decodeAnyValue(buf: Uint8Array): unknown {
+function decodeAnyValue(buf: Uint8Array, depth = 0): unknown {
+	// Stop descending once nesting exceeds the cap, so a deeply nested AnyValue
+	// can't overflow the stack. Scalars below are still safe to read.
+	if (depth > MAX_DEPTH) return '[truncated]';
 	const r = new Reader(buf);
 	while (!r.eof) {
 		const tag = Number(r.varint());
@@ -123,13 +132,13 @@ function decodeAnyValue(buf: Uint8Array): unknown {
 				const arr: unknown[] = [];
 				while (!ar.eof) {
 					const t = Number(ar.varint());
-					if (t >>> 3 === 1) arr.push(decodeAnyValue(ar.bytes()));
+					if (t >>> 3 === 1) arr.push(decodeAnyValue(ar.bytes(), depth + 1));
 					else ar.skip(t & 7);
 				}
 				return arr;
 			}
 			case 6:
-				return decodeKvList(r.bytes());
+				return decodeKvList(r.bytes(), depth + 1);
 			case 7:
 				r.bytes();
 				return '[bytes]';
@@ -141,20 +150,21 @@ function decodeAnyValue(buf: Uint8Array): unknown {
 }
 
 /** Decode a list of OTLP `KeyValue` into a plain object. */
-function decodeKvList(buf: Uint8Array): Record<string, unknown> {
+function decodeKvList(buf: Uint8Array, depth = 0): Record<string, unknown> {
+	if (depth > MAX_DEPTH) return {};
 	const r = new Reader(buf);
 	const out: Record<string, unknown> = {};
 	while (!r.eof) {
 		const tag = Number(r.varint());
 		if (tag >>> 3 === 1) {
-			const [k, v] = decodeKeyValue(r.bytes());
+			const [k, v] = decodeKeyValue(r.bytes(), depth);
 			if (k) out[k] = v;
 		} else r.skip(tag & 7);
 	}
 	return out;
 }
 
-function decodeKeyValue(buf: Uint8Array): [string, unknown] {
+function decodeKeyValue(buf: Uint8Array, depth = 0): [string, unknown] {
 	const r = new Reader(buf);
 	let key = '';
 	let value: unknown = null;
@@ -163,7 +173,7 @@ function decodeKeyValue(buf: Uint8Array): [string, unknown] {
 		const no = tag >>> 3;
 		const ty = tag & 7;
 		if (no === 1) key = utf8.decode(r.bytes());
-		else if (no === 2) value = decodeAnyValue(r.bytes());
+		else if (no === 2) value = decodeAnyValue(r.bytes(), depth + 1);
 		else r.skip(ty);
 	}
 	return [key, value];
@@ -305,25 +315,29 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 /** Read an OTLP/JSON `AnyValue` object (`{ stringValue }`, `{ intValue }`, …). */
-function jsonAnyValue(v: unknown): unknown {
+function jsonAnyValue(v: unknown, depth = 0): unknown {
+	// Same depth cap as the protobuf path: a deeply nested JSON AnyValue recurses
+	// too, so bail out before the stack overflows.
+	if (depth > MAX_DEPTH) return '[truncated]';
 	if (!isRecord(v)) return null;
 	if (typeof v.stringValue === 'string') return v.stringValue;
 	if (typeof v.boolValue === 'boolean') return v.boolValue;
 	if (v.intValue != null) return Number(v.intValue);
 	if (typeof v.doubleValue === 'number') return v.doubleValue;
 	if (isRecord(v.arrayValue) && Array.isArray(v.arrayValue.values))
-		return v.arrayValue.values.map(jsonAnyValue);
+		return v.arrayValue.values.map((e) => jsonAnyValue(e, depth + 1));
 	if (isRecord(v.kvlistValue) && Array.isArray(v.kvlistValue.values))
-		return jsonAttributes(v.kvlistValue.values);
+		return jsonAttributes(v.kvlistValue.values, depth + 1);
 	if (v.bytesValue != null) return '[bytes]';
 	return null;
 }
 
-function jsonAttributes(list: unknown): Record<string, unknown> {
+function jsonAttributes(list: unknown, depth = 0): Record<string, unknown> {
 	const out: Record<string, unknown> = {};
+	if (depth > MAX_DEPTH) return out;
 	if (!Array.isArray(list)) return out;
 	for (const kv of list) {
-		if (isRecord(kv) && typeof kv.key === 'string') out[kv.key] = jsonAnyValue(kv.value);
+		if (isRecord(kv) && typeof kv.key === 'string') out[kv.key] = jsonAnyValue(kv.value, depth);
 	}
 	return out;
 }

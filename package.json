@@ -81,7 +81,7 @@
 	"dependencies": {
 		"better-auth": "^1.6.18",
 		"drizzle-orm": "^0.45.2",
-		"nodemailer": "^9.0.0",
+		"nodemailer": "^9.0.1",
 		"postgres": "^3.4.9"
 	}
 }

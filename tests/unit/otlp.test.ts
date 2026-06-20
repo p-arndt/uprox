@@ -109,6 +109,47 @@ describe('parseOtlpJson', () => {
 		expect(parseOtlpJson({})).toEqual([]);
 		expect(parseOtlpJson(null)).toEqual([]);
 	});
+
+	// Regression: a deeply nested AnyValue (kvlist within kvlist …) must not blow
+	// the stack — the decoder caps recursion depth and truncates beyond it instead
+	// of crashing the process (DoS hardening for the authenticated OTLP ingest).
+	it('bounds recursion on a pathologically nested attribute (no stack overflow)', () => {
+		let value: Record<string, unknown> = { stringValue: 'leaf' };
+		for (let i = 0; i < 5000; i++) {
+			value = { kvlistValue: { values: [{ key: 'k', value }] } };
+		}
+		const payload = {
+			resourceSpans: [
+				{
+					resource: { attributes: [{ key: 'service.name', value: { stringValue: 'svc' } }] },
+					scopeSpans: [
+						{
+							spans: [
+								{
+									traceId: 'abcdef00000000000000000000000001',
+									spanId: '1111111111111111',
+									name: 'deep',
+									startTimeUnixNano: '1000000000',
+									endTimeUnixNano: '2000000000',
+									attributes: [{ key: 'deep', value }]
+								}
+							]
+						}
+					]
+				}
+			]
+		};
+
+		let spans: ReturnType<typeof parseOtlpJson> | undefined;
+		expect(() => {
+			spans = parseOtlpJson(payload);
+		}).not.toThrow();
+		expect(spans).toHaveLength(1);
+		// the span still decodes; the over-deep attribute is present but truncated
+		expect(spans?.[0].name).toBe('deep');
+		expect(spans?.[0].serviceName).toBe('svc');
+		expect(spans?.[0].attributes).toHaveProperty('deep');
+	});
 });
 
 describe('span tree', () => {

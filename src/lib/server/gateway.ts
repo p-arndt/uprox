@@ -524,7 +524,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		// only when sampling is pinned (temperature 0 or an explicit seed), so
 		// two identical-but-varied prompts each reach the model.
 		isDeterministicRequest(scope, body);
-	const cacheKey = cacheable ? cacheKeyFor(provider.id, path, body) : null;
+	const cacheKey = cacheable ? cacheKeyFor(provider.id, path, body, token.providerSecretId) : null;
 	if (cacheKey) {
 		const hit = await getCached(cacheKey);
 		if (hit) {
@@ -897,6 +897,12 @@ export async function proxyGeminiNative(
 		return geminiNativeError(400, `Gemini does not support ${scope} requests`, 'INVALID_ARGUMENT');
 	}
 
+	// defense-in-depth: `model` is interpolated raw into the upstream URL below, so
+	// reject anything outside a safe model-name charset before it gets there.
+	if (model && !/^[A-Za-z0-9._-]+$/.test(model)) {
+		return geminiNativeError(400, 'Invalid model name', 'INVALID_ARGUMENT');
+	}
+
 	// policy enforcement
 	const decision = evaluatePolicy(token, { provider: provider.id, model, scope });
 	if (!decision.allow) {
@@ -948,7 +954,9 @@ export async function proxyGeminiNative(
 	// Key on the native path + body; distinct from the OpenAI-ingress cache (which
 	// keys on `/chat/completions` + an OpenAI body), so formats never cross.
 	const cachePath = `/models/${model}:${method}`;
-	const cacheKey = cacheable ? cacheKeyFor(provider.id, cachePath, body) : null;
+	const cacheKey = cacheable
+		? cacheKeyFor(provider.id, cachePath, body, token.providerSecretId)
+		: null;
 	if (cacheKey) {
 		const hit = await getCached(cacheKey);
 		if (hit) {
@@ -1212,6 +1220,13 @@ export async function proxyGeminiModels(
 		return json({ models: [] });
 	}
 
+	// defense-in-depth: `model` is interpolated raw into the upstream URL below, so
+	// reject anything outside a safe model-name charset (only for the get call —
+	// `model` is null for the list call).
+	if (model && !/^[A-Za-z0-9._-]+$/.test(model)) {
+		return geminiNativeError(404, `Model "${model}" is not available`, 'NOT_FOUND');
+	}
+
 	const creds = await loadProviderCreds(provider.id, token.providerSecretId);
 	if (!creds) {
 		return geminiNativeError(
@@ -1351,6 +1366,26 @@ export async function proxyRawUpstream(
 
 	const provider = PROVIDERS[providerId];
 	if (!provider) return gatewayError(500, 'Unknown provider', 'api_error');
+
+	// policy enforcement: the Files API has no model to scope by, so we gate on the
+	// 'files' scope (and the policy's provider allowlist). An empty model skips the
+	// model rules, so a token with no explicit scopes is still allowed — only a
+	// token whose explicit scope list omits 'files', or a policy whose
+	// allowedProviders excludes this provider, is denied.
+	const decision = evaluatePolicy(token, { provider: providerId, model: '', scope: 'files' });
+	if (!decision.allow) {
+		await audit({
+			action: 'policy.deny',
+			status: 'deny',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: providerId,
+			statusCode: 403,
+			ip,
+			detail: decision.reason
+		});
+		return gatewayError(403, `Request denied by policy: ${decision.reason}`, 'permission_error');
+	}
 
 	const creds = await loadProviderCreds(providerId, token.providerSecretId);
 	if (!creds) {

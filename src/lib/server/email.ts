@@ -1,5 +1,15 @@
 import { env } from '$env/dynamic/private';
 
+/** Escape a string for safe interpolation into an HTML email body/attribute. */
+export function escapeHtml(s: string): string {
+	return s
+		.replace(/&/g, '&amp;')
+		.replace(/</g, '&lt;')
+		.replace(/>/g, '&gt;')
+		.replace(/"/g, '&quot;')
+		.replace(/'/g, '&#39;');
+}
+
 /**
  * Minimal transactional email. Uses SMTP via nodemailer when configured;
  * otherwise it no-ops (the caller still surfaces a copy-able link in the UI,
@@ -45,8 +55,8 @@ export async function sendInvitationEmail(data: InvitationEmail): Promise<void> 
 			to: data.to,
 			subject: `Join ${data.orgName} on uprox`,
 			text: `${inviter} to join ${data.orgName} on uprox as ${data.role}.\n\nAccept: ${data.inviteUrl}`,
-			html: `<p>${inviter} to join <strong>${data.orgName}</strong> on uprox as <strong>${data.role}</strong>.</p>
-<p><a href="${data.inviteUrl}">Accept invitation</a></p>
+			html: `<p>${escapeHtml(inviter)} to join <strong>${escapeHtml(data.orgName)}</strong> on uprox as <strong>${escapeHtml(data.role)}</strong>.</p>
+<p><a href="${escapeHtml(data.inviteUrl)}">Accept invitation</a></p>
 <p style="color:#888;font-size:12px">If you weren't expecting this, you can ignore this email.</p>`
 		});
 	} catch (err) {
@@ -98,7 +108,7 @@ export async function sendBudgetAlertEmail(data: BudgetAlertEmail): Promise<void
 
 	const link = data.usageUrl ? `\n\nView usage: ${data.usageUrl}` : '';
 	const linkHtml = data.usageUrl
-		? `<p><a href="${data.usageUrl}">View usage dashboard</a></p>`
+		? `<p><a href="${escapeHtml(data.usageUrl)}">View usage dashboard</a></p>`
 		: '';
 
 	try {
@@ -108,8 +118,8 @@ export async function sendBudgetAlertEmail(data: BudgetAlertEmail): Promise<void
 			to: recipients,
 			subject: `[uprox] ${headline}`,
 			text: `${headline} in ${data.orgName}.\n\nSpend: ${money(data.spentUsd)} of ${money(data.budgetUsd)} (${data.pct}%).${link}`,
-			html: `<p><strong>${headline}</strong> in ${data.orgName}.</p>
-<p>Spend: <strong>${money(data.spentUsd)}</strong> of ${money(data.budgetUsd)} (${data.pct}%).</p>
+			html: `<p><strong>${escapeHtml(headline)}</strong> in ${escapeHtml(data.orgName)}.</p>
+<p>Spend: <strong>${escapeHtml(money(data.spentUsd))}</strong> of ${escapeHtml(money(data.budgetUsd))} (${escapeHtml(String(data.pct))}%).</p>
 ${linkHtml}`
 		});
 	} catch (err) {

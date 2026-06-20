@@ -84,6 +84,16 @@ export const actions: Actions = {
 			return fail(400, { message: 'You cannot change your own role' });
 		}
 
+		// The first account must stay owner; the owner role is immutable even for admins.
+		const [target] = await db
+			.select({ role: user.role })
+			.from(user)
+			.where(eq(user.id, memberId))
+			.limit(1);
+		if (target?.role === 'owner') {
+			return fail(403, { message: 'The owner role cannot be changed.' });
+		}
+
 		await db.update(user).set({ role }).where(eq(user.id, memberId));
 		return { success: true };
 	},
@@ -97,6 +107,16 @@ export const actions: Actions = {
 		// Prevent removing yourself.
 		if (memberIdOrEmail === ctx.userId) {
 			return fail(400, { message: 'You cannot remove yourself' });
+		}
+
+		// The first account must stay owner; the owner can never be removed.
+		const [target] = await db
+			.select({ role: user.role })
+			.from(user)
+			.where(eq(user.id, memberIdOrEmail))
+			.limit(1);
+		if (target?.role === 'owner') {
+			return fail(403, { message: 'The owner cannot be removed.' });
 		}
 
 		// Deleting the user cascades their sessions and accounts.
