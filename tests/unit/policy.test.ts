@@ -139,6 +139,34 @@ describe('model intersection across layers', () => {
 	});
 });
 
+describe('files scope (regression: Files API enforcement)', () => {
+	// proxyRawUpstream gates the Files API with evaluatePolicy(..., scope: 'files').
+	// These lock in that a token must be permitted for 'files' the same way as any
+	// other scope, so the Files proxy can't be reached by an out-of-scope token.
+	const files = { provider: 'openai', model: '', scope: 'files' };
+
+	it('allows files for a token with no explicit scopes (empty = all)', () => {
+		expect(evaluatePolicy(token({ scopes: [] }), files)).toEqual({ allow: true });
+	});
+
+	it('denies files for a token explicitly scoped to something else', () => {
+		const res = evaluatePolicy(token({ scopes: ['chat', 'embeddings'] }), files);
+		expect(res.allow).toBe(false);
+		expect(res).toMatchObject({ reason: expect.stringContaining('files') });
+	});
+
+	it('allows files when the token explicitly lists the files scope', () => {
+		expect(evaluatePolicy(token({ scopes: ['files'] }), files)).toEqual({ allow: true });
+	});
+
+	it("denies files when the policy's provider allowlist excludes the routed provider", () => {
+		const t = token({ scopes: ['files'], policy: policy({ allowedProviders: ['azure'] }) });
+		const res = evaluatePolicy(t, files);
+		expect(res.allow).toBe(false);
+		expect(res).toMatchObject({ reason: expect.stringContaining('openai') });
+	});
+});
+
 describe('rule ordering', () => {
 	it('checks scope before provider/model rules', () => {
 		const t = token({
