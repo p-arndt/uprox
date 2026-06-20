@@ -12,6 +12,8 @@
 	import PageHeader from '$lib/components/page-header.svelte';
 	import EmptyState from '$lib/components/empty-state.svelte';
 	import ConfirmAction from '$lib/components/confirm-action.svelte';
+	import InlineLimitsFields from '$lib/components/inline-limits-fields.svelte';
+	import { emptyInlineLimits, type InlineLimitValues } from '$lib/components/inline-limits';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -24,14 +26,18 @@
 	let createType = $state('app');
 	let createPolicyId = $state('');
 	let createProviderSecretId = $state('');
-	let editing = $state<{
-		id: string;
-		name: string;
-		type: string;
-		description: string;
-		policyId: string;
-		providerSecretId: string;
-	} | null>(null);
+	let createInline = $state(emptyInlineLimits());
+	let editing = $state<
+		| ({
+				id: string;
+				name: string;
+				type: string;
+				description: string;
+				policyId: string;
+				providerSecretId: string;
+		  } & InlineLimitValues)
+		| null
+	>(null);
 
 	const policyName = $derived(new Map(data.policies.map((p) => [p.id, p.name] as const)));
 	const typeOptions = [
@@ -39,7 +45,22 @@
 		{ value: 'agent', label: 'Agent' },
 		{ value: 'workload', label: 'Workload' }
 	];
-	const policyLabel = (id: string) => (id ? (policyName.get(id) ?? id) : 'No policy (allow all)');
+	const policyLabel = (id: string) => (id ? (policyName.get(id) ?? id) : 'No preset');
+
+	// null inline column → '' (inherit) in the form; budgets are numeric strings,
+	// normalized to a plain number for display.
+	const numStr = (v: number | string | null) => (v == null ? '' : String(Number(v)));
+	type ServiceRow = (typeof data.services)[number];
+	const inlineFrom = (s: ServiceRow): InlineLimitValues => ({
+		allowedProviders: s.allowedProviders ?? [],
+		allowedModels: (s.allowedModels ?? []).join(', '),
+		preferredProvider: s.preferredProvider ?? '',
+		rateLimitPerMinute: s.rateLimitPerMinute == null ? '' : String(s.rateLimitPerMinute),
+		dailyBudgetUsd: numStr(s.dailyBudgetUsd),
+		monthlyBudgetUsd: numStr(s.monthlyBudgetUsd),
+		cacheTtlSeconds: s.cacheTtlSeconds == null ? '' : String(s.cacheTtlSeconds),
+		tracingEnabled: s.tracingEnabled == null ? '' : String(s.tracingEnabled)
+	});
 	const canManage = $derived(can(data.role, 'services:manage', data.memberPermissions));
 
 	// per-service upstream-key picker — only present when some provider has >1 key
@@ -104,21 +125,28 @@
 								</Select.Root>
 							</div>
 							<div class="space-y-2">
-								<Label for="policyId">Policy</Label>
+								<Label for="policyId">Preset</Label>
 								<Select.Root type="single" name="policyId" bind:value={createPolicyId}>
 									<Select.Trigger id="policyId" class="w-full"
 										>{policyLabel(createPolicyId)}</Select.Trigger
 									>
 									<Select.Content>
-										<Select.Item value="" label="No policy (allow all)"
-											>No policy (allow all)</Select.Item
-										>
+										<Select.Item value="" label="No preset">No preset</Select.Item>
 										{#each data.policies as p (p.id)}
 											<Select.Item value={p.id} label={p.name}>{p.name}</Select.Item>
 										{/each}
 									</Select.Content>
 								</Select.Root>
+								<p class="text-xs text-muted-foreground">
+									Optional reusable baseline. The limits below override it field-by-field.
+								</p>
 							</div>
+							<InlineLimitsFields
+								providers={data.providers}
+								values={createInline}
+								idPrefix="svc-create"
+								scope="service"
+							/>
 							{#if secretOptions.length > 0}
 								<div class="space-y-2">
 									<Label for="providerSecretId">Upstream key</Label>
@@ -173,7 +201,7 @@
 					<Table.Row>
 						<Table.Head>Name</Table.Head>
 						<Table.Head>Type</Table.Head>
-						<Table.Head>Policy</Table.Head>
+						<Table.Head>Preset</Table.Head>
 						<Table.Head>Created</Table.Head>
 						<Table.Head class="w-10"></Table.Head>
 					</Table.Row>
@@ -212,7 +240,8 @@
 													type: s.type,
 													description: s.description ?? '',
 													policyId: s.policyId ?? '',
-													providerSecretId: s.providerSecretId ?? ''
+													providerSecretId: s.providerSecretId ?? '',
+													...inlineFrom(s)
 												})}
 										>
 											<Pencil class="size-4" />
@@ -300,20 +329,28 @@
 					</Select.Root>
 				</div>
 				<div class="space-y-2">
-					<Label for="edit-policyId">Policy</Label>
+					<Label for="edit-policyId">Preset</Label>
 					<Select.Root type="single" name="policyId" bind:value={editing.policyId}>
 						<Select.Trigger id="edit-policyId" class="w-full"
 							>{policyLabel(editing?.policyId ?? '')}</Select.Trigger
 						>
 						<Select.Content>
-							<Select.Item value="" label="No policy (allow all)">No policy (allow all)</Select.Item
-							>
+							<Select.Item value="" label="No preset">No preset</Select.Item>
 							{#each data.policies as p (p.id)}
 								<Select.Item value={p.id} label={p.name}>{p.name}</Select.Item>
 							{/each}
 						</Select.Content>
 					</Select.Root>
+					<p class="text-xs text-muted-foreground">
+						Optional reusable baseline. The limits below override it field-by-field.
+					</p>
 				</div>
+				<InlineLimitsFields
+					providers={data.providers}
+					values={editing}
+					idPrefix="svc-edit"
+					scope="service"
+				/>
 				{#if secretOptions.length > 0}
 					<div class="space-y-2">
 						<Label for="edit-providerSecretId">Upstream key</Label>

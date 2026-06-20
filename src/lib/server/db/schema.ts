@@ -25,7 +25,27 @@ export const service = pgTable('service', {
 	// free-form classification e.g. "agent", "workload", "app"
 	type: text('type').notNull().default('app'),
 	description: text('description'),
+	// Optional reusable preset. Its limits/access are the lowest-priority layer in
+	// the effective-config cascade (see effective-config.ts): the service's own
+	// inline fields below override it field-by-field, and a token overrides both.
 	policyId: uuid('policy_id').references(() => policy.id, { onDelete: 'set null' }),
+	// ---- inline limits & access (NULL = inherit the preset / instance default) ----
+	// These let you set limits directly on the service without authoring a preset.
+	// Each is merged independently; see effective-config.ts for the exact cascade.
+	// Empty (non-null) allowlist still means "allow all" — same as a preset's.
+	allowedProviders: text('allowed_providers').array(),
+	allowedModels: text('allowed_models').array(),
+	preferredProvider: text('preferred_provider'),
+	// requests/min; NULL = inherit, 0 = explicitly unlimited
+	rateLimitPerMinute: integer('rate_limit_per_minute'),
+	// USD spend ceilings summed across ALL of this service's tokens (the aggregate
+	// ceiling). NULL = inherit, 0 = unlimited. Enforced alongside per-token budgets.
+	dailyBudgetUsd: numeric('daily_budget_usd', { precision: 12, scale: 4 }),
+	monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 4 }),
+	// NULL = inherit, 0 = off, >0 = TTL seconds
+	cacheTtlSeconds: integer('cache_ttl_seconds'),
+	// NULL = inherit, true/false force on/off
+	tracingEnabled: boolean('tracing_enabled'),
 	// Pinned upstream credential. When set, the gateway routes this service's
 	// traffic for that secret's provider to this specific secret — e.g. one of
 	// several Azure OpenAI resources. NULL = use the provider's default secret
@@ -69,19 +89,34 @@ export const machineToken = pgTable(
 			.array()
 			.notNull()
 			.default(sql`'{}'::text[]`),
-		// Per-token model allowlist. NARROWS the effective policy's models — a model
-		// must satisfy both this list and the policy to be reachable (intersection,
-		// the token can only restrict, never widen). Empty = no extra restriction.
-		// Same matching as policy.allowedModels (trailing "*" prefix glob).
+		// Per-token model allowlist. NARROWS the effective access — a model must
+		// satisfy every non-empty allowlist across all layers to be reachable
+		// (intersection; a layer can only restrict, never widen). Empty = no
+		// restriction from this layer. Trailing "*" is a prefix glob.
 		allowedModels: text('allowed_models')
 			.array()
 			.notNull()
 			.default(sql`'{}'::text[]`),
-		// Optional per-token policy. When set it REPLACES the service's policy for
-		// requests made with this token (providers, models, rate limit, budget,
-		// cache). NULL = inherit the service's policy. The FK nulls out if the
-		// policy is deleted, reverting the token to its service policy.
+		// Optional reusable preset for this token. Lower priority than the token's
+		// own inline fields below, higher than the service's. NULL = no preset.
+		// The FK nulls out if the preset is deleted.
 		policyId: uuid('policy_id').references(() => policy.id, { onDelete: 'set null' }),
+		// ---- inline limits & access (NULL = inherit) ----
+		// Highest-priority layer in the effective-config cascade: a value set here
+		// overrides the token's preset, the service, and the service's preset.
+		// See effective-config.ts.
+		allowedProviders: text('allowed_providers').array(),
+		preferredProvider: text('preferred_provider'),
+		// requests/min; NULL = inherit, 0 = unlimited
+		rateLimitPerMinute: integer('rate_limit_per_minute'),
+		// Per-token USD spend ceilings (this token's personal cap). NULL = inherit,
+		// 0 = unlimited. Enforced in ADDITION to the service's aggregate budget.
+		dailyBudgetUsd: numeric('daily_budget_usd', { precision: 12, scale: 4 }),
+		monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 4 }),
+		// NULL = inherit, 0 = off, >0 = TTL seconds
+		cacheTtlSeconds: integer('cache_ttl_seconds'),
+		// NULL = inherit, true/false force on/off
+		tracingEnabled: boolean('tracing_enabled'),
 		lastUsedAt: timestamp('last_used_at'),
 		expiresAt: timestamp('expires_at'),
 		revokedAt: timestamp('revoked_at'),

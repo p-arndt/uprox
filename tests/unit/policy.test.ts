@@ -1,6 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { evaluatePolicy } from '$lib/server/policy';
 import type { ResolvedToken } from '$lib/server/tokens';
+import type { EffectiveConfig } from '$lib/server/effective-config';
+
+/** Minimal effective config; the policy engine only reads the allowlists + scope. */
+function eff(over: Partial<EffectiveConfig> = {}): EffectiveConfig {
+	return {
+		providerLists: [],
+		modelLists: [],
+		preferredProvider: null,
+		rateLimitPerMinute: 0,
+		cacheTtlSeconds: 0,
+		tracingEnabled: false,
+		tokenBudget: { dailyBudgetUsd: 0, monthlyBudgetUsd: 0 },
+		serviceBudget: { dailyBudgetUsd: 0, monthlyBudgetUsd: 0 },
+		...over
+	};
+}
 
 /** Minimal ResolvedToken builder; only the fields the policy engine reads matter. */
 function token(over: Partial<ResolvedToken> = {}): ResolvedToken {
@@ -9,22 +25,10 @@ function token(over: Partial<ResolvedToken> = {}): ResolvedToken {
 		serviceId: 'svc1',
 		serviceName: 'svc',
 		scopes: [],
-		allowedModels: [],
 		providerSecretId: null,
-		policy: null,
-		defaultCacheTtlSeconds: 0,
-		defaultTracingEnabled: false,
+		effective: eff(),
 		...over
 	};
-}
-
-/** Minimal policy row with empty allowlists (= allow all). */
-function policy(over: Record<string, unknown> = {}) {
-	return {
-		allowedProviders: [] as string[],
-		allowedModels: [] as string[],
-		...over
-	} as unknown as NonNullable<ResolvedToken['policy']>;
 }
 
 const chat = { provider: 'openai', model: 'gpt-4o', scope: 'chat' };
@@ -45,118 +49,90 @@ describe('scope check', () => {
 	});
 });
 
-describe('no policy attached', () => {
-	it('allows once scopes pass', () => {
-		expect(evaluatePolicy(token({ scopes: ['chat'], policy: null }), chat)).toEqual({
-			allow: true
-		});
+describe('no restrictions', () => {
+	it('allows once scopes pass and no allowlists apply', () => {
+		expect(evaluatePolicy(token({ scopes: ['chat'] }), chat)).toEqual({ allow: true });
 	});
 });
 
 describe('provider allowlist', () => {
 	it('allows when the provider is listed', () => {
-		const t = token({ policy: policy({ allowedProviders: ['openai'] }) });
+		const t = token({ effective: eff({ providerLists: [['openai']] }) });
 		expect(evaluatePolicy(t, chat)).toEqual({ allow: true });
 	});
 
 	it('denies when the provider is not listed', () => {
-		const t = token({ policy: policy({ allowedProviders: ['anthropic'] }) });
+		const t = token({ effective: eff({ providerLists: [['anthropic']] }) });
 		const res = evaluatePolicy(t, chat);
 		expect(res.allow).toBe(false);
 		expect(res).toMatchObject({ reason: expect.stringContaining('openai') });
 	});
 
-	it('allows any provider when the list is empty', () => {
-		const t = token({ policy: policy({ allowedProviders: [] }) });
+	it('allows any provider when no list applies', () => {
+		const t = token({ effective: eff({ providerLists: [] }) });
 		expect(evaluatePolicy(t, chat)).toEqual({ allow: true });
+	});
+
+	it('intersects multiple provider lists (must satisfy all)', () => {
+		// one layer allows openai+azure, another only azure → openai is denied
+		const t = token({ effective: eff({ providerLists: [['openai', 'azure'], ['azure']] }) });
+		expect(evaluatePolicy(t, chat).allow).toBe(false);
+		expect(evaluatePolicy(t, { ...chat, provider: 'azure' })).toEqual({ allow: true });
 	});
 });
 
 describe('model allowlist', () => {
 	it('allows an exact model match', () => {
-		const t = token({ policy: policy({ allowedModels: ['gpt-4o'] }) });
+		const t = token({ effective: eff({ modelLists: [['gpt-4o']] }) });
 		expect(evaluatePolicy(t, chat)).toEqual({ allow: true });
 	});
 
 	it('denies a model that is not listed', () => {
-		const t = token({ policy: policy({ allowedModels: ['gpt-4o-mini'] }) });
+		const t = token({ effective: eff({ modelLists: [['gpt-4o-mini']] }) });
 		const res = evaluatePolicy(t, chat);
 		expect(res.allow).toBe(false);
 		expect(res).toMatchObject({ reason: expect.stringContaining('gpt-4o') });
 	});
 
 	it('supports trailing "*" prefix globs', () => {
-		const t = token({ policy: policy({ allowedModels: ['gpt-4o*'] }) });
+		const t = token({ effective: eff({ modelLists: [['gpt-4o*']] }) });
 		expect(evaluatePolicy(t, { ...chat, model: 'gpt-4o-mini' })).toEqual({ allow: true });
 		expect(evaluatePolicy(t, { ...chat, model: 'claude-opus-4-7' }).allow).toBe(false);
 	});
 
-	it('matches if any pattern in the list matches', () => {
-		const t = token({ policy: policy({ allowedModels: ['claude-*', 'gpt-4o'] }) });
+	it('matches if any pattern in a single list matches', () => {
+		const t = token({ effective: eff({ modelLists: [['claude-*', 'gpt-4o']] }) });
 		expect(evaluatePolicy(t, chat)).toEqual({ allow: true });
 	});
 
 	it('matches case-insensitively, consistent with routing', () => {
-		// glob branch: "gpt-4o*" matches a request for "GPT-4o"
-		const glob = token({ policy: policy({ allowedModels: ['gpt-4o*'] }) });
+		const glob = token({ effective: eff({ modelLists: [['gpt-4o*']] }) });
 		expect(evaluatePolicy(glob, { ...chat, model: 'GPT-4o' })).toEqual({ allow: true });
 
-		// exact branch: "gpt-4o" matches a request for "GPT-4O"
-		const exact = token({ policy: policy({ allowedModels: ['gpt-4o'] }) });
+		const exact = token({ effective: eff({ modelLists: [['gpt-4o']] }) });
 		expect(evaluatePolicy(exact, { ...chat, model: 'GPT-4O' })).toEqual({ allow: true });
 
-		// a non-matching model is still denied
-		const res = evaluatePolicy(exact, { ...chat, model: 'GPT-4o-mini' });
-		expect(res.allow).toBe(false);
+		expect(evaluatePolicy(exact, { ...chat, model: 'GPT-4o-mini' }).allow).toBe(false);
 	});
 });
 
-describe('per-token model allowlist', () => {
-	it('allows a model the token lists', () => {
-		const t = token({ allowedModels: ['gpt-4o'] });
-		expect(evaluatePolicy(t, chat)).toEqual({ allow: true });
+describe('model intersection across layers', () => {
+	it('narrows: a model must satisfy every list (e.g. token over preset)', () => {
+		// preset allows the gpt-4o family, a narrower layer restricts to mini only
+		const t = token({ effective: eff({ modelLists: [['gpt-4o-mini'], ['gpt-4o*']] }) });
+		expect(evaluatePolicy(t, { ...chat, model: 'gpt-4o-mini' })).toEqual({ allow: true });
+		// gpt-4o passes the wide list but fails the narrow one
+		expect(evaluatePolicy(t, { ...chat, model: 'gpt-4o' }).allow).toBe(false);
 	});
 
-	it('denies a model the token does not list (even with no policy)', () => {
-		const t = token({ allowedModels: ['gpt-4o-mini'] });
-		const res = evaluatePolicy(t, chat);
-		expect(res.allow).toBe(false);
-		expect(res).toMatchObject({ reason: expect.stringContaining('token forbids') });
-	});
-
-	it('supports trailing "*" prefix globs, matched case-insensitively', () => {
-		const t = token({ allowedModels: ['gpt-4o*'] });
-		expect(evaluatePolicy(t, { ...chat, model: 'GPT-4o-mini' })).toEqual({ allow: true });
+	it('cannot widen: an extra permissive layer still loses to a restrictive one', () => {
+		const t = token({ effective: eff({ modelLists: [['claude-opus-4-7'], ['gpt-4o']] }) });
+		// claude passes the first list but the second forbids it
 		expect(evaluatePolicy(t, { ...chat, model: 'claude-opus-4-7' }).allow).toBe(false);
 	});
 
-	it('narrows the policy (intersection): both the token and policy must allow', () => {
-		// policy permits the gpt-4o family, the token narrows to mini only
-		const t = token({
-			allowedModels: ['gpt-4o-mini'],
-			policy: policy({ allowedModels: ['gpt-4o*'] })
-		});
-		expect(evaluatePolicy(t, { ...chat, model: 'gpt-4o-mini' })).toEqual({ allow: true });
-		// gpt-4o passes the policy but the token forbids it
-		const res = evaluatePolicy(t, { ...chat, model: 'gpt-4o' });
-		expect(res.allow).toBe(false);
-		expect(res).toMatchObject({ reason: expect.stringContaining('token forbids') });
-	});
-
-	it('cannot widen the policy: a token can only further restrict', () => {
-		// the policy forbids the model; the token "allowing" it changes nothing
-		const t = token({
-			allowedModels: ['claude-opus-4-7'],
-			policy: policy({ allowedModels: ['gpt-4o'] })
-		});
-		const res = evaluatePolicy(t, { ...chat, model: 'claude-opus-4-7' });
-		expect(res.allow).toBe(false);
-		expect(res).toMatchObject({ reason: expect.stringContaining('policy forbids') });
-	});
-
 	it('skips model rules for an empty model (the /v1/models provider probe)', () => {
-		// a token restricted to one model still lists its allowed providers
-		const t = token({ allowedModels: ['gpt-4o'], scopes: ['models'] });
+		const t = token({ effective: eff({ modelLists: [['gpt-4o']] }), scopes: ['models'] });
 		expect(evaluatePolicy(t, { provider: 'openai', model: '', scope: 'models' })).toEqual({
 			allow: true
 		});
@@ -164,12 +140,11 @@ describe('per-token model allowlist', () => {
 });
 
 describe('rule ordering', () => {
-	it('checks scope before policy provider/model rules', () => {
+	it('checks scope before provider/model rules', () => {
 		const t = token({
 			scopes: ['embeddings'],
-			policy: policy({ allowedProviders: ['openai'], allowedModels: ['gpt-4o'] })
+			effective: eff({ providerLists: [['openai']], modelLists: [['gpt-4o']] })
 		});
-		// scope fails first even though provider+model would pass
 		expect(evaluatePolicy(t, chat)).toMatchObject({ reason: expect.stringContaining('chat') });
 	});
 });

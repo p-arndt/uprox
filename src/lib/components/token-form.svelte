@@ -1,11 +1,11 @@
 <script lang="ts" module>
-	export interface TokenFormValues {
+	import type { InlineLimitValues } from '$lib/components/inline-limits';
+
+	export interface TokenFormValues extends InlineLimitValues {
 		id?: string;
 		name: string;
 		scopes: string[];
-		/** comma-joined model patterns */
-		allowedModels: string;
-		/** '' = inherit the service's policy */
+		/** '' = no preset attached */
 		policyId: string;
 	}
 </script>
@@ -18,6 +18,7 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
+	import InlineLimitsFields from '$lib/components/inline-limits-fields.svelte';
 	import { GATEWAY_SCOPES } from '$lib/scopes';
 
 	let {
@@ -26,6 +27,7 @@
 		idPrefix,
 		values,
 		policies,
+		providers,
 		resetOnSuccess = false,
 		topFields,
 		bottomFields
@@ -36,6 +38,7 @@
 		idPrefix: string;
 		values: TokenFormValues;
 		policies: { id: string; name: string }[];
+		providers: { id: string; label: string }[];
 		resetOnSuccess?: boolean;
 		/** create-only fields rendered above the name (e.g. the service picker) */
 		topFields?: Snippet;
@@ -49,7 +52,7 @@
 
 	const id = (field: string) => `${idPrefix}-${field}`;
 	const policyLabel = (pid: string) =>
-		pid ? (policies.find((p) => p.id === pid)?.name ?? pid) : 'Inherit service policy';
+		pid ? (policies.find((p) => p.id === pid)?.name ?? pid) : 'No preset';
 </script>
 
 <form
@@ -91,34 +94,22 @@
 	</div>
 
 	<div class="space-y-2">
-		<Label for={id('policyId')}>Policy</Label>
+		<Label for={id('policyId')}>Preset</Label>
 		<Select.Root type="single" name="policyId" bind:value={policyId}>
 			<Select.Trigger id={id('policyId')} class="w-full">{policyLabel(policyId)}</Select.Trigger>
 			<Select.Content>
-				<Select.Item value="" label="Inherit service policy">Inherit service policy</Select.Item>
+				<Select.Item value="" label="No preset">No preset</Select.Item>
 				{#each policies as p (p.id)}
 					<Select.Item value={p.id} label={p.name}>{p.name}</Select.Item>
 				{/each}
 			</Select.Content>
 		</Select.Root>
 		<p class="text-xs text-muted-foreground">
-			Replaces the service's policy for this token. Blank = inherit the service policy.
+			Optional reusable baseline. The inline overrides below take priority over it field-by-field.
 		</p>
 	</div>
 
-	<div class="space-y-2">
-		<Label for={id('allowedModels')}>Allowed models</Label>
-		<Input
-			id={id('allowedModels')}
-			name="allowedModels"
-			placeholder="gpt-4o*, claude-sonnet-4-6"
-			value={values.allowedModels}
-		/>
-		<p class="text-xs text-muted-foreground">
-			Comma-separated. Trailing <code>*</code> matches a prefix. Blank = no extra limit. Only narrows
-			the policy's models further — never widens them.
-		</p>
-	</div>
+	<InlineLimitsFields {providers} {values} idPrefix={id('inline')} scope="token" />
 
 	{@render bottomFields?.()}
 

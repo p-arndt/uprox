@@ -35,6 +35,58 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 	return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
+/**
+ * Enforce the two budget scopes that apply to a request: the service's aggregate
+ * ceiling and the token's personal cap. Both are checked; a request must pass
+ * each budget that is set. On denial returns the 402 Response (already audited);
+ * otherwise returns a single release handle that frees every reservation it took
+ * (a no-op when no budget applies). See budget.ts for the bucket model.
+ */
+async function enforceBudgets(
+	token: ResolvedToken,
+	provider: ProviderDef,
+	model: string,
+	ip: string | null,
+	auditDeny: (entry: AuditEntry) => Promise<unknown>,
+	// builds the 402 response in the caller's error envelope (OpenAI vs Gemini)
+	makeDenyResponse: (reason: string) => Response = (reason) =>
+		gatewayError(402, `Request denied: ${reason}`, 'insufficient_quota')
+): Promise<Response | (() => void)> {
+	const { serviceBudget, tokenBudget } = token.effective;
+	const buckets = [
+		{ scope: 'service' as const, id: token.serviceId, limits: serviceBudget },
+		{ scope: 'token' as const, id: token.tokenId, limits: tokenBudget }
+	].filter((b) => b.limits.dailyBudgetUsd > 0 || b.limits.monthlyBudgetUsd > 0);
+
+	// Soft-alert evaluation is instance-wide and service-scoped (emails admins
+	// once per window/level). Runs on allow and deny alike. Never blocks.
+	if (serviceBudget.dailyBudgetUsd > 0 || serviceBudget.monthlyBudgetUsd > 0) {
+		void maybeSendBudgetAlert(token.serviceId, token.serviceName, serviceBudget);
+	}
+
+	for (const b of buckets) {
+		const budget = await checkBudget(b.scope, b.id, b.limits);
+		if (!budget.ok) {
+			await auditDeny({
+				action: 'policy.deny',
+				status: 'deny',
+				serviceId: token.serviceId,
+				tokenId: token.tokenId,
+				provider: provider.id,
+				model,
+				statusCode: 402,
+				ip,
+				detail: budget.reason
+			});
+			return makeDenyResponse(budget.reason);
+		}
+	}
+
+	// Reserve only after all checks pass, so a denied request leaves no residue.
+	const releases = buckets.map((b) => reserve(b.scope, b.id));
+	return () => releases.forEach((r) => r());
+}
+
 /** Token usage from an upstream response, normalized across provider shapes. */
 interface NormalizedUsage {
 	/**
@@ -317,7 +369,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	// pair each audit row with a request trace (the prompt + response payload) for
 	// the in-app trace viewer. auditTrace writes both; pass the response payload on
 	// the paths that produced one (cache hits and completions), request-only elsewhere.
-	const traceOn = token.policy?.tracingEnabled ?? token.defaultTracingEnabled;
+	const traceOn = token.effective.tracingEnabled;
 	const traceGroupId = readTraceGroup(event);
 	const traceMetadata = readTraceMetadata(event);
 	const auditTrace = async (
@@ -346,7 +398,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	const provider: ProviderDef | null = resolveProvider(
 		model,
 		configuredProviders,
-		preferProvider ?? token.policy?.preferredProvider
+		preferProvider ?? token.effective.preferredProvider
 	);
 	// The model/deployment name to send upstream and price by — passed through
 	// unchanged (no provider alias to strip).
@@ -415,7 +467,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 
 	// rate limiting (in-memory, per token) — protects the gateway and upstream
 	// from runaway callers before we do any I/O.
-	const rl = checkRateLimit(token.tokenId, token.policy?.rateLimitPerMinute ?? 0);
+	const rl = checkRateLimit(token.tokenId, token.effective.rateLimitPerMinute);
 	if (!rl.ok) {
 		await auditTrace({
 			action: 'policy.deny',
@@ -460,7 +512,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	// Note on the Responses API: a multi-turn call carries `previous_response_id`,
 	// which differs every turn, so its body never collides with another turn —
 	// only a byte-identical request is ever served from cache.
-	const cacheTtl = token.policy?.cacheTtlSeconds ?? token.defaultCacheTtlSeconds;
+	const cacheTtl = token.effective.cacheTtlSeconds;
 	// A Responses API call with store:false isn't persisted by OpenAI, so its
 	// returned `id` can't be referenced later — don't cache/replay one.
 	const responsesStoreOff = scope === 'responses' && isRecord(body) && body.store === false;
@@ -511,41 +563,15 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		}
 	}
 
-	// budget enforcement: per-service daily/monthly spend ceilings from the policy.
-	// When a budget is set, reserve a coarse in-flight estimate the moment we
-	// admit the request, so concurrent/streamed requests (whose cost lands in the
-	// audit log only after they complete) count toward the ceiling. The exact
-	// cost is recorded via the audit log on completion, at which point we release
-	// the reservation. `releaseReservation` is a no-op until/unless we reserve, so
-	// the completion/error paths below can call it unconditionally.
-	let releaseReservation: () => void = () => {};
-	if (token.policy) {
-		const hasBudget =
-			Number(token.policy.dailyBudgetUsd ?? 0) > 0 ||
-			Number(token.policy.monthlyBudgetUsd ?? 0) > 0;
-		const budget = await checkBudget(token.serviceId, token.policy);
-		// Fire-and-forget soft-alert evaluation (instance-wide threshold; emails admins
-		// once per window/level). Runs on allow and deny alike so an over-budget
-		// request still triggers the "over" alert. Never blocks the request.
-		if (hasBudget) {
-			void maybeSendBudgetAlert(token.serviceId, token.serviceName, token.policy);
-		}
-		if (!budget.ok) {
-			await auditTrace({
-				action: 'policy.deny',
-				status: 'deny',
-				serviceId: token.serviceId,
-				tokenId: token.tokenId,
-				provider: provider.id,
-				model,
-				statusCode: 402,
-				ip,
-				detail: budget.reason
-			});
-			return gatewayError(402, `Request denied: ${budget.reason}`, 'insufficient_quota');
-		}
-		if (hasBudget) releaseReservation = reserve(token.serviceId);
-	}
+	// budget enforcement: the service's aggregate ceiling AND the token's personal
+	// cap, both resolved via the effective-config cascade and both enforced. A
+	// reservation covers the in-flight gap (a request's cost lands in the audit log
+	// only on completion); the returned handle frees every reservation it took — a
+	// no-op when no budget applies, so the completion/error paths below can call it
+	// unconditionally.
+	const budgetGate = await enforceBudgets(token, provider, model, ip, auditTrace);
+	if (budgetGate instanceof Response) return budgetGate;
+	const releaseReservation = budgetGate;
 
 	// upstream credentials — honour the service's pinned secret (e.g. a specific
 	// Azure resource) when it belongs to the resolved provider.
@@ -834,7 +860,7 @@ export async function proxyGeminiNative(
 
 	// Request tracing (see proxyToProvider): pair each audit row with the captured
 	// native request/response payload for the trace viewer when tracing is enabled.
-	const traceOn = token.policy?.tracingEnabled ?? token.defaultTracingEnabled;
+	const traceOn = token.effective.tracingEnabled;
 	const traceGroupId = readTraceGroup(event);
 	const traceMetadata = readTraceMetadata(event);
 	const auditTrace = async (
@@ -893,7 +919,7 @@ export async function proxyGeminiNative(
 	}
 
 	// rate limiting (in-memory, per token)
-	const rl = checkRateLimit(token.tokenId, token.policy?.rateLimitPerMinute ?? 0);
+	const rl = checkRateLimit(token.tokenId, token.effective.rateLimitPerMinute);
 	if (!rl.ok) {
 		await auditTrace({
 			action: 'policy.deny',
@@ -915,7 +941,7 @@ export async function proxyGeminiNative(
 
 	// exact-match cache. Determinism for native bodies: embeddings always;
 	// generateContent only when sampling is pinned (generationConfig.temperature 0).
-	const cacheTtl = token.policy?.cacheTtlSeconds ?? token.defaultCacheTtlSeconds;
+	const cacheTtl = token.effective.cacheTtlSeconds;
 	const genCfg = isRecord(body) && isRecord(body.generationConfig) ? body.generationConfig : null;
 	const deterministic = scope === 'embeddings' || (genCfg != null && genCfg.temperature === 0);
 	const cacheable = (scope === 'chat' || scope === 'embeddings') && cacheTtl > 0 && deterministic;
@@ -958,32 +984,13 @@ export async function proxyGeminiNative(
 		}
 	}
 
-	// budget enforcement (per-service daily/monthly ceilings), mirroring proxyToProvider.
-	let releaseReservation: () => void = () => {};
-	if (token.policy) {
-		const hasBudget =
-			Number(token.policy.dailyBudgetUsd ?? 0) > 0 ||
-			Number(token.policy.monthlyBudgetUsd ?? 0) > 0;
-		const budget = await checkBudget(token.serviceId, token.policy);
-		if (hasBudget) {
-			void maybeSendBudgetAlert(token.serviceId, token.serviceName, token.policy);
-		}
-		if (!budget.ok) {
-			await auditTrace({
-				action: 'policy.deny',
-				status: 'deny',
-				serviceId: token.serviceId,
-				tokenId: token.tokenId,
-				provider: provider.id,
-				model,
-				statusCode: 402,
-				ip,
-				detail: budget.reason
-			});
-			return geminiNativeError(402, `Request denied: ${budget.reason}`, 'RESOURCE_EXHAUSTED');
-		}
-		if (hasBudget) releaseReservation = reserve(token.serviceId);
-	}
+	// budget enforcement (service + token ceilings), mirroring proxyToProvider but
+	// in the Gemini-native error envelope.
+	const budgetGate = await enforceBudgets(token, provider, model, ip, auditTrace, (reason) =>
+		geminiNativeError(402, `Request denied: ${reason}`, 'RESOURCE_EXHAUSTED')
+	);
+	if (budgetGate instanceof Response) return budgetGate;
+	const releaseReservation = budgetGate;
 
 	// upstream credentials and (static) base URL
 	const creds = await loadProviderCreds(provider.id, token.providerSecretId);

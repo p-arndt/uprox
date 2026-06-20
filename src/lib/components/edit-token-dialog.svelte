@@ -6,11 +6,13 @@
 		editing,
 		onClose,
 		policies,
+		providers,
 		message
 	}: {
 		editing: TokenFormValues | null;
 		onClose: () => void;
 		policies: { id: string; name: string }[];
+		providers: { id: string; label: string }[];
 		message?: string;
 	} = $props();
 </script>
@@ -37,6 +39,7 @@
 					idPrefix="edit"
 					values={editing}
 					{policies}
+					{providers}
 				>
 					{#snippet bottomFields()}
 						{#if message}
