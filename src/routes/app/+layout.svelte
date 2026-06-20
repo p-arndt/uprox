@@ -63,7 +63,7 @@
 		{
 			label: 'Governance',
 			items: [
-				{ href: '/app/policies', label: 'Policies', icon: ShieldHalf },
+				{ href: '/app/policies', label: 'Presets', icon: ShieldHalf },
 				{ href: '/app/pricing', label: 'Model Prices', icon: Coins },
 				{ href: '/app/audit', label: 'Audit Log', icon: ScrollText }
 			]

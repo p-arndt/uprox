@@ -11,6 +11,14 @@ export interface Token {
 	serviceName: string;
 	policyId: string | null;
 	policyName: string | null;
+	// inline overrides (NULL = inherit); surfaced so the edit form can prefill them
+	allowedProviders: string[] | null;
+	preferredProvider: string | null;
+	rateLimitPerMinute: number | null;
+	dailyBudgetUsd: string | null;
+	monthlyBudgetUsd: string | null;
+	cacheTtlSeconds: number | null;
+	tracingEnabled: boolean | null;
 	recopyable: boolean;
 	lastUsedAt: Date | string | null;
 	expiresAt: Date | string | null;

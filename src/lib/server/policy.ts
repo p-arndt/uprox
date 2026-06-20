@@ -25,13 +25,14 @@ export function modelAllowed(patterns: string[], model: string): boolean {
 
 /**
  * The policy engine. Decides whether a resolved token may perform a given
- * gateway request. Rules, in order:
+ * gateway request against its effective config. Rules, in order:
  *   1. token scopes — empty means "all scopes"
- *   2. token.allowedModels — empty means "no extra restriction"; when set it
- *      narrows the policy (the model must satisfy this list too)
- *   3. policy.allowedProviders — empty means "all providers"
- *   4. policy.allowedModels — empty means "all models", supports `*` suffix globs
+ *   2. provider allowlists — the provider must appear in EVERY non-empty list
+ *      contributed by the layers (token/preset/service/service-preset)
+ *   3. model allowlists — same intersection, with trailing "*" prefix globs
  *
+ * The allowlists are pre-merged into `effective.providerLists` / `modelLists`
+ * (only the non-empty ones), so intersection is just "must satisfy all of them".
  * An empty `req.model` (e.g. the provider-only probe the /v1/models listing
  * makes) skips the model rules — there is no model to constrain.
  */
@@ -41,30 +42,20 @@ export function evaluatePolicy(token: ResolvedToken, req: PolicyRequest): Policy
 		return { allow: false, reason: `token is not scoped for "${req.scope}"` };
 	}
 
-	// 2. per-token model allowlist — narrows whatever policy applies (intersection)
-	if (
-		req.model &&
-		token.allowedModels.length > 0 &&
-		!modelAllowed(token.allowedModels, req.model)
-	) {
-		return { allow: false, reason: `token forbids model "${req.model}"` };
+	// 2. provider intersection — must be allowed by every layer that restricts
+	for (const list of token.effective.providerLists) {
+		if (!list.includes(req.provider)) {
+			return { allow: false, reason: `provider "${req.provider}" is not allowed` };
+		}
 	}
 
-	const policy = token.policy;
-	if (!policy) return { allow: true };
-
-	// 3. provider check
-	if (policy.allowedProviders.length > 0 && !policy.allowedProviders.includes(req.provider)) {
-		return { allow: false, reason: `policy forbids provider "${req.provider}"` };
-	}
-
-	// 4. model check (supports trailing "*" wildcard, e.g. "gpt-4o*")
-	if (
-		req.model &&
-		policy.allowedModels.length > 0 &&
-		!modelAllowed(policy.allowedModels, req.model)
-	) {
-		return { allow: false, reason: `policy forbids model "${req.model}"` };
+	// 3. model intersection (supports trailing "*" wildcard, e.g. "gpt-4o*")
+	if (req.model) {
+		for (const list of token.effective.modelLists) {
+			if (!modelAllowed(list, req.model)) {
+				return { allow: false, reason: `model "${req.model}" is not allowed` };
+			}
+		}
 	}
 
 	return { allow: true };

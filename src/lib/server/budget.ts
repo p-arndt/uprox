@@ -1,12 +1,13 @@
 /**
- * Per-service spend enforcement. Budgets are configured on a policy (daily and
- * monthly USD ceilings) and enforced against the spend of the *service* making
- * the request — so two services sharing a policy each get their own bucket.
+ * Spend enforcement, per bucket. A "bucket" is a scope + id: budgets can be set
+ * on a *service* (the aggregate ceiling across all its tokens) and on a *token*
+ * (that token's personal cap). Both are enforced independently — a request must
+ * stay within whichever budgets apply — so the two scopes never share a pool.
  *
  * Spend is summed from the audit log (the same `costUsd` we already record per
- * request), which keeps budgets durable across restarts and consistent with
- * what the dashboard reports. Calendar windows are UTC: "daily" resets at
- * 00:00 UTC, "monthly" on the 1st.
+ * request, which carries both serviceId and tokenId), which keeps budgets
+ * durable across restarts and consistent with what the dashboard reports.
+ * Calendar windows are UTC: "daily" resets at 00:00 UTC, "monthly" on the 1st.
  */
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
@@ -19,14 +20,17 @@ export interface BudgetLimits {
 
 export type BudgetResult = { ok: true } | { ok: false; reason: string };
 
+/** Which entity a budget is summed against. */
+export type BudgetScope = 'service' | 'token';
+
 /**
- * In-flight spend reservations, keyed by serviceId → reserved USD.
+ * In-flight spend reservations, keyed by "scope:id" → reserved USD.
  *
  * The audit-log sum only sees a request's cost *after* it completes (and for
  * streamed responses, only after the stream finishes draining). So N concurrent
  * admits would all read the same pre-burst total and all slip past the ceiling.
- * To close that TOCTOU gap we add a coarse, per-service "reservation" the moment
- * a request is admitted, and reconcile it against the exact cost (via the audit
+ * To close that TOCTOU gap we add a coarse per-bucket "reservation" the moment a
+ * request is admitted, and reconcile it against the exact cost (via the audit
  * log) once the request completes and its reservation is released.
  *
  * Like the rate limiter (see ratelimit.ts), this lives in process memory: it's
@@ -37,6 +41,8 @@ export type BudgetResult = { ok: true } | { ok: false; reason: string };
  */
 const reservations = new Map<string, number>();
 
+const bucketKey = (scope: BudgetScope, id: string) => `${scope}:${id}`;
+
 /**
  * Nominal per-request reservation. We don't know token counts before the
  * upstream call, so this is intentionally a small fixed estimate, not precise
@@ -46,31 +52,41 @@ const reservations = new Map<string, number>();
  */
 export const RESERVATION_ESTIMATE_USD = 0.01;
 
-/** Total USD currently reserved (in flight) for a service. */
-function reservedFor(serviceId: string): number {
-	return reservations.get(serviceId) ?? 0;
+/** Total USD currently reserved (in flight) for a bucket. */
+function reservedFor(scope: BudgetScope, id: string): number {
+	return reservations.get(bucketKey(scope, id)) ?? 0;
 }
 
 /**
- * Reserve in-flight spend for a service and return a one-shot release handle.
+ * Reserve in-flight spend for a bucket and return a one-shot release handle.
  * Call this right after a request passes the budget gate; call the returned
  * handle once the real cost has been written to the audit log.
  */
-export function reserve(serviceId: string, amountUsd = RESERVATION_ESTIMATE_USD): () => void {
-	reservations.set(serviceId, reservedFor(serviceId) + amountUsd);
+export function reserve(
+	scope: BudgetScope,
+	id: string,
+	amountUsd = RESERVATION_ESTIMATE_USD
+): () => void {
+	const key = bucketKey(scope, id);
+	reservations.set(key, (reservations.get(key) ?? 0) + amountUsd);
 	let released = false;
 	return () => {
 		if (released) return;
 		released = true;
-		release(serviceId, amountUsd);
+		release(scope, id, amountUsd);
 	};
 }
 
 /** Drop a previously reserved amount, cleaning up entries that hit (or pass) 0. */
-export function release(serviceId: string, amountUsd = RESERVATION_ESTIMATE_USD): void {
-	const next = reservedFor(serviceId) - amountUsd;
-	if (next > 0) reservations.set(serviceId, next);
-	else reservations.delete(serviceId);
+export function release(
+	scope: BudgetScope,
+	id: string,
+	amountUsd = RESERVATION_ESTIMATE_USD
+): void {
+	const key = bucketKey(scope, id);
+	const next = (reservations.get(key) ?? 0) - amountUsd;
+	if (next > 0) reservations.set(key, next);
+	else reservations.delete(key);
 }
 
 function startOfUtcDay(now = new Date()): Date {
@@ -98,53 +114,59 @@ export async function currentSpend(serviceId: string): Promise<SpendWindows> {
 	const dayStart = startOfUtcDay();
 	const monthStart = startOfUtcMonth();
 	const [dailySpent, monthlySpent] = await Promise.all([
-		spendSince(serviceId, dayStart),
-		spendSince(serviceId, monthStart)
+		spendSince('service', serviceId, dayStart),
+		spendSince('service', serviceId, monthStart)
 	]);
 	return { dayStart, monthStart, dailySpent, monthlySpent };
 }
 
-/** Sum gateway spend (USD) for a service since `since`. */
-async function spendSince(serviceId: string, since: Date): Promise<number> {
+/** Sum gateway spend (USD) for a bucket since `since`. */
+async function spendSince(scope: BudgetScope, id: string, since: Date): Promise<number> {
+	const col = scope === 'token' ? auditLog.tokenId : auditLog.serviceId;
 	const [row] = await db
 		.select({ total: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)` })
 		.from(auditLog)
-		.where(and(eq(auditLog.serviceId, serviceId), gte(auditLog.createdAt, since)));
+		.where(and(eq(col, id), gte(auditLog.createdAt, since)));
 	return Number(row?.total ?? 0);
 }
 
 /**
- * Check whether `serviceId` is still within its policy's spend ceilings.
- * A ceiling of 0 (or unset) means unlimited and is skipped — so when neither
- * budget is set we never touch the database.
+ * Check whether a bucket is still within its spend ceilings. A ceiling of 0 (or
+ * unset) means unlimited and is skipped — so when neither budget is set we never
+ * touch the database.
  *
  * In-flight reservations (concurrent requests that have been admitted but whose
- * cost hasn't landed in the audit log yet) count toward the spend, so a burst
- * of concurrent requests can't all slip past the same pre-burst total.
+ * cost hasn't landed in the audit log yet) count toward the spend, so a burst of
+ * concurrent requests can't all slip past the same pre-burst total.
  */
-export async function checkBudget(serviceId: string, limits: BudgetLimits): Promise<BudgetResult> {
+export async function checkBudget(
+	scope: BudgetScope,
+	id: string,
+	limits: BudgetLimits
+): Promise<BudgetResult> {
 	const daily = Number(limits.dailyBudgetUsd ?? 0);
 	const monthly = Number(limits.monthlyBudgetUsd ?? 0);
 	if (daily <= 0 && monthly <= 0) return { ok: true };
 
-	const pending = reservedFor(serviceId);
+	const pending = reservedFor(scope, id);
+	const label = scope === 'token' ? 'token' : 'service';
 
 	if (monthly > 0) {
-		const spent = (await spendSince(serviceId, startOfUtcMonth())) + pending;
+		const spent = (await spendSince(scope, id, startOfUtcMonth())) + pending;
 		if (spent >= monthly) {
 			return {
 				ok: false,
-				reason: `monthly budget exhausted ($${spent.toFixed(4)} of $${monthly.toFixed(2)})`
+				reason: `${label} monthly budget exhausted ($${spent.toFixed(4)} of $${monthly.toFixed(2)})`
 			};
 		}
 	}
 
 	if (daily > 0) {
-		const spent = (await spendSince(serviceId, startOfUtcDay())) + pending;
+		const spent = (await spendSince(scope, id, startOfUtcDay())) + pending;
 		if (spent >= daily) {
 			return {
 				ok: false,
-				reason: `daily budget exhausted ($${spent.toFixed(4)} of $${daily.toFixed(2)})`
+				reason: `${label} daily budget exhausted ($${spent.toFixed(4)} of $${daily.toFixed(2)})`
 			};
 		}
 	}

@@ -78,6 +78,13 @@
       "when": 1781824841991,
       "tag": "0010_wealthy_wasp",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1781998111461,
+      "tag": "0011_shocking_captain_america",
+      "breakpoints": true
     }
   ]
 }

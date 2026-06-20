@@ -11,6 +11,8 @@ import {
 	revealToken,
 	getSettings
 } from '$lib/server/data';
+import { parseInlineConfig } from '$lib/server/parse-config';
+import { PROVIDERS } from '$lib/server/providers';
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
@@ -21,7 +23,13 @@ export const load: PageServerLoad = async (event) => {
 		getSettings()
 	]);
 	// drives the default state of the "allow re-copying" checkbox in the create form
-	return { tokens, services, policies, recopyDefault: settings.tokensRecopyableDefault };
+	return {
+		tokens,
+		services,
+		policies,
+		providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label })),
+		recopyDefault: settings.tokensRecopyableDefault
+	};
 };
 
 /** Parse the shared comma-separated "allowed models" field into a clean list. */
@@ -30,6 +38,19 @@ function parseModels(raw: FormDataEntryValue | null): string[] {
 		.split(',')
 		.map((m) => m.trim())
 		.filter(Boolean);
+}
+
+/** Pull the inline limit/access overrides out of a form submission. */
+function inlineFromForm(data: FormData) {
+	return parseInlineConfig({
+		allowedProviders: data.getAll('allowedProviders').map((p) => p.toString()),
+		preferredProvider: data.get('preferredProvider'),
+		rateLimitPerMinute: data.get('rateLimitPerMinute'),
+		dailyBudgetUsd: data.get('dailyBudgetUsd'),
+		monthlyBudgetUsd: data.get('monthlyBudgetUsd'),
+		cacheTtlSeconds: data.get('cacheTtlSeconds'),
+		tracingEnabled: data.get('tracingEnabled')
+	});
 }
 
 export const actions: Actions = {
@@ -59,7 +80,8 @@ export const actions: Actions = {
 				allowedModels,
 				policyId,
 				expiresAt,
-				recopyable
+				recopyable,
+				...inlineFromForm(data)
 			});
 			// shown immediately; recoverable later only if recopyable was set
 			return { created: { name, plaintext, recopyable } };
@@ -88,7 +110,8 @@ export const actions: Actions = {
 			name,
 			scopes: data.getAll('scopes').map((s) => s.toString()),
 			allowedModels: parseModels(data.get('allowedModels')),
-			policyId: data.get('policyId')?.toString() || null
+			policyId: data.get('policyId')?.toString() || null,
+			...inlineFromForm(data)
 		});
 		return { success: true };
 	},

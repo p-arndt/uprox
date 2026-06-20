@@ -193,8 +193,10 @@
 			</div>
 		</div>
 		<p class="text-xs text-muted-foreground">
-			Per-service spend ceilings (UTC windows). 0 = unlimited. Crossing the org's alert threshold
-			can email admins — see Settings.
+			Spend ceilings (UTC windows) for whatever inherits this preset — the service aggregate when
+			attached to a service, the per-token cap when attached to a token. 0 = unlimited. A service or
+			token can override these inline. Crossing the org's alert threshold can email admins — see
+			Settings.
 		</p>
 	</div>
 

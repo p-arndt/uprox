@@ -60,13 +60,24 @@
 		showRevoked ? data.tokens : data.tokens.filter((t) => !t.revokedAt)
 	);
 
+	// null inline column → '' (inherit) in the form; budgets are stored as numeric
+	// strings, normalized to a plain number for display.
+	const numStr = (v: number | string | null) => (v == null ? '' : String(Number(v)));
+
 	function startEdit(t: Token) {
 		editing = {
 			id: t.id,
 			name: t.name,
 			scopes: [...t.scopes],
+			policyId: t.policyId ?? '',
+			allowedProviders: t.allowedProviders ?? [],
 			allowedModels: t.allowedModels.join(', '),
-			policyId: t.policyId ?? ''
+			preferredProvider: t.preferredProvider ?? '',
+			rateLimitPerMinute: t.rateLimitPerMinute == null ? '' : String(t.rateLimitPerMinute),
+			dailyBudgetUsd: numStr(t.dailyBudgetUsd),
+			monthlyBudgetUsd: numStr(t.monthlyBudgetUsd),
+			cacheTtlSeconds: t.cacheTtlSeconds == null ? '' : String(t.cacheTtlSeconds),
+			tracingEnabled: t.tracingEnabled == null ? '' : String(t.tracingEnabled)
 		};
 	}
 </script>
@@ -83,6 +94,7 @@
 					disabled={data.services.length === 0}
 					services={data.services}
 					policies={data.policies}
+					providers={data.providers}
 					recopyDefault={data.recopyDefault}
 					message={form?.message}
 				/>
@@ -178,5 +190,6 @@
 	{editing}
 	onClose={() => (editing = null)}
 	policies={data.policies}
+	providers={data.providers}
 	message={form?.message}
 />

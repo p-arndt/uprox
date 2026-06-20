@@ -4,6 +4,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import { db } from '$lib/server/db';
 import { machineToken, service, policy, settings } from '$lib/server/db/schema';
 import { sha256 } from '$lib/server/crypto';
+import { resolveEffectiveConfig, type EffectiveConfig } from '$lib/server/effective-config';
 
 export const TOKEN_PREFIX = 'uprox_live_';
 
@@ -35,22 +36,14 @@ export interface ResolvedToken {
 	serviceId: string;
 	serviceName: string;
 	scopes: string[];
-	/**
-	 * Per-token model allowlist that narrows the effective policy (intersection —
-	 * a model must satisfy both this and the policy). Empty = no extra restriction.
-	 */
-	allowedModels: string[];
 	/** the upstream secret this service is pinned to, or null for the default */
 	providerSecretId: string | null;
 	/**
-	 * The policy in force for this token: the token's own policy when it has one
-	 * (it replaces the service policy), otherwise the service's policy, or null.
+	 * The resolved limits & access for this request, merged across the token, its
+	 * preset, the service, the service's preset, and the instance defaults. See
+	 * effective-config.ts for the cascade rules.
 	 */
-	policy: typeof policy.$inferSelect | null;
-	/** instance-wide default cache TTL (seconds); policy.cacheTtlSeconds overrides it */
-	defaultCacheTtlSeconds: number;
-	/** instance-wide tracing default; policy.tracingEnabled (when set) overrides it */
-	defaultTracingEnabled: boolean;
+	effective: EffectiveConfig;
 }
 
 /**
@@ -62,8 +55,8 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 	if (!plaintext.startsWith(TOKEN_PREFIX)) return null;
 	const hashed = sha256(plaintext);
 
-	// Two policy joins: the service's policy and the token's own policy. The
-	// token's policy, when set, replaces the service's for this request.
+	// Two preset joins: the service's preset and the token's own. Both feed the
+	// effective-config cascade (token preset outranks the service's).
 	const tokenPolicy = alias(policy, 'token_policy');
 	const rows = await db
 		.select({
@@ -109,11 +102,16 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 		serviceId: row.service.id,
 		serviceName: row.service.name,
 		scopes: row.token.scopes ?? [],
-		allowedModels: row.token.allowedModels ?? [],
 		providerSecretId: row.service.providerSecretId,
-		// the token's own policy wins; fall back to the service's policy
-		policy: row.tokenPolicy ?? row.servicePolicy,
-		defaultCacheTtlSeconds: settingsRow?.cacheTtlSeconds ?? 0,
-		defaultTracingEnabled: settingsRow?.tracingEnabled ?? false
+		effective: resolveEffectiveConfig({
+			token: row.token,
+			service: row.service,
+			tokenPolicy: row.tokenPolicy,
+			servicePolicy: row.servicePolicy,
+			defaults: {
+				cacheTtlSeconds: settingsRow?.cacheTtlSeconds ?? 0,
+				tracingEnabled: settingsRow?.tracingEnabled ?? false
+			}
+		})
 	};
 }

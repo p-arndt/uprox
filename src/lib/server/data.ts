@@ -23,6 +23,45 @@ import {
 	type SeriesBucket
 } from '$lib/usage-range';
 
+/**
+ * Inline limit & access overrides settable directly on a service or token —
+ * the higher-priority layers of the effective-config cascade (see
+ * effective-config.ts). Every field is optional and nullable: omit to leave
+ * unchanged, pass `null` to clear the override (revert to inherit).
+ */
+export interface InlineConfigInput {
+	allowedProviders?: string[] | null;
+	allowedModels?: string[] | null;
+	preferredProvider?: string | null;
+	rateLimitPerMinute?: number | null;
+	dailyBudgetUsd?: number | null;
+	monthlyBudgetUsd?: number | null;
+	cacheTtlSeconds?: number | null;
+	tracingEnabled?: boolean | null;
+}
+
+/**
+ * Map the inline-config fields present in `input` to a drizzle set/values object,
+ * coercing the numeric budget columns to the string form drizzle/pg expects.
+ * Only keys actually present are written, so it composes with PATCH semantics.
+ */
+function inlineConfigColumns(input: InlineConfigInput): Record<string, unknown> {
+	const set: Record<string, unknown> = {};
+	if (input.allowedProviders !== undefined) set.allowedProviders = input.allowedProviders;
+	if (input.allowedModels !== undefined) set.allowedModels = input.allowedModels;
+	if (input.preferredProvider !== undefined) set.preferredProvider = input.preferredProvider;
+	if (input.rateLimitPerMinute !== undefined) set.rateLimitPerMinute = input.rateLimitPerMinute;
+	if (input.dailyBudgetUsd !== undefined) {
+		set.dailyBudgetUsd = input.dailyBudgetUsd === null ? null : String(input.dailyBudgetUsd);
+	}
+	if (input.monthlyBudgetUsd !== undefined) {
+		set.monthlyBudgetUsd = input.monthlyBudgetUsd === null ? null : String(input.monthlyBudgetUsd);
+	}
+	if (input.cacheTtlSeconds !== undefined) set.cacheTtlSeconds = input.cacheTtlSeconds;
+	if (input.tracingEnabled !== undefined) set.tracingEnabled = input.tracingEnabled;
+	return set;
+}
+
 /* ----------------------------------- services ----------------------------------- */
 
 export function listServices() {
@@ -33,13 +72,15 @@ export function listServices() {
 		.orderBy(desc(service.createdAt));
 }
 
-export async function createService(input: {
-	name: string;
-	type?: string;
-	description?: string;
-	policyId?: string | null;
-	providerSecretId?: string | null;
-}) {
+export async function createService(
+	input: {
+		name: string;
+		type?: string;
+		description?: string;
+		policyId?: string | null;
+		providerSecretId?: string | null;
+	} & InlineConfigInput
+) {
 	const [row] = await db
 		.insert(service)
 		.values({
@@ -47,7 +88,8 @@ export async function createService(input: {
 			type: input.type || 'app',
 			description: input.description || null,
 			policyId: input.policyId || null,
-			providerSecretId: input.providerSecretId || null
+			providerSecretId: input.providerSecretId || null,
+			...inlineConfigColumns(input)
 		})
 		.returning();
 	return row;
@@ -61,11 +103,35 @@ export async function updateService(
 		description?: string | null;
 		policyId?: string | null;
 		providerSecretId?: string | null;
-	}
+	} & InlineConfigInput
 ) {
+	const {
+		allowedProviders,
+		allowedModels,
+		preferredProvider,
+		rateLimitPerMinute,
+		dailyBudgetUsd,
+		monthlyBudgetUsd,
+		cacheTtlSeconds,
+		tracingEnabled,
+		...base
+	} = patch;
+	const set = {
+		...base,
+		...inlineConfigColumns({
+			allowedProviders,
+			allowedModels,
+			preferredProvider,
+			rateLimitPerMinute,
+			dailyBudgetUsd,
+			monthlyBudgetUsd,
+			cacheTtlSeconds,
+			tracingEnabled
+		})
+	};
 	const [row] = await db
 		.update(service)
-		.set(patch)
+		.set(set)
 		.where(and(eq(service.id, id), isNull(service.deletedAt)))
 		.returning();
 	return row ?? null;
@@ -149,9 +215,17 @@ export function listTokens() {
 				allowedModels: machineToken.allowedModels,
 				serviceId: machineToken.serviceId,
 				serviceName: service.name,
-				// the token's own policy (overrides the service policy when set)
+				// the token's optional preset
 				policyId: machineToken.policyId,
 				policyName: policy.name,
+				// inline overrides, for the edit form's prefill
+				allowedProviders: machineToken.allowedProviders,
+				preferredProvider: machineToken.preferredProvider,
+				rateLimitPerMinute: machineToken.rateLimitPerMinute,
+				dailyBudgetUsd: machineToken.dailyBudgetUsd,
+				monthlyBudgetUsd: machineToken.monthlyBudgetUsd,
+				cacheTtlSeconds: machineToken.cacheTtlSeconds,
+				tracingEnabled: machineToken.tracingEnabled,
 				// true when the raw token was kept (encrypted) and can be revealed again;
 				// the ciphertext itself is never sent to the client
 				recopyable: sql<boolean>`${machineToken.encryptedToken} is not null`,
@@ -179,15 +253,15 @@ export async function createToken(
 		serviceId: string;
 		name: string;
 		scopes?: string[];
-		// per-token model allowlist (narrows the policy); empty = no extra restriction
+		// per-token model allowlist (narrows access); empty = no extra restriction
 		allowedModels?: string[];
-		// per-token policy that replaces the service policy; null = inherit service
+		// optional reusable preset attached to this token; null = none
 		policyId?: string | null;
 		expiresAt?: Date | null;
 		// when true, also store the raw token encrypted so it can be revealed again
 		// later (weaker than hash-only — see machineToken.encryptedToken). Default off.
 		recopyable?: boolean;
-	}
+	} & Omit<InlineConfigInput, 'allowedModels'>
 ) {
 	// ensure the service exists and isn't retired
 	const [svc] = await db
@@ -211,7 +285,16 @@ export async function createToken(
 			allowedModels: input.allowedModels ?? [],
 			policyId: input.policyId ?? null,
 			expiresAt: input.expiresAt ?? null,
-			createdByUserId: userId
+			createdByUserId: userId,
+			...inlineConfigColumns({
+				allowedProviders: input.allowedProviders,
+				preferredProvider: input.preferredProvider,
+				rateLimitPerMinute: input.rateLimitPerMinute,
+				dailyBudgetUsd: input.dailyBudgetUsd,
+				monthlyBudgetUsd: input.monthlyBudgetUsd,
+				cacheTtlSeconds: input.cacheTtlSeconds,
+				tracingEnabled: input.tracingEnabled
+			})
 		})
 		.returning();
 
@@ -270,13 +353,25 @@ export async function updateToken(
 		scopes?: string[];
 		allowedModels?: string[];
 		policyId?: string | null;
-	}
+	} & Omit<InlineConfigInput, 'allowedModels'>
 ) {
 	const set: Partial<typeof machineToken.$inferInsert> = {};
 	if (patch.name !== undefined) set.name = patch.name;
 	if (patch.scopes !== undefined) set.scopes = patch.scopes;
 	if (patch.allowedModels !== undefined) set.allowedModels = patch.allowedModels;
 	if (patch.policyId !== undefined) set.policyId = patch.policyId;
+	Object.assign(
+		set,
+		inlineConfigColumns({
+			allowedProviders: patch.allowedProviders,
+			preferredProvider: patch.preferredProvider,
+			rateLimitPerMinute: patch.rateLimitPerMinute,
+			dailyBudgetUsd: patch.dailyBudgetUsd,
+			monthlyBudgetUsd: patch.monthlyBudgetUsd,
+			cacheTtlSeconds: patch.cacheTtlSeconds,
+			tracingEnabled: patch.tracingEnabled
+		})
+	);
 	if (Object.keys(set).length === 0) return null;
 
 	const [row] = await db

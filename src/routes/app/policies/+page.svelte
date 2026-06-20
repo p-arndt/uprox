@@ -55,27 +55,31 @@
 </script>
 
 <div class="mx-auto max-w-4xl space-y-6">
-	<PageHeader title="Policies">
+	<PageHeader title="Presets">
 		{#snippet description()}
-			Constrain which providers and models a service can reach. Empty lists mean "allow all".
+			Reusable limit & access baselines. Attach one to a service or token, then override individual
+			fields inline. Empty lists mean "allow all".
 		{/snippet}
 		{#snippet action()}
 			{#if canManage}
 				<Dialog.Root bind:open>
 					<Dialog.Trigger>
 						{#snippet child({ props })}
-							<Button {...props}><Plus class="size-4" /> New policy</Button>
+							<Button {...props}><Plus class="size-4" /> New preset</Button>
 						{/snippet}
 					</Dialog.Trigger>
 					<Dialog.Content>
 						<Dialog.Header>
-							<Dialog.Title>Create policy</Dialog.Title>
-							<Dialog.Description>Attach a policy to a service to enforce it.</Dialog.Description>
+							<Dialog.Title>Create preset</Dialog.Title>
+							<Dialog.Description>
+								A reusable baseline. Services and tokens that attach it inherit its values, then
+								override any field inline.
+							</Dialog.Description>
 						</Dialog.Header>
 						<PolicyForm
 							providers={data.providers}
 							action="?/create"
-							submitLabel="Create policy"
+							submitLabel="Create preset"
 							idPrefix="create"
 							values={createValues}
 							resetOnSuccess
@@ -89,8 +93,8 @@
 	{#if data.policies.length === 0}
 		<EmptyState
 			icon={ShieldHalf}
-			title="No policies yet"
-			description="Create a policy to restrict provider and model access."
+			title="No presets yet"
+			description="Presets are optional — you can set limits directly on a service or token. Create one to reuse a baseline across many."
 		/>
 	{:else}
 		<div class="grid gap-4 sm:grid-cols-2">
@@ -215,15 +219,17 @@
 >
 	<Dialog.Content>
 		<Dialog.Header>
-			<Dialog.Title>Edit policy</Dialog.Title>
-			<Dialog.Description>Attach a policy to a service to enforce it.</Dialog.Description>
+			<Dialog.Title>Edit preset</Dialog.Title>
+			<Dialog.Description>
+				Changes apply to every service and token that inherits this preset.
+			</Dialog.Description>
 		</Dialog.Header>
 		{#if editing}
 			{#key editing.id}
 				<PolicyForm
 					providers={data.providers}
 					action="?/update"
-					submitLabel="Save policy"
+					submitLabel="Save preset"
 					idPrefix="edit"
 					values={editing}
 				/>

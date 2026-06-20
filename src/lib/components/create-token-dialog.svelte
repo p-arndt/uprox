@@ -5,12 +5,14 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import TokenForm, { type TokenFormValues } from '$lib/components/token-form.svelte';
+	import { emptyInlineLimits } from '$lib/components/inline-limits';
 
 	let {
 		open = $bindable(false),
 		disabled = false,
 		services,
 		policies,
+		providers,
 		recopyDefault,
 		message
 	}: {
@@ -18,6 +20,7 @@
 		disabled?: boolean;
 		services: { id: string; name: string }[];
 		policies: { id: string; name: string }[];
+		providers: { id: string; label: string }[];
 		recopyDefault: boolean;
 		message?: string;
 	} = $props();
@@ -34,9 +37,9 @@
 	let recopyable = $state(false);
 
 	const createValues: TokenFormValues = {
+		...emptyInlineLimits(),
 		name: '',
 		scopes: [],
-		allowedModels: '',
 		policyId: ''
 	};
 
@@ -63,6 +66,7 @@
 			idPrefix="create"
 			values={createValues}
 			{policies}
+			{providers}
 			resetOnSuccess
 		>
 			{#snippet topFields()}
