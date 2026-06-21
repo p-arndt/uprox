@@ -57,7 +57,9 @@
 						type="url"
 						placeholder={editingMeta?.provider === 'custom'
 							? 'https://api.groq.com/openai/v1'
-							: 'https://my-resource.openai.azure.com'}
+							: editingMeta?.provider === 'ollama'
+								? 'http://localhost:11434'
+								: 'https://my-resource.openai.azure.com'}
 						value={editingMeta?.baseUrl ?? ''}
 						autocomplete="off"
 						required

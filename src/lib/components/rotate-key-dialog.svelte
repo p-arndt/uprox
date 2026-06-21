@@ -11,7 +11,13 @@
 		onClose
 	}: {
 		/** the secret being rotated, or null when the dialog is closed */
-		rotating: { id: string; label: string } | null;
+		rotating: {
+			id: string;
+			label: string;
+			provider: string;
+			authScheme: string;
+			optionalAuth: boolean;
+		} | null;
 		message?: string;
 		onClose: () => void;
 	} = $props();
@@ -28,7 +34,9 @@
 		<Dialog.Header>
 			<Dialog.Title>Rotate {rotating?.label} key</Dialog.Title>
 			<Dialog.Description
-				>Replace the stored key. The endpoint and label are unchanged.</Dialog.Description
+				>{rotating?.authScheme === 'basic'
+					? 'Replace the stored basic-auth credentials. The endpoint and label are unchanged.'
+					: 'Replace the stored key. The endpoint and label are unchanged.'}</Dialog.Description
 			>
 		</Dialog.Header>
 		<form
@@ -40,17 +48,34 @@
 					update()}
 		>
 			<input type="hidden" name="id" value={rotating?.id} />
-			<div class="space-y-2">
-				<Label for="rotate-secret">New API key</Label>
-				<Input
-					id="rotate-secret"
-					name="secret"
-					type="password"
-					placeholder="sk-…"
-					autocomplete="off"
-					required
-				/>
-			</div>
+			<input type="hidden" name="provider" value={rotating?.provider} />
+			{#if rotating?.authScheme === 'basic'}
+				<div class="grid grid-cols-2 gap-3">
+					<div class="space-y-2">
+						<Label for="rotate-username">Username</Label>
+						<Input id="rotate-username" name="username" autocomplete="off" />
+					</div>
+					<div class="space-y-2">
+						<Label for="rotate-password">Password</Label>
+						<Input id="rotate-password" name="password" type="password" autocomplete="off" />
+					</div>
+				</div>
+				<p class="text-xs text-muted-foreground">
+					Leave both blank to remove basic auth from this endpoint.
+				</p>
+			{:else}
+				<div class="space-y-2">
+					<Label for="rotate-secret">New API key</Label>
+					<Input
+						id="rotate-secret"
+						name="secret"
+						type="password"
+						placeholder="sk-…"
+						autocomplete="off"
+						required
+					/>
+				</div>
+			{/if}
 			{#if message}
 				<p class="text-sm text-destructive">{message}</p>
 			{/if}

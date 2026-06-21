@@ -11,12 +11,11 @@ describe('encrypt / decrypt', () => {
 		expect(decrypt(encrypt('schöne Grüße 🔐 日本語'))).toBe('schöne Grüße 🔐 日本語');
 	});
 
-	it('KNOWN LIMITATION: an empty plaintext cannot be decrypted', () => {
-		// encrypt('') yields an empty ciphertext segment ("iv.tag."), which
-		// decrypt's `!dataB64` guard rejects as malformed. Harmless in practice
-		// (provider secrets are never empty); documented so the behaviour is
-		// intentional rather than a surprise. Flip this if the format changes.
-		expect(() => decrypt(encrypt(''))).toThrow('Malformed ciphertext');
+	it('round-trips an empty plaintext (optional-auth provider with no credential)', () => {
+		// encrypt('') yields an empty ciphertext segment ("iv.tag."); decrypt still
+		// has a real iv and auth tag, so it reverses cleanly to ''. This backs the
+		// Ollama no-auth case, where the stored basic-auth secret is blank.
+		expect(decrypt(encrypt(''))).toBe('');
 	});
 
 	it('produces a fresh random IV each time (no deterministic ciphertext)', () => {

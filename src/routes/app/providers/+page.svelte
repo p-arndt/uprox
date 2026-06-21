@@ -19,9 +19,17 @@
 		provider: string;
 		label: string;
 		requiresEndpoint: boolean;
+		authScheme: string;
+		optionalAuth: boolean;
 	} | null>(null);
 	// rotate an existing key
-	let rotating = $state<{ id: string; label: string } | null>(null);
+	let rotating = $state<{
+		id: string;
+		label: string;
+		provider: string;
+		authScheme: string;
+		optionalAuth: boolean;
+	} | null>(null);
 	// edit label / endpoint / priority of an existing secret
 	let editingMeta = $state<{
 		id: string;
@@ -85,7 +93,9 @@
 								(adding = {
 									provider: p.id,
 									label: p.label,
-									requiresEndpoint: p.requiresEndpoint
+									requiresEndpoint: p.requiresEndpoint,
+									authScheme: p.authScheme,
+									optionalAuth: p.optionalAuth
 								})}
 						>
 							<Plus class="size-4" />
@@ -104,7 +114,14 @@
 								requiresEndpoint={p.requiresEndpoint}
 								showPriority={secrets.length > 1}
 								{canManage}
-								onRotate={() => (rotating = { id: s.id, label: s.label || p.label })}
+								onRotate={() =>
+									(rotating = {
+										id: s.id,
+										label: s.label || p.label,
+										provider: p.id,
+										authScheme: p.authScheme,
+										optionalAuth: p.optionalAuth
+									})}
 								onEdit={() =>
 									(editingMeta = {
 										id: s.id,

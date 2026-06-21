@@ -77,6 +77,22 @@ describe('resolveBaseUrl', () => {
 			'https://my-res.openai.azure.com/openai/v1'
 		);
 	});
+
+	it('appends the /v1 suffix to an Ollama host but not when already present', () => {
+		expect(resolveBaseUrl(PROVIDERS.ollama, null)).toBeNull();
+		// a bare host (the common case) gets the OpenAI-compatible /v1 path appended
+		expect(resolveBaseUrl(PROVIDERS.ollama, 'http://localhost:11434')).toBe(
+			'http://localhost:11434/v1'
+		);
+		// trailing slash is stripped before the suffix check
+		expect(resolveBaseUrl(PROVIDERS.ollama, 'http://localhost:11434/')).toBe(
+			'http://localhost:11434/v1'
+		);
+		// an endpoint that already targets /v1 is left as-is
+		expect(resolveBaseUrl(PROVIDERS.ollama, 'https://ollama.internal/v1')).toBe(
+			'https://ollama.internal/v1'
+		);
+	});
 });
 
 describe('authHeaders', () => {
@@ -90,6 +106,17 @@ describe('authHeaders', () => {
 
 	it('uses an x-goog-api-key header for the google scheme (native Gemini)', () => {
 		expect(authHeaders(PROVIDERS.gemini, 'gkey')).toEqual({ 'x-goog-api-key': 'gkey' });
+	});
+
+	it('base64-encodes "user:pass" into a Basic header for the basic scheme (Ollama)', () => {
+		// "alice:s3cret" → base64 "YWxpY2U6czNjcmV0"
+		expect(authHeaders(PROVIDERS.ollama, 'alice:s3cret')).toEqual({
+			authorization: `Basic ${Buffer.from('alice:s3cret').toString('base64')}`
+		});
+	});
+
+	it('sends no auth header when the optional basic credential is blank (Ollama)', () => {
+		expect(authHeaders(PROVIDERS.ollama, '')).toEqual({});
 	});
 });
 

@@ -11,7 +11,13 @@
 		onClose
 	}: {
 		/** the provider being added to, or null when the dialog is closed */
-		adding: { provider: string; label: string; requiresEndpoint: boolean } | null;
+		adding: {
+			provider: string;
+			label: string;
+			requiresEndpoint: boolean;
+			authScheme: string;
+			optionalAuth: boolean;
+		} | null;
 		message?: string;
 		onClose: () => void;
 	} = $props();
@@ -49,7 +55,9 @@
 						type="url"
 						placeholder={adding?.provider === 'custom'
 							? 'https://api.groq.com/openai/v1'
-							: 'https://my-resource.openai.azure.com'}
+							: adding?.provider === 'ollama'
+								? 'http://localhost:11434'
+								: 'https://my-resource.openai.azure.com'}
 						autocomplete="off"
 						required
 					/>
@@ -58,6 +66,12 @@
 							The base URL of any OpenAI-compatible API — Groq, OpenRouter, Together, or a
 							self-hosted vLLM/Ollama/LiteLLM. Used as-is, so include the full path (e.g.
 							<code>/v1</code>). Call models by their exact name.
+						</p>
+					{:else if adding?.provider === 'ollama'}
+						<p class="text-xs text-muted-foreground">
+							Your Ollama host. Plain <code>http://</code> is fine; the <code>/v1</code> path is
+							added automatically. Call models by their exact name (e.g.
+							<code>llama3.2</code>).
 						</p>
 					{:else}
 						<p class="text-xs text-muted-foreground">
@@ -68,17 +82,34 @@
 					{/if}
 				</div>
 			{/if}
-			<div class="space-y-2">
-				<Label for="secret">API key</Label>
-				<Input
-					id="secret"
-					name="secret"
-					type="password"
-					placeholder="sk-…"
-					autocomplete="off"
-					required
-				/>
-			</div>
+			{#if adding?.authScheme === 'basic'}
+				<div class="grid grid-cols-2 gap-3">
+					<div class="space-y-2">
+						<Label for="username">Username</Label>
+						<Input id="username" name="username" autocomplete="off" />
+					</div>
+					<div class="space-y-2">
+						<Label for="password">Password</Label>
+						<Input id="password" name="password" type="password" autocomplete="off" />
+					</div>
+				</div>
+				<p class="text-xs text-muted-foreground">
+					Optional HTTP basic auth, sent on every upstream request — leave both blank if your
+					endpoint needs no credentials.
+				</p>
+			{:else}
+				<div class="space-y-2">
+					<Label for="secret">API key</Label>
+					<Input
+						id="secret"
+						name="secret"
+						type="password"
+						placeholder="sk-…"
+						autocomplete="off"
+						required
+					/>
+				</div>
+			{/if}
 			<div class="grid grid-cols-2 gap-3">
 				<div class="space-y-2">
 					<Label for="label">Label</Label>

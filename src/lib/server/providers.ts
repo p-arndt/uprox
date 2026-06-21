@@ -22,10 +22,18 @@ export interface ProviderDef {
 	/**
 	 * How the upstream authenticates. 'bearer' sends `Authorization: Bearer <key>`
 	 * (OpenAI, Anthropic); 'api-key' sends an `api-key: <key>` header (Azure);
-	 * 'google' sends an `x-goog-api-key: <key>` header (native Gemini API).
+	 * 'google' sends an `x-goog-api-key: <key>` header (native Gemini API);
+	 * 'basic' sends `Authorization: Basic <base64(user:pass)>` (Ollama behind a
+	 * reverse proxy), with the stored secret holding `username:password`.
 	 * Defaults to 'bearer'.
 	 */
-	authScheme?: 'bearer' | 'api-key' | 'google';
+	authScheme?: 'bearer' | 'api-key' | 'google' | 'basic';
+	/**
+	 * When true the upstream needs no credential: the stored secret may be empty.
+	 * Used by self-hosted providers (Ollama) where auth is optional — a reverse
+	 * proxy may add HTTP basic auth, or the endpoint may be open on a private net.
+	 */
+	optionalAuth?: boolean;
 	/**
 	 * When true the provider has no usable static `baseUrl`: each org configures
 	 * its own endpoint (e.g. an Azure resource URL), stored on the secret and
@@ -110,6 +118,23 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 		requiresEndpoint: true,
 		acceptsAnyModel: true
 	},
+	ollama: {
+		id: 'ollama',
+		label: 'Ollama',
+		// Self-hosted Ollama, reached through its OpenAI-compatible surface. The org
+		// supplies the host (e.g. http://localhost:11434) on its secret; resolveBaseUrl
+		// appends `/v1` if missing. Unlike the other providers, the endpoint may be
+		// plain http (Ollama commonly runs on a private network) and auth is optional:
+		// when set, the secret holds `username:password` for HTTP basic auth, typically
+		// added by a reverse proxy in front of Ollama. Serves arbitrary model names.
+		baseUrl: '',
+		modelPrefixes: [],
+		capabilities: ['chat', 'embeddings', 'models'],
+		authScheme: 'basic',
+		requiresEndpoint: true,
+		acceptsAnyModel: true,
+		optionalAuth: true
+	},
 	custom: {
 		id: 'custom',
 		label: 'Custom (OpenAI-compatible)',
@@ -180,6 +205,9 @@ export function resolveBaseUrl(provider: ProviderDef, endpoint: string | null): 
 	const base = endpoint.trim().replace(/\/+$/, '');
 	if (!base) return null;
 	if (provider.id === 'azure' && !/\/openai\/v1$/.test(base)) return `${base}/openai/v1`;
+	// Ollama's OpenAI-compatible API lives under /v1; let the operator enter just
+	// the host (http://localhost:11434) and append it when absent.
+	if (provider.id === 'ollama' && !/\/v1$/.test(base)) return `${base}/v1`;
 	return base;
 }
 
@@ -190,6 +218,10 @@ export function authHeaders(provider: ProviderDef, apiKey: string): Record<strin
 			return { 'api-key': apiKey };
 		case 'google':
 			return { 'x-goog-api-key': apiKey };
+		case 'basic':
+			// Optional HTTP basic auth: the stored secret is "username:password".
+			// When no credential is configured, send no auth header at all.
+			return apiKey ? { authorization: `Basic ${Buffer.from(apiKey).toString('base64')}` } : {};
 		default:
 			return { authorization: `Bearer ${apiKey}` };
 	}
