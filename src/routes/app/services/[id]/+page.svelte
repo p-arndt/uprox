@@ -1,25 +1,18 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import CustomRangePicker from '$lib/components/custom-range-picker.svelte';
-	import DeltaPill from '$lib/components/delta-pill.svelte';
-	import StatCard from '$lib/components/stat-card.svelte';
-	import TokenSplit from '$lib/components/token-split.svelte';
-	import UsageReliability from '$lib/components/usage-reliability.svelte';
-	import UsageTrendCard from '$lib/components/usage-trend-card.svelte';
-	import UsageBreakdown, { type BreakdownSection } from '$lib/components/usage-breakdown.svelte';
+	import UsageDashboard from '$lib/components/usage-dashboard.svelte';
+	import UsageRangeToolbar from '$lib/components/usage-range-toolbar.svelte';
+	import { type BreakdownSection } from '$lib/components/usage-breakdown.svelte';
 	import { resolve } from '$app/paths';
 	import { goto, invalidateAll } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
-	import { formatUsd, formatTokens, relativeTime } from '$lib/format';
-	import { cacheRate } from '$lib/cache-rate';
+	import { buildUsageHref, type UsageUrlOverrides } from '$lib/usage-url';
+	import { relativeTime } from '$lib/format';
 	import Boxes from '@lucide/svelte/icons/boxes';
-	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import Cpu from '@lucide/svelte/icons/cpu';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import Server from '@lucide/svelte/icons/server';
-	import Coins from '@lucide/svelte/icons/coins';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
 
 	let { data } = $props();
@@ -30,26 +23,19 @@
 			: (data.ranges.find((r) => r.key === data.range)?.label ?? data.range)
 	);
 
-	// Build a URL that preserves the params we aren't explicitly changing so
-	// switching granularity keeps the range (and vice versa).
-	function hrefWith(overrides: {
-		range?: string;
-		bucket?: string;
-		from?: string | null;
-		to?: string | null;
-	}): ResolvedPathname {
-		const p = new URLSearchParams();
-		const range = overrides.range ?? data.range;
-		p.set('range', range);
-		if (range === 'custom') {
-			const from = overrides.from ?? data.customFrom;
-			const to = overrides.to ?? data.customTo;
-			if (from) p.set('from', from);
-			if (to) p.set('to', to);
-		}
-		const bucket = overrides.bucket ?? data.bucket;
-		if (bucket && bucket !== 'auto') p.set('bucket', bucket);
-		return `${resolve('/app/services/[id]', { id: data.service.id })}?${p}` as ResolvedPathname;
+	// Preserve the params we aren't explicitly changing. Page-owned so the
+	// resolve()/navigation lint rule is satisfied at the source.
+	function hrefWith(overrides: UsageUrlOverrides): ResolvedPathname {
+		return buildUsageHref(
+			resolve('/app/services/[id]', { id: data.service.id }),
+			{
+				range: data.range,
+				bucket: data.bucket,
+				customFrom: data.customFrom,
+				customTo: data.customTo
+			},
+			overrides
+		) as ResolvedPathname;
 	}
 
 	function applyCustom(from: string, to: string) {
@@ -68,24 +54,6 @@
 			refreshing = false;
 		}
 	}
-
-	const totals = $derived(data.totals);
-	const prev = $derived(data.prevTotals);
-	const totalTokens = $derived(totals.inputTokens + totals.outputTokens);
-	const errorRate = $derived(totals.requests > 0 ? totals.errors / totals.requests : 0);
-	const avgCostPerReq = $derived(totals.requests > 0 ? totals.costUsd / totals.requests : 0);
-
-	const tokenCacheRate = $derived(cacheRate(totals).rate);
-
-	function pctDelta(cur: number, prior: number): number | null {
-		if (!prior || prior <= 0) return null;
-		return ((cur - prior) / prior) * 100;
-	}
-	const spendDelta = $derived(pctDelta(totals.costUsd, prev.costUsd));
-	const requestDelta = $derived(pctDelta(totals.requests, prev.requests));
-	const tokenDelta = $derived(
-		pctDelta(totals.inputTokens + totals.outputTokens, prev.inputTokens + prev.outputTokens)
-	);
 
 	const hasTraffic = $derived(data.byModel.length > 0 || data.byToken.length > 0);
 
@@ -169,37 +137,16 @@
 				</p>
 			</div>
 		</div>
-		<div class="flex flex-wrap items-center gap-2">
-			<div class="flex flex-wrap rounded-lg border p-0.5">
-				{#each data.ranges as r (r.key)}
-					<a
-						href={hrefWith({ range: r.key })}
-						data-sveltekit-noscroll
-						class="rounded-md px-3 py-1 text-sm font-medium transition-colors {r.key === data.range
-							? 'bg-accent text-accent-foreground'
-							: 'text-muted-foreground hover:text-foreground'}"
-					>
-						{r.label}
-					</a>
-				{/each}
-			</div>
-			<CustomRangePicker
-				from={data.customFrom}
-				to={data.customTo}
-				active={data.range === 'custom'}
-				onApply={applyCustom}
-			/>
-			<Button
-				variant="outline"
-				size="icon"
-				onclick={refresh}
-				disabled={refreshing}
-				aria-label="Refresh usage"
-				title="Refresh"
-			>
-				<RefreshCw class={refreshing ? 'animate-spin' : ''} />
-			</Button>
-		</div>
+		<UsageRangeToolbar
+			ranges={data.ranges}
+			range={data.range}
+			{hrefWith}
+			customFrom={data.customFrom}
+			customTo={data.customTo}
+			onApplyCustom={applyCustom}
+			onRefresh={refresh}
+			{refreshing}
+		/>
 	</div>
 
 	{#if !hasTraffic}
@@ -209,69 +156,19 @@
 			</Card.Content>
 		</Card.Root>
 	{:else}
-		<!-- Cost-first headline with period-over-period deltas. -->
-		<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-			<Card.Root class="border-accent-foreground/20 bg-accent/30">
-				<Card.Header class="flex flex-row items-center justify-between space-y-0 pb-2">
-					<Card.Description>Spend</Card.Description>
-					<Coins class="size-4 text-accent-foreground" />
-				</Card.Header>
-				<Card.Content>
-					<div class="text-3xl font-semibold tabular-nums">{formatUsd(totals.costUsd)}</div>
-					<div class="mt-1 flex items-center gap-2">
-						<DeltaPill value={spendDelta} tone="cost" />
-						<span class="text-xs text-muted-foreground">vs prev {rangeLabel}</span>
-					</div>
-					<p class="mt-1 text-xs text-muted-foreground tabular-nums">
-						{formatUsd(avgCostPerReq)} avg / request
-					</p>
-				</Card.Content>
-			</Card.Root>
-
-			<StatCard label="Requests">
-				<div class="mt-1 text-2xl font-semibold tabular-nums">
-					{totals.requests.toLocaleString()}
-				</div>
-				<div class="mt-1"><DeltaPill value={requestDelta} /></div>
-				<p class="mt-1 text-xs text-muted-foreground tabular-nums">
-					{(errorRate * 100).toFixed(1)}% errors · {totals.denied.toLocaleString()} denied
-				</p>
-			</StatCard>
-
-			<StatCard label="Total tokens">
-				<div class="mt-1 text-2xl font-semibold tabular-nums">{formatTokens(totalTokens)}</div>
-				<div class="mt-1"><DeltaPill value={tokenDelta} /></div>
-				<TokenSplit input={totals.inputTokens} output={totals.outputTokens} />
-			</StatCard>
-
-			<StatCard label="Token cache rate">
-				<div class="mt-1 text-2xl font-semibold tabular-nums">
-					{(tokenCacheRate * 100).toFixed(1)}%
-				</div>
-				<p class="mt-1 text-xs text-muted-foreground tabular-nums">
-					{formatTokens(totals.savedInputTokens)} uprox · {formatTokens(
-						totals.providerCachedTokens
-					)} provider
-				</p>
-			</StatCard>
-		</div>
-
-		<UsageReliability {totals} />
-
-		<UsageTrendCard
-			points={data.series.points}
-			unit={data.series.unit}
+		<UsageDashboard
+			totals={data.totals}
+			prevTotals={data.prevTotals}
+			series={data.series}
 			prevPoints={data.prevPoints}
-			{rangeLabel}
 			bucket={data.bucket}
+			{rangeLabel}
 			bucketHref={(b) => hrefWith({ bucket: b })}
-		/>
-
-		<UsageBreakdown
 			{sections}
 			breakdownLimit={data.breakdownLimit}
 			{rowLabel}
-			description="Where this service's spend and token volume land"
+			breakdownDescription="Where this service's spend and token volume land"
+			budget={data.budget}
 		/>
 	{/if}
 </div>
