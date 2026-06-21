@@ -8,6 +8,7 @@ import {
 	createToken,
 	updateToken,
 	revokeToken,
+	deleteToken,
 	revealToken,
 	getSettings
 } from '$lib/server/data';
@@ -120,6 +121,13 @@ export const actions: Actions = {
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
 		if (id) await revokeToken(id);
+		return { success: true };
+	},
+	delete: async (event) => {
+		await requirePermission(event, 'tokens:manage');
+		const data = await event.request.formData();
+		const id = data.get('id')?.toString();
+		if (id) await deleteToken(id);
 		return { success: true };
 	}
 };

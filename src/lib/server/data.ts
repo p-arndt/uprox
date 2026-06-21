@@ -409,6 +409,23 @@ export async function revokeToken(id: string) {
 	return row ?? null;
 }
 
+// Permanently remove a token row. Unlike revokeToken this is irreversible —
+// the audit_log.token_id FK is ON DELETE SET NULL, so history survives but loses
+// the token link. The audit record we write here therefore omits tokenId (the row
+// is already gone) and keeps the name in detail for traceability.
+export async function deleteToken(id: string) {
+	const [row] = await db.delete(machineToken).where(eq(machineToken.id, id)).returning();
+	if (row) {
+		await audit({
+			action: 'token.delete',
+			status: 'ok',
+			serviceId: row.serviceId,
+			detail: row.name
+		});
+	}
+	return row ?? null;
+}
+
 /* ------------------------------- provider secrets ------------------------------- */
 
 export function listProviderSecrets() {
