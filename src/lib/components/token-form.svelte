@@ -87,6 +87,28 @@
 		<Input id={id('name')} name="name" placeholder="production" value={values.name} required />
 	</div>
 
+	{#if services.length > 0}
+		<div class="space-y-2">
+			<div class="flex items-center gap-1.5">
+				<Label for={id('serviceId')}>Service</Label>
+				<FieldHint
+					text="Which service this token belongs to. Leave on Default to start — you can move it into a service later."
+				/>
+			</div>
+			<Select.Root type="single" name="serviceId" bind:value={serviceId}>
+				<Select.Trigger id={id('serviceId')} class="w-full">
+					{serviceLabel(serviceId)}
+				</Select.Trigger>
+				<Select.Content>
+					<Select.Item value="" label="Default">Default</Select.Item>
+					{#each services as s (s.id)}
+						<Select.Item value={s.id} label={s.name}>{s.name}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+		</div>
+	{/if}
+
 	<div class="space-y-2">
 		<div class="flex items-center gap-1.5">
 			<Label for={id('policyId')}>Preset</Label>
@@ -105,6 +127,8 @@
 		</Select.Root>
 	</div>
 
+	{@render bottomFields?.()}
+
 	<Separator />
 
 	<InlineLimitsFields
@@ -115,27 +139,6 @@
 		extraAdvancedActive={values.scopes.length > 0}
 	>
 		{#snippet advanced()}
-			{#if services.length > 0}
-				<div class="space-y-2">
-					<div class="flex items-center gap-1.5">
-						<Label for={id('serviceId')}>Service</Label>
-						<FieldHint
-							text="Which service this token belongs to. Leave on Default to start — you can move it into a service later."
-						/>
-					</div>
-					<Select.Root type="single" name="serviceId" bind:value={serviceId}>
-						<Select.Trigger id={id('serviceId')} class="w-full">
-							{serviceLabel(serviceId)}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="" label="Default">Default</Select.Item>
-							{#each services as s (s.id)}
-								<Select.Item value={s.id} label={s.name}>{s.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			{/if}
 			<div class="space-y-2">
 				<div class="flex text-muted-foreground items-center gap-1.5">
 					<Label>Scopes</Label>
@@ -150,8 +153,6 @@
 			</div>
 		{/snippet}
 	</InlineLimitsFields>
-
-	{@render bottomFields?.()}
 
 	<Dialog.Footer>
 		<Button type="submit">{submitLabel}</Button>
