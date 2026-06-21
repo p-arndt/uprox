@@ -483,7 +483,9 @@ export async function createProviderSecret(
 /**
  * Update a provider secret in place. Only the fields present in `input` are
  * written, so the label/endpoint/priority can be edited independently of
- * rotating the key (pass `secret` to rotate; the hint follows it).
+ * rotating the key (pass `secret` to rotate; the hint follows it). A defined but
+ * empty `secret` clears the credential — used by optional-auth providers (Ollama)
+ * to drop basic auth; an omitted `secret` leaves the stored key untouched.
  */
 export async function updateProviderSecret(
 	id: string,
@@ -493,9 +495,10 @@ export async function updateProviderSecret(
 	if (input.label !== undefined) set.label = input.label || null;
 	if (input.baseUrl !== undefined) set.baseUrl = input.baseUrl?.trim() || null;
 	if (input.priority !== undefined) set.priority = input.priority;
-	if (input.secret) {
-		set.encryptedSecret = encrypt(input.secret);
-		set.hint = input.secret.slice(-4);
+	const rotating = input.secret !== undefined;
+	if (rotating) {
+		set.encryptedSecret = encrypt(input.secret!);
+		set.hint = input.secret!.slice(-4);
 	}
 	const [row] = await db
 		.update(providerSecret)
@@ -504,7 +507,7 @@ export async function updateProviderSecret(
 		.returning({ id: providerSecret.id, provider: providerSecret.provider });
 	if (row) {
 		await audit({
-			action: input.secret ? 'provider.rotate' : 'provider.update',
+			action: rotating ? 'provider.rotate' : 'provider.update',
 			status: 'ok',
 			provider: row.provider,
 			detail: row.provider

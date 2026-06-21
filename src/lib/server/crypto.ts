@@ -40,8 +40,12 @@ export function encrypt(plaintext: string): string {
 
 /** Reverse {@link encrypt}. Throws if the payload was tampered with. */
 export function decrypt(payload: string): string {
-	const [ivB64, tagB64, dataB64] = payload.split('.');
-	if (!ivB64 || !tagB64 || !dataB64) throw new Error('Malformed ciphertext');
+	const parts = payload.split('.');
+	// dataB64 may be empty — GCM of an empty plaintext (an optional-auth provider
+	// with no credential) yields an empty ciphertext but a real iv and auth tag.
+	if (parts.length !== 3) throw new Error('Malformed ciphertext');
+	const [ivB64, tagB64, dataB64] = parts;
+	if (!ivB64 || !tagB64) throw new Error('Malformed ciphertext');
 	const decipher = createDecipheriv(ALGO, masterKey(), Buffer.from(ivB64, 'base64'));
 	decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
 	return Buffer.concat([
