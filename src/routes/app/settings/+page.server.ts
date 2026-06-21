@@ -40,6 +40,24 @@ export const actions: Actions = {
 		});
 		return { success: true };
 	},
+	updateInstanceBudget: async (event) => {
+		await requirePermission(event, 'settings:manage');
+		const data = await event.request.formData();
+		// blank = clear (unlimited); otherwise must be a non-negative number
+		const parse = (v: FormDataEntryValue | null) => {
+			const s = String(v ?? '').trim();
+			if (s === '') return null;
+			const n = Number(s);
+			return Number.isFinite(n) && n >= 0 ? n : NaN;
+		};
+		const daily = parse(data.get('dailyBudgetUsd'));
+		const monthly = parse(data.get('monthlyBudgetUsd'));
+		if (Number.isNaN(daily) || Number.isNaN(monthly)) {
+			return fail(400, { message: 'Budgets must be non-negative numbers' });
+		}
+		await updateSettings({ dailyBudgetUsd: daily, monthlyBudgetUsd: monthly });
+		return { success: true };
+	},
 	updateBudgetAlerts: async (event) => {
 		await requirePermission(event, 'settings:manage');
 		const data = await event.request.formData();

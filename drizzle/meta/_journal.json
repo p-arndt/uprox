@@ -85,6 +85,13 @@
       "when": 1781998111461,
       "tag": "0011_shocking_captain_america",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1782069752478,
+      "tag": "0012_aberrant_kronos",
+      "breakpoints": true
     }
   ]
 }

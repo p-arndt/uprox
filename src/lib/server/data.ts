@@ -636,6 +636,9 @@ export interface Settings {
 	membersCanManageTokens: boolean;
 	membersCanManageServices: boolean;
 	tokensRecopyableDefault: boolean;
+	// instance-wide spend ceilings across all services/tokens; null = unlimited
+	dailyBudgetUsd: number | null;
+	monthlyBudgetUsd: number | null;
 	budgetAlertsEnabled: boolean;
 	budgetAlertThresholdPct: number;
 	budgetAlertEmail: string | null;
@@ -651,6 +654,8 @@ export async function getSettings(): Promise<Settings> {
 		membersCanManageTokens: row?.membersCanManageTokens ?? false,
 		membersCanManageServices: row?.membersCanManageServices ?? false,
 		tokensRecopyableDefault: row?.tokensRecopyableDefault ?? false,
+		dailyBudgetUsd: row?.dailyBudgetUsd != null ? Number(row.dailyBudgetUsd) : null,
+		monthlyBudgetUsd: row?.monthlyBudgetUsd != null ? Number(row.monthlyBudgetUsd) : null,
 		budgetAlertsEnabled: row?.budgetAlertsEnabled ?? false,
 		budgetAlertThresholdPct: row?.budgetAlertThresholdPct ?? 80,
 		budgetAlertEmail: row?.budgetAlertEmail ?? null,
@@ -677,6 +682,15 @@ export async function updateSettings(input: Partial<Settings>) {
 	}
 	if (input.tokensRecopyableDefault !== undefined) {
 		set.tokensRecopyableDefault = input.tokensRecopyableDefault;
+	}
+	// budgets: null or a non-positive number clears the ceiling (unlimited)
+	if (input.dailyBudgetUsd !== undefined) {
+		set.dailyBudgetUsd =
+			input.dailyBudgetUsd && input.dailyBudgetUsd > 0 ? String(input.dailyBudgetUsd) : null;
+	}
+	if (input.monthlyBudgetUsd !== undefined) {
+		set.monthlyBudgetUsd =
+			input.monthlyBudgetUsd && input.monthlyBudgetUsd > 0 ? String(input.monthlyBudgetUsd) : null;
 	}
 	if (input.budgetAlertsEnabled !== undefined) {
 		set.budgetAlertsEnabled = input.budgetAlertsEnabled;

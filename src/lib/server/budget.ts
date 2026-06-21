@@ -20,8 +20,11 @@ export interface BudgetLimits {
 
 export type BudgetResult = { ok: true } | { ok: false; reason: string };
 
-/** Which entity a budget is summed against. */
-export type BudgetScope = 'service' | 'token';
+/**
+ * Which entity a budget is summed against. 'instance' sums *all* gateway spend
+ * (no id filter) — the broadest ceiling, above the per-service and per-token ones.
+ */
+export type BudgetScope = 'service' | 'token' | 'instance';
 
 /**
  * In-flight spend reservations, keyed by "scope:id" → reserved USD.
@@ -122,11 +125,18 @@ export async function currentSpend(serviceId: string): Promise<SpendWindows> {
 
 /** Sum gateway spend (USD) for a bucket since `since`. */
 async function spendSince(scope: BudgetScope, id: string, since: Date): Promise<number> {
-	const col = scope === 'token' ? auditLog.tokenId : auditLog.serviceId;
+	// 'instance' has no id filter — it sums every request in the window.
+	const filter =
+		scope === 'instance'
+			? gte(auditLog.createdAt, since)
+			: and(
+					eq(scope === 'token' ? auditLog.tokenId : auditLog.serviceId, id),
+					gte(auditLog.createdAt, since)
+				);
 	const [row] = await db
 		.select({ total: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)` })
 		.from(auditLog)
-		.where(and(eq(col, id), gte(auditLog.createdAt, since)));
+		.where(filter);
 	return Number(row?.total ?? 0);
 }
 
@@ -149,7 +159,7 @@ export async function checkBudget(
 	if (daily <= 0 && monthly <= 0) return { ok: true };
 
 	const pending = reservedFor(scope, id);
-	const label = scope === 'token' ? 'token' : 'service';
+	const label = scope;
 
 	if (monthly > 0) {
 		const spent = (await spendSince(scope, id, startOfUtcMonth())) + pending;

@@ -71,8 +71,24 @@ describe('checkBudget — limits', () => {
 			monthlyBudgetUsd: 0
 		});
 		const tok = await checkBudget('token', uniqueId(), { dailyBudgetUsd: 10, monthlyBudgetUsd: 0 });
+		const inst = await checkBudget('instance', 'instance', {
+			dailyBudgetUsd: 10,
+			monthlyBudgetUsd: 0
+		});
 		expect(svc).toMatchObject({ reason: expect.stringContaining('service daily') });
 		expect(tok).toMatchObject({ reason: expect.stringContaining('token daily') });
+		expect(inst).toMatchObject({ reason: expect.stringContaining('instance daily') });
+	});
+
+	it('enforces the instance scope from the audit sum (all traffic)', async () => {
+		auditTotal = 4;
+		expect(
+			(await checkBudget('instance', 'instance', { dailyBudgetUsd: 0, monthlyBudgetUsd: 5 })).ok
+		).toBe(true);
+		auditTotal = 5;
+		expect(
+			(await checkBudget('instance', 'instance', { dailyBudgetUsd: 0, monthlyBudgetUsd: 5 })).ok
+		).toBe(false);
 	});
 });
 

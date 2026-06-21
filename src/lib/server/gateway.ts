@@ -36,11 +36,12 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 }
 
 /**
- * Enforce the two budget scopes that apply to a request: the service's aggregate
- * ceiling and the token's personal cap. Both are checked; a request must pass
- * each budget that is set. On denial returns the 402 Response (already audited);
- * otherwise returns a single release handle that frees every reservation it took
- * (a no-op when no budget applies). See budget.ts for the bucket model.
+ * Enforce the three budget scopes that apply to a request: the instance-wide
+ * ceiling, the service's aggregate ceiling, and the token's personal cap. All
+ * are checked; a request must pass each budget that is set. On denial returns
+ * the 402 Response (already audited); otherwise returns a single release handle
+ * that frees every reservation it took (a no-op when no budget applies). See
+ * budget.ts for the bucket model.
  */
 async function enforceBudgets(
 	token: ResolvedToken,
@@ -52,8 +53,10 @@ async function enforceBudgets(
 	makeDenyResponse: (reason: string) => Response = (reason) =>
 		gatewayError(402, `Request denied: ${reason}`, 'insufficient_quota')
 ): Promise<Response | (() => void)> {
-	const { serviceBudget, tokenBudget } = token.effective;
+	const { serviceBudget, tokenBudget, instanceBudget } = token.effective;
 	const buckets = [
+		// the instance ceiling shares one bucket across all traffic — a fixed id
+		{ scope: 'instance' as const, id: 'instance', limits: instanceBudget },
 		{ scope: 'service' as const, id: token.serviceId, limits: serviceBudget },
 		{ scope: 'token' as const, id: token.tokenId, limits: tokenBudget }
 	].filter((b) => b.limits.dailyBudgetUsd > 0 || b.limits.monthlyBudgetUsd > 0);

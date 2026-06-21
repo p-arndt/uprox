@@ -261,6 +261,13 @@ export const settings = pgTable('settings', {
 	// Off by default — the secure hash-only behaviour stays the default. Only the
 	// default; never forces existing or individual tokens. See machineToken.encryptedToken.
 	tokensRecopyableDefault: boolean('tokens_recopyable_default').notNull().default(false),
+	// Instance-wide spend ceilings, summed across EVERY service and token. The
+	// top, broadest layer of budget enforcement (above the per-service aggregate
+	// and per-token caps) — a request must stay within all that apply. NULL or 0
+	// = unlimited. UTC daily/monthly windows, summed from the audit log like the
+	// other budgets. See budget.ts ('instance' scope) and effective-config.ts.
+	dailyBudgetUsd: numeric('daily_budget_usd', { precision: 12, scale: 4 }),
+	monthlyBudgetUsd: numeric('monthly_budget_usd', { precision: 12, scale: 4 }),
 	// budget alerts: when on, a service crossing the warn threshold (or its
 	// ceiling) emails the instance's owners/admins (plus budgetAlertEmail if set).
 	// Opt-in because it sends mail; threshold is a percentage of the ceiling.

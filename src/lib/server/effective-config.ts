@@ -15,11 +15,13 @@
  *     This keeps the long-standing "a token can only narrow, never widen"
  *     guarantee and extends it to services and presets.
  *
- * Budgets are the exception to the cascade: a token's budget and its service's
- * budget are different aggregation scopes (a per-token cap vs the service-wide
- * ceiling across all its tokens), so both are resolved and both are enforced —
- * see resolveBudget / the gateway. Each budget cascades only within its own
- * scope (token inline → token preset; service inline → service preset).
+ * Budgets are the exception to the cascade: the token cap, the service-wide
+ * ceiling, and the instance-wide ceiling are different aggregation scopes (one
+ * token vs all of a service's tokens vs all traffic), so all three are resolved
+ * and all three are enforced — a request must stay within each that is set; see
+ * resolveBudget / the gateway. The token and service budgets cascade only within
+ * their own scope (inline → preset); the instance budget is a single value from
+ * the settings singleton, carried straight through.
  */
 import type { policy, service, machineToken } from '$lib/server/db/schema';
 
@@ -52,11 +54,16 @@ export interface EffectiveConfig {
 	tokenBudget: ResolvedBudget;
 	/** the service-wide spend ceiling across all of its tokens. */
 	serviceBudget: ResolvedBudget;
+	/** the instance-wide ceiling across every service and token. */
+	instanceBudget: ResolvedBudget;
 }
 
 export interface InstanceDefaults {
 	cacheTtlSeconds: number;
 	tracingEnabled: boolean;
+	/** instance-wide spend ceilings (0 = unlimited); summed across all traffic. */
+	dailyBudgetUsd: number;
+	monthlyBudgetUsd: number;
 }
 
 /** First defined (non-null/undefined) value in priority order, or undefined. */
@@ -152,6 +159,11 @@ export function resolveEffectiveConfig(input: ResolveInput): EffectiveConfig {
 				servicePolicy?.tracingEnabled
 			) ?? defaults.tracingEnabled,
 		tokenBudget: resolveBudget(token, tokenPolicy),
-		serviceBudget: resolveBudget(service, servicePolicy)
+		serviceBudget: resolveBudget(service, servicePolicy),
+		// not a cascade — a single instance-wide value carried straight through
+		instanceBudget: {
+			dailyBudgetUsd: defaults.dailyBudgetUsd,
+			monthlyBudgetUsd: defaults.monthlyBudgetUsd
+		}
 	};
 }

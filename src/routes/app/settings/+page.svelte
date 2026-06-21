@@ -15,6 +15,7 @@
 	import BellRing from '@lucide/svelte/icons/bell-ring';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
 	import KeyRound from '@lucide/svelte/icons/key-round';
+	import DollarSign from '@lucide/svelte/icons/dollar-sign';
 
 	let { data, form } = $props();
 
@@ -164,6 +165,66 @@
 						are unaffected.
 					</p>
 
+					<Button type="submit">Save</Button>
+				</form>
+			</Card.Content>
+		</Card.Root>
+
+		<Card.Root>
+			<Card.Header>
+				<div class="flex items-center gap-3">
+					<div class="flex size-9 items-center justify-center rounded-lg border bg-muted">
+						<DollarSign class="size-4" />
+					</div>
+					<div>
+						<Card.Title class="text-base">Instance budget</Card.Title>
+						<Card.Description>
+							A spend ceiling across every service and token. Enforced on top of per-service and
+							per-token budgets.
+						</Card.Description>
+					</div>
+				</div>
+			</Card.Header>
+			<Card.Content>
+				<form
+					method="post"
+					action="?/updateInstanceBudget"
+					class="space-y-4"
+					use:enhance={() =>
+						async ({ update }) =>
+							update({ reset: false })}
+				>
+					<div class="grid max-w-md grid-cols-2 gap-3">
+						<div class="space-y-2">
+							<Label for="dailyBudgetUsd">Daily ceiling (USD)</Label>
+							<Input
+								id="dailyBudgetUsd"
+								name="dailyBudgetUsd"
+								type="number"
+								min="0"
+								step="0.01"
+								placeholder="unlimited"
+								value={data.settings.dailyBudgetUsd ?? ''}
+							/>
+						</div>
+						<div class="space-y-2">
+							<Label for="monthlyBudgetUsd">Monthly ceiling (USD)</Label>
+							<Input
+								id="monthlyBudgetUsd"
+								name="monthlyBudgetUsd"
+								type="number"
+								min="0"
+								step="0.01"
+								placeholder="unlimited"
+								value={data.settings.monthlyBudgetUsd ?? ''}
+							/>
+						</div>
+					</div>
+					<p class="text-xs text-muted-foreground">
+						Summed from the audit log over UTC windows (daily resets at 00:00, monthly on the 1st).
+						Leave blank or 0 for unlimited. Once a window's total reaches the ceiling, further
+						requests are denied with a 402 until the window resets.
+					</p>
 					<Button type="submit">Save</Button>
 				</form>
 			</Card.Content>

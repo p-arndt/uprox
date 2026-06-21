@@ -42,7 +42,12 @@ const preset = (over: Record<string, unknown> = {}) =>
 		...over
 	}) as unknown as NonNullable<ResolveInput['tokenPolicy']>;
 
-const defaults = { cacheTtlSeconds: 60, tracingEnabled: false };
+const defaults = {
+	cacheTtlSeconds: 60,
+	tracingEnabled: false,
+	dailyBudgetUsd: 0,
+	monthlyBudgetUsd: 0
+};
 
 const resolve = (over: Partial<ResolveInput> = {}) =>
 	resolveEffectiveConfig({
@@ -151,5 +156,21 @@ describe('dual budgets', () => {
 		});
 		expect(eff.tokenBudget.monthlyBudgetUsd).toBe(20);
 		expect(eff.serviceBudget.monthlyBudgetUsd).toBe(500);
+	});
+
+	it('carries the instance budget straight from the defaults (no cascade)', () => {
+		const eff = resolve({
+			defaults: { ...defaults, dailyBudgetUsd: 250, monthlyBudgetUsd: 4000 },
+			// token/service budgets stay independent of the instance ceiling
+			token: tok({ dailyBudgetUsd: '5' }),
+			service: svc({ dailyBudgetUsd: '100' })
+		});
+		expect(eff.instanceBudget).toEqual({ dailyBudgetUsd: 250, monthlyBudgetUsd: 4000 });
+		expect(eff.tokenBudget.dailyBudgetUsd).toBe(5);
+		expect(eff.serviceBudget.dailyBudgetUsd).toBe(100);
+	});
+
+	it('defaults the instance budget to 0 (unlimited) when unset', () => {
+		expect(resolve().instanceBudget).toEqual({ dailyBudgetUsd: 0, monthlyBudgetUsd: 0 });
 	});
 });

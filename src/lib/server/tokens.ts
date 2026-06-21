@@ -110,7 +110,9 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 			servicePolicy: row.servicePolicy,
 			defaults: {
 				cacheTtlSeconds: settingsRow?.cacheTtlSeconds ?? 0,
-				tracingEnabled: settingsRow?.tracingEnabled ?? false
+				tracingEnabled: settingsRow?.tracingEnabled ?? false,
+				dailyBudgetUsd: Number(settingsRow?.dailyBudgetUsd ?? 0),
+				monthlyBudgetUsd: Number(settingsRow?.monthlyBudgetUsd ?? 0)
 			}
 		})
 	};
