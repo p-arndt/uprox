@@ -1,8 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import * as Table from '$lib/components/ui/table/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import PageHeader from '$lib/components/page-header.svelte';
@@ -68,6 +66,7 @@
 		editing = {
 			id: t.id,
 			name: t.name,
+			serviceId: t.serviceId,
 			scopes: [...t.scopes],
 			policyId: t.policyId ?? '',
 			allowedProviders: t.allowedProviders ?? [],
@@ -91,7 +90,6 @@
 			{#if canManage}
 				<CreateTokenDialog
 					bind:open={createOpen}
-					disabled={data.services.length === 0}
 					services={data.services}
 					policies={data.policies}
 					providers={data.providers}
@@ -102,19 +100,11 @@
 		{/snippet}
 	</PageHeader>
 
-	{#if data.services.length === 0}
-		<EmptyState
-			icon={KeyRound}
-			title="Create a service first"
-			description="Tokens are issued against a service."
-		>
-			<Button href={resolve('/app/services')} variant="outline" size="sm">Go to services</Button>
-		</EmptyState>
-	{:else if data.tokens.length === 0}
+	{#if data.tokens.length === 0}
 		<EmptyState
 			icon={KeyRound}
 			title="No tokens yet"
-			description="Issue a token to authenticate a service."
+			description="Issue a token to start calling the gateway. New tokens land in the Default service — organise them into services later."
 		/>
 	{:else}
 		<div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -191,5 +181,6 @@
 	onClose={() => (editing = null)}
 	policies={data.policies}
 	providers={data.providers}
+	services={data.services}
 	message={form?.message}
 />

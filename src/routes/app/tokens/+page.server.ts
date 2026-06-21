@@ -58,9 +58,9 @@ export const actions: Actions = {
 	create: async (event) => {
 		const { userId } = await requirePermission(event, 'tokens:manage');
 		const data = await event.request.formData();
-		const serviceId = data.get('serviceId')?.toString();
+		// blank/absent = let createToken drop the token into the Default service
+		const serviceId = data.get('serviceId')?.toString() || undefined;
 		const name = data.get('name')?.toString().trim();
-		if (!serviceId) return fail(400, { message: 'Select a service' });
 		if (!name) return fail(400, { message: 'Name is required' });
 
 		const scopes = data.getAll('scopes').map((s) => s.toString());
@@ -107,8 +107,11 @@ export const actions: Actions = {
 		if (!id) return fail(400, { message: 'Missing token id' });
 		if (!name) return fail(400, { message: 'Name is required' });
 
+		// only reassign when a (non-blank) service was submitted
+		const serviceId = data.get('serviceId')?.toString() || undefined;
 		await updateToken(id, {
 			name,
+			...(serviceId ? { serviceId } : {}),
 			scopes: data.getAll('scopes').map((s) => s.toString()),
 			allowedModels: parseModels(data.get('allowedModels')),
 			policyId: data.get('policyId')?.toString() || null,

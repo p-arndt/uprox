@@ -27,16 +27,9 @@
 			cta: 'Add key'
 		},
 		{
-			done: data.stats.services > 0,
-			title: 'Create a service',
-			desc: 'A machine identity for an app, agent or workload.',
-			href: '/app/services',
-			cta: 'New service'
-		},
-		{
 			done: data.stats.activeTokens > 0,
 			title: 'Issue a machine token',
-			desc: 'How a service authenticates to the gateway.',
+			desc: 'How your app authenticates to the gateway. Set a budget and go — organise tokens into services later.',
 			href: '/app/tokens',
 			cta: 'New token'
 		},

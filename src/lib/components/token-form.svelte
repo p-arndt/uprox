@@ -7,6 +7,8 @@
 		scopes: string[];
 		/** '' = no preset attached */
 		policyId: string;
+		/** owning service; '' = let the server use the Default service */
+		serviceId?: string;
 	}
 </script>
 
@@ -31,6 +33,7 @@
 		values,
 		policies,
 		providers,
+		services = [],
 		resetOnSuccess = false,
 		topFields,
 		bottomFields
@@ -42,6 +45,8 @@
 		values: TokenFormValues;
 		policies: { id: string; name: string }[];
 		providers: { id: string; label: string }[];
+		/** services the token can belong to; empty hides the picker entirely */
+		services?: { id: string; name: string }[];
 		resetOnSuccess?: boolean;
 		/** create-only fields rendered above the name (e.g. the service picker) */
 		topFields?: Snippet;
@@ -52,10 +57,14 @@
 	// seeded once from the prop; the edit dialog remounts this form per token
 	// (keyed on id), so re-seeding happens naturally on mount
 	let policyId = $state(untrack(() => values.policyId));
+	let serviceId = $state(untrack(() => values.serviceId ?? ''));
 
 	const id = (field: string) => `${idPrefix}-${field}`;
 	const policyLabel = (pid: string) =>
 		pid ? (policies.find((p) => p.id === pid)?.name ?? pid) : 'No preset';
+	// '' renders as "Default" — the catch-all service the server assigns
+	const serviceLabel = (sid: string) =>
+		sid ? (services.find((s) => s.id === sid)?.name ?? sid) : 'Default';
 	const scopeOptions = GATEWAY_SCOPES.map((s) => ({ value: s, label: s }));
 </script>
 
@@ -106,6 +115,27 @@
 		extraAdvancedActive={values.scopes.length > 0}
 	>
 		{#snippet advanced()}
+			{#if services.length > 0}
+				<div class="space-y-2">
+					<div class="flex items-center gap-1.5">
+						<Label for={id('serviceId')}>Service</Label>
+						<FieldHint
+							text="Which service this token belongs to. Leave on Default to start — you can move it into a service later."
+						/>
+					</div>
+					<Select.Root type="single" name="serviceId" bind:value={serviceId}>
+						<Select.Trigger id={id('serviceId')} class="w-full">
+							{serviceLabel(serviceId)}
+						</Select.Trigger>
+						<Select.Content>
+							<Select.Item value="" label="Default">Default</Select.Item>
+							{#each services as s (s.id)}
+								<Select.Item value={s.id} label={s.name}>{s.name}</Select.Item>
+							{/each}
+						</Select.Content>
+					</Select.Root>
+				</div>
+			{/if}
 			<div class="space-y-2">
 				<div class="flex text-muted-foreground items-center gap-1.5">
 					<Label>Scopes</Label>

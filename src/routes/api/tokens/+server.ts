@@ -11,12 +11,13 @@ export const GET: RequestHandler = async (event) => {
 export const POST: RequestHandler = async (event) => {
 	const { userId } = await requirePermission(event, 'tokens:manage');
 	const body = await event.request.json();
-	if (!body?.serviceId || !body?.name) {
-		return json({ error: 'serviceId and name are required' }, { status: 400 });
+	if (!body?.name) {
+		return json({ error: 'name is required' }, { status: 400 });
 	}
 	try {
 		const { token, plaintext } = await createToken(userId, {
-			serviceId: body.serviceId,
+			// optional: omit to drop the token into the auto-provisioned Default service
+			serviceId: body.serviceId || undefined,
 			name: body.name,
 			scopes: Array.isArray(body.scopes) ? body.scopes : [],
 			allowedModels: Array.isArray(body.allowedModels) ? body.allowedModels : [],

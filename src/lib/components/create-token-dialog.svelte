@@ -25,7 +25,6 @@
 		message?: string;
 	} = $props();
 
-	let serviceId = $state('');
 	let expiresInDays = $state('0');
 	const expiryOptions = [
 		{ value: '0', label: 'Never' },
@@ -67,23 +66,9 @@
 			values={createValues}
 			{policies}
 			{providers}
+			{services}
 			resetOnSuccess
 		>
-			{#snippet topFields()}
-				<div class="space-y-2">
-					<Label for="serviceId">Service</Label>
-					<Select.Root type="single" name="serviceId" required bind:value={serviceId}>
-						<Select.Trigger id="serviceId" class="w-full">
-							{services.find((s) => s.id === serviceId)?.name ?? 'Select a service'}
-						</Select.Trigger>
-						<Select.Content>
-							{#each services as s (s.id)}
-								<Select.Item value={s.id} label={s.name}>{s.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			{/snippet}
 			{#snippet bottomFields()}
 				<div class="space-y-2">
 					<Label for="expiresInDays">Expires</Label>

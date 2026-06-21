@@ -64,6 +64,35 @@ function inlineConfigColumns(input: InlineConfigInput): Record<string, unknown> 
 
 /* ----------------------------------- services ----------------------------------- */
 
+/**
+ * The name of the auto-provisioned catch-all service. Tokens created without an
+ * explicit service land here, so a user can start issuing tokens before they
+ * think about organising anything. It's an ordinary service in every other
+ * respect — editable, soft-deletable, can carry its own limits/budget.
+ */
+export const DEFAULT_SERVICE_NAME = 'Default';
+
+/**
+ * Return the catch-all "Default" service, creating it on first use. Matches by
+ * name among non-deleted services so a manually-created "Default" is reused
+ * rather than duplicated. Not transactionally locked: a rare concurrent first
+ * call could create two rows, which is harmless (both are valid services) and
+ * self-heals on the next lookup picking the oldest.
+ */
+export async function getOrCreateDefaultService() {
+	const [existing] = await db
+		.select()
+		.from(service)
+		.where(and(eq(service.name, DEFAULT_SERVICE_NAME), isNull(service.deletedAt)))
+		.orderBy(service.createdAt)
+		.limit(1);
+	if (existing) return existing;
+	return createService({
+		name: DEFAULT_SERVICE_NAME,
+		description: 'Catch-all project for tokens created without one.'
+	});
+}
+
 export function listServices() {
 	return db
 		.select()
@@ -250,7 +279,9 @@ export function listTokens() {
 export async function createToken(
 	userId: string,
 	input: {
-		serviceId: string;
+		// optional: when omitted, the token lands in the auto-provisioned Default
+		// service so tokens can be issued before any service is set up
+		serviceId?: string | null;
 		name: string;
 		scopes?: string[];
 		// per-token model allowlist (narrows access); empty = no extra restriction
@@ -263,19 +294,24 @@ export async function createToken(
 		recopyable?: boolean;
 	} & Omit<InlineConfigInput, 'allowedModels'>
 ) {
-	// ensure the service exists and isn't retired
-	const [svc] = await db
-		.select()
-		.from(service)
-		.where(and(eq(service.id, input.serviceId), isNull(service.deletedAt)))
-		.limit(1);
+	// resolve the target service: the one given (must exist and be active), or the
+	// auto-provisioned Default when none was specified
+	const svc = input.serviceId
+		? (
+				await db
+					.select()
+					.from(service)
+					.where(and(eq(service.id, input.serviceId), isNull(service.deletedAt)))
+					.limit(1)
+			)[0]
+		: await getOrCreateDefaultService();
 	if (!svc) throw new Error('Service not found');
 
 	const issued = issueToken();
 	const [row] = await db
 		.insert(machineToken)
 		.values({
-			serviceId: input.serviceId,
+			serviceId: svc.id,
 			name: input.name,
 			display: issued.display,
 			hashedToken: issued.hashedToken,
@@ -301,7 +337,7 @@ export async function createToken(
 	await audit({
 		action: 'token.create',
 		status: 'ok',
-		serviceId: input.serviceId,
+		serviceId: svc.id,
 		tokenId: row.id,
 		detail: input.name
 	});
@@ -350,6 +386,9 @@ export async function updateToken(
 	id: string,
 	patch: {
 		name?: string;
+		// reassign the token to another service (e.g. move it out of Default once
+		// the user organises their tokens into real services)
+		serviceId?: string;
 		scopes?: string[];
 		allowedModels?: string[];
 		policyId?: string | null;
@@ -357,6 +396,7 @@ export async function updateToken(
 ) {
 	const set: Partial<typeof machineToken.$inferInsert> = {};
 	if (patch.name !== undefined) set.name = patch.name;
+	if (patch.serviceId !== undefined) set.serviceId = patch.serviceId;
 	if (patch.scopes !== undefined) set.scopes = patch.scopes;
 	if (patch.allowedModels !== undefined) set.allowedModels = patch.allowedModels;
 	if (patch.policyId !== undefined) set.policyId = patch.policyId;
