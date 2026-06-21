@@ -39,6 +39,7 @@
 		breakdownDescription,
 		showExcludeToggles = false,
 		budget,
+		instanceBudget,
 		budgetThreshold
 	}: {
 		totals: UsageTotals;
@@ -56,6 +57,8 @@
 		showExcludeToggles?: boolean;
 		/** per-service spend ceilings; renders the budget gauge when non-empty */
 		budget?: BudgetStatus[];
+		/** the instance-wide ceiling; renders its own gauge above the per-service one */
+		instanceBudget?: BudgetStatus | null;
 		budgetThreshold?: number;
 	} = $props();
 
@@ -196,6 +199,16 @@
 			</Label>
 		</div>
 	</div>
+{/if}
+
+{#if instanceBudget}
+	<BudgetGauge
+		statuses={[instanceBudget]}
+		threshold={budgetThreshold}
+		showServiceName={false}
+		title="Instance budget"
+		description="Spend across all services this period"
+	/>
 {/if}
 
 {#if budget && budget.length > 0}

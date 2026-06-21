@@ -1,21 +1,22 @@
 /**
- * Instance-wide budget alerting. The gateway calls {@link maybeSendBudgetAlert}
- * as a fire-and-forget step on every budgeted request; this module decides whether
- * the service has crossed the instance's warn threshold (or its ceiling) and, if
- * so, emails the instance's owners/admins (plus an optional notification address).
+ * Budget alerting. The gateway calls {@link maybeSendBudgetAlert} (per service)
+ * and {@link maybeSendInstanceBudgetAlert} (org-wide) as fire-and-forget steps on
+ * every budgeted request; this module decides whether that scope has crossed the
+ * instance's warn threshold (or its ceiling) and, if so, emails the instance's
+ * owners/admins (plus an optional notification address).
  *
  * Re-sends are suppressed by the `budget_alert_state` ledger: one row per
- * (service, window) tracks the highest level already emailed for the current
- * spend window, so we only mail again when the window rolls over or the level
- * escalates from warn to over. Everything here is best-effort and never throws —
- * alerting must not affect the request it observes.
+ * (scope, scopeId, window) tracks the highest level already emailed for the
+ * current spend window, so we only mail again when the window rolls over or the
+ * level escalates from warn to over. Everything here is best-effort and never
+ * throws — alerting must not affect the request it observes.
  */
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import { db } from '$lib/server/db';
 import { budgetAlertState, user } from '$lib/server/db/schema';
 import { getSettings } from '$lib/server/data';
-import { currentSpend, type BudgetLimits } from '$lib/server/budget';
+import { currentSpend, type BudgetLimits, type BudgetScope } from '$lib/server/budget';
 import { sendBudgetAlertEmail } from '$lib/server/email';
 
 type Level = 'warn' | 'over';
@@ -39,13 +40,15 @@ async function recipientsFor(extra: string | null): Promise<string[]> {
 }
 
 /**
- * Evaluate a service's budget standing and email an alert if it has newly
- * crossed the instance's warn threshold or its ceiling. No-ops when alerts are
+ * Evaluate one budget bucket's standing and email an alert if it has newly
+ * crossed the warn threshold or its ceiling. `subject` is what shows in the
+ * email headline (a service name, or "Instance"). No-ops when alerts are
  * disabled or no budget is set. Safe to call without awaiting.
  */
-export async function maybeSendBudgetAlert(
-	serviceId: string,
-	serviceName: string,
+async function evaluateBudgetAlert(
+	scope: BudgetScope,
+	scopeId: string,
+	subject: string,
 	limits: BudgetLimits
 ): Promise<void> {
 	try {
@@ -56,7 +59,7 @@ export async function maybeSendBudgetAlert(
 		const monthlyBudget = Number(limits.monthlyBudgetUsd ?? 0);
 		if (dailyBudget <= 0 && monthlyBudget <= 0) return;
 
-		const spend = await currentSpend(serviceId);
+		const spend = await currentSpend(scope, scopeId);
 		const windows = [
 			{
 				name: 'daily' as const,
@@ -75,7 +78,7 @@ export async function maybeSendBudgetAlert(
 		const existing = await db
 			.select()
 			.from(budgetAlertState)
-			.where(eq(budgetAlertState.serviceId, serviceId));
+			.where(and(eq(budgetAlertState.scope, scope), eq(budgetAlertState.scopeId, scopeId)));
 
 		let recipients: string[] | null = null;
 		const orgName = env.ORG_NAME?.trim() || 'uprox';
@@ -98,7 +101,7 @@ export async function maybeSendBudgetAlert(
 			await sendBudgetAlertEmail({
 				to: recipients,
 				orgName,
-				serviceName,
+				subject,
 				window: w.name,
 				level,
 				spentUsd: w.spent,
@@ -110,17 +113,32 @@ export async function maybeSendBudgetAlert(
 			await db
 				.insert(budgetAlertState)
 				.values({
-					serviceId,
+					scope,
+					scopeId,
 					window: w.name,
 					lastLevel: level,
 					windowStart: w.start
 				})
 				.onConflictDoUpdate({
-					target: [budgetAlertState.serviceId, budgetAlertState.window],
+					target: [budgetAlertState.scope, budgetAlertState.scopeId, budgetAlertState.window],
 					set: { lastLevel: level, windowStart: w.start, sentAt: new Date() }
 				});
 		}
 	} catch (err) {
 		console.error('[budget-alerts] failed to evaluate/send', err);
 	}
+}
+
+/** Alert when a service crosses its aggregate (service-wide) budget. */
+export function maybeSendBudgetAlert(
+	serviceId: string,
+	serviceName: string,
+	limits: BudgetLimits
+): Promise<void> {
+	return evaluateBudgetAlert('service', serviceId, serviceName, limits);
+}
+
+/** Alert when the instance-wide ceiling (across all services/tokens) is crossed. */
+export function maybeSendInstanceBudgetAlert(limits: BudgetLimits): Promise<void> {
+	return evaluateBudgetAlert('instance', 'instance', 'Instance', limits);
 }

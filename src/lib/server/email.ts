@@ -73,7 +73,8 @@ export async function sendInvitationEmail(data: InvitationEmail): Promise<void> 
 interface BudgetAlertEmail {
 	to: string[];
 	orgName: string;
-	serviceName: string;
+	/** what crossed the budget: a service name, or "Instance" for the org ceiling */
+	subject: string;
 	window: 'daily' | 'monthly';
 	level: 'warn' | 'over';
 	spentUsd: number;
@@ -96,8 +97,8 @@ export async function sendBudgetAlertEmail(data: BudgetAlertEmail): Promise<void
 	const money = (n: number) => `$${n.toFixed(2)}`;
 	const headline =
 		data.level === 'over'
-			? `${data.serviceName} is over its ${data.window} budget`
-			: `${data.serviceName} has reached ${data.pct}% of its ${data.window} budget`;
+			? `${data.subject} is over its ${data.window} budget`
+			: `${data.subject} has reached ${data.pct}% of its ${data.window} budget`;
 
 	if (!smtpConfigured()) {
 		console.log(

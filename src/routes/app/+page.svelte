@@ -82,7 +82,10 @@
 </script>
 
 <div class="mx-auto max-w-6xl space-y-6">
-	<BudgetAlert statuses={data.budgets} threshold={data.budgetThreshold} />
+	<BudgetAlert
+		statuses={data.instanceBudget ? [data.instanceBudget, ...data.budgets] : data.budgets}
+		threshold={data.budgetThreshold}
+	/>
 
 	{#if showOnboarding}
 		<Card.Root>

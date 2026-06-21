@@ -12,13 +12,18 @@
 	let {
 		statuses,
 		threshold,
-		showServiceName = true
+		showServiceName = true,
+		title = 'Budgets',
+		description = 'Spend against policy ceilings this period'
 	}: {
 		statuses: BudgetStatus[];
 		/** matches the org's configured alert threshold; defaults to the shared 80% */
 		threshold?: number;
 		/** drop the service name when the surrounding page already identifies it */
 		showServiceName?: boolean;
+		/** card heading + subtext, so the same gauge serves service & instance scopes */
+		title?: string;
+		description?: string;
 	} = $props();
 
 	type Row = {
@@ -62,8 +67,8 @@
 {#if rows.length > 0}
 	<Card.Root>
 		<Card.Header class="pb-3">
-			<Card.Title class="text-base">Budgets</Card.Title>
-			<Card.Description>Spend against policy ceilings this period</Card.Description>
+			<Card.Title class="text-base">{title}</Card.Title>
+			<Card.Description>{description}</Card.Description>
 		</Card.Header>
 		<Card.Content class="space-y-3">
 			{#each rows as r (r.key)}

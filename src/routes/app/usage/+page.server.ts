@@ -8,6 +8,7 @@ import {
 	orgUsageTotals,
 	orgUsageSeries,
 	orgBudgetStatus,
+	instanceBudgetStatus,
 	getSettings
 } from '$lib/server/data';
 import {
@@ -47,6 +48,7 @@ export const load: PageServerLoad = async (event) => {
 		series,
 		prevSeries,
 		budgets,
+		instanceBudget,
 		settings
 	] = await Promise.all([
 		orgUsageTotals(range),
@@ -60,6 +62,7 @@ export const load: PageServerLoad = async (event) => {
 		orgUsageSeries(prevRange, { unit }),
 		// budgets always reflect the current UTC day/month window, not the selected range
 		orgBudgetStatus(),
+		instanceBudgetStatus(),
 		getSettings()
 	]);
 
@@ -82,6 +85,7 @@ export const load: PageServerLoad = async (event) => {
 		// only the points are needed for the overlay; the unit matches `series`
 		prevPoints: prevSeries.points,
 		budgets,
+		instanceBudget,
 		budgetThreshold: settings.budgetAlertThresholdPct / 100
 	};
 };

@@ -109,16 +109,17 @@ export interface SpendWindows {
 }
 
 /**
- * Current per-service spend for both budget windows plus the window boundaries.
- * Shared by the budget-alert evaluation (see budget-alerts.ts); intentionally
- * ignores in-flight reservations since alerts report realized spend.
+ * Current spend for a bucket across both budget windows plus the window
+ * boundaries. Shared by the budget-alert evaluation (see budget-alerts.ts);
+ * intentionally ignores in-flight reservations since alerts report realized
+ * spend. For the 'instance' scope `id` is ignored (all traffic is summed).
  */
-export async function currentSpend(serviceId: string): Promise<SpendWindows> {
+export async function currentSpend(scope: BudgetScope, id: string): Promise<SpendWindows> {
 	const dayStart = startOfUtcDay();
 	const monthStart = startOfUtcMonth();
 	const [dailySpent, monthlySpent] = await Promise.all([
-		spendSince('service', serviceId, dayStart),
-		spendSince('service', serviceId, monthStart)
+		spendSince(scope, id, dayStart),
+		spendSince(scope, id, monthStart)
 	]);
 	return { dayStart, monthStart, dailySpent, monthlySpent };
 }

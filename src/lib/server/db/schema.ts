@@ -289,9 +289,9 @@ export const settings = pgTable('settings', {
 });
 
 /**
- * Dedup ledger for budget alerts: one row per (service, window) records the
- * highest alert level already emailed for the *current* spend window. The
- * gateway evaluates alerts on every budgeted request, so without this a service
+ * Dedup ledger for budget alerts: one row per (scope, scopeId, window) records
+ * the highest alert level already emailed for the *current* spend window. The
+ * gateway evaluates alerts on every budgeted request, so without this a budget
  * past its threshold would email on every call. We re-alert only when the window
  * rolls over (windowStart changes) or the level escalates (warn → over). See
  * budget-alerts.ts.
@@ -299,9 +299,14 @@ export const settings = pgTable('settings', {
 export const budgetAlertState = pgTable(
 	'budget_alert_state',
 	{
-		serviceId: uuid('service_id')
-			.notNull()
-			.references(() => service.id, { onDelete: 'cascade' }),
+		// which budget scope this row tracks, mirroring budget.ts BudgetScope:
+		// 'service' | 'instance' (per-token alerts could be added the same way).
+		scope: text('scope').notNull().default('service'),
+		// the scope's id: a service uuid (as text) for 'service', or the literal
+		// 'instance' for the instance-wide ceiling. Plain text (not a service FK)
+		// so one ledger covers both — the instance scope has no service row to
+		// reference. Service rows are soft-deleted, so no cascade is needed.
+		scopeId: text('scope_id').notNull(),
 		// "daily" | "monthly"
 		window: text('window').notNull(),
 		// highest level emailed this window: "warn" | "over"
@@ -310,7 +315,7 @@ export const budgetAlertState = pgTable(
 		windowStart: timestamp('window_start').notNull(),
 		sentAt: timestamp('sent_at').defaultNow().notNull()
 	},
-	(t) => [uniqueIndex('budget_alert_state_service_window_uidx').on(t.serviceId, t.window)]
+	(t) => [uniqueIndex('budget_alert_state_scope_window_uidx').on(t.scope, t.scopeId, t.window)]
 );
 
 /**

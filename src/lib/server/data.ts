@@ -1575,3 +1575,41 @@ export async function orgBudgetStatus(): Promise<BudgetStatus[]> {
 		};
 	});
 }
+
+/**
+ * The instance-wide spend ceiling and how close the org is to it this period.
+ * Returns a single BudgetStatus (scope id 'instance') so it renders through the
+ * same gauge/alert as services, or null when no instance budget is configured.
+ * Spend is summed across ALL gateway traffic — matching what budget.ts enforces
+ * for the 'instance' scope, not filtered per service.
+ */
+export async function instanceBudgetStatus(): Promise<BudgetStatus | null> {
+	const settings = await getSettings();
+	const dailyBudget = settings.dailyBudgetUsd ?? 0;
+	const monthlyBudget = settings.monthlyBudgetUsd ?? 0;
+	if (dailyBudget <= 0 && monthlyBudget <= 0) return null;
+
+	const now = new Date();
+	const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+	const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+
+	const [row] = await db
+		.select({
+			dailySpent: sql<string>`coalesce(sum(${auditLog.costUsd}) filter (where ${gte(auditLog.createdAt, dayStart)}), 0)`,
+			monthlySpent: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)`
+		})
+		.from(auditLog)
+		.where(gte(auditLog.createdAt, monthStart));
+
+	return {
+		serviceId: 'instance',
+		serviceName: 'Instance',
+		policyName: 'all services',
+		daily:
+			dailyBudget > 0 ? { budgetUsd: dailyBudget, spentUsd: Number(row?.dailySpent ?? 0) } : null,
+		monthly:
+			monthlyBudget > 0
+				? { budgetUsd: monthlyBudget, spentUsd: Number(row?.monthlySpent ?? 0) }
+				: null
+	};
+}

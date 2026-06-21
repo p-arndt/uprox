@@ -143,7 +143,10 @@
 		{/snippet}
 	</PageHeader>
 
-	<BudgetAlert statuses={data.budgets} threshold={data.budgetThreshold} />
+	<BudgetAlert
+		statuses={data.instanceBudget ? [data.instanceBudget, ...data.budgets] : data.budgets}
+		threshold={data.budgetThreshold}
+	/>
 
 	{#if !hasTraffic}
 		<Card.Root>
@@ -165,6 +168,7 @@
 			{rowLabel}
 			showExcludeToggles
 			budget={data.budgets}
+			instanceBudget={data.instanceBudget}
 			budgetThreshold={data.budgetThreshold}
 		/>
 	{/if}

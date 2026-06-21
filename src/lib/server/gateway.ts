@@ -23,7 +23,7 @@ import { recordTrace } from '$lib/server/trace';
 import { parseTraceparent, parseTraceMetadata } from '$lib/trace';
 import { checkRateLimit } from '$lib/server/ratelimit';
 import { checkBudget, reserve } from '$lib/server/budget';
-import { maybeSendBudgetAlert } from '$lib/server/budget-alerts';
+import { maybeSendBudgetAlert, maybeSendInstanceBudgetAlert } from '$lib/server/budget-alerts';
 import { cacheKeyFor, getCached, putCached, isDeterministicRequest } from '$lib/server/cache';
 
 /** OpenAI-style error envelope, so OpenAI SDK clients parse it correctly. */
@@ -61,10 +61,13 @@ async function enforceBudgets(
 		{ scope: 'token' as const, id: token.tokenId, limits: tokenBudget }
 	].filter((b) => b.limits.dailyBudgetUsd > 0 || b.limits.monthlyBudgetUsd > 0);
 
-	// Soft-alert evaluation is instance-wide and service-scoped (emails admins
-	// once per window/level). Runs on allow and deny alike. Never blocks.
+	// Soft-alert evaluation (emails admins once per window/level), per budget
+	// scope. Runs on allow and deny alike. Never blocks the request.
 	if (serviceBudget.dailyBudgetUsd > 0 || serviceBudget.monthlyBudgetUsd > 0) {
 		void maybeSendBudgetAlert(token.serviceId, token.serviceName, serviceBudget);
+	}
+	if (instanceBudget.dailyBudgetUsd > 0 || instanceBudget.monthlyBudgetUsd > 0) {
+		void maybeSendInstanceBudgetAlert(instanceBudget);
 	}
 
 	for (const b of buckets) {
