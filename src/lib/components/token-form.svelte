@@ -18,7 +18,10 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
+	import { Separator } from '$lib/components/ui/separator/index.js';
 	import InlineLimitsFields from '$lib/components/inline-limits-fields.svelte';
+	import CheckboxGroup from '$lib/components/checkbox-group.svelte';
+	import FieldHint from '$lib/components/field-hint.svelte';
 	import { GATEWAY_SCOPES } from '$lib/scopes';
 
 	let {
@@ -53,6 +56,7 @@
 	const id = (field: string) => `${idPrefix}-${field}`;
 	const policyLabel = (pid: string) =>
 		pid ? (policies.find((p) => p.id === pid)?.name ?? pid) : 'No preset';
+	const scopeOptions = GATEWAY_SCOPES.map((s) => ({ value: s, label: s }));
 </script>
 
 <form
@@ -75,26 +79,12 @@
 	</div>
 
 	<div class="space-y-2">
-		<Label>Scopes</Label>
-		<div class="flex flex-wrap gap-4">
-			{#each GATEWAY_SCOPES as scope (scope)}
-				<label class="flex items-center gap-2 text-sm">
-					<input
-						type="checkbox"
-						name="scopes"
-						value={scope}
-						checked={values.scopes.includes(scope)}
-						class="size-4 accent-foreground"
-					/>
-					{scope}
-				</label>
-			{/each}
+		<div class="flex items-center gap-1.5">
+			<Label for={id('policyId')}>Preset</Label>
+			<FieldHint
+				text="Optional reusable baseline. The overrides below take priority field-by-field."
+			/>
 		</div>
-		<p class="text-xs text-muted-foreground">Leave all unchecked to grant every scope.</p>
-	</div>
-
-	<div class="space-y-2">
-		<Label for={id('policyId')}>Preset</Label>
 		<Select.Root type="single" name="policyId" bind:value={policyId}>
 			<Select.Trigger id={id('policyId')} class="w-full">{policyLabel(policyId)}</Select.Trigger>
 			<Select.Content>
@@ -104,12 +94,32 @@
 				{/each}
 			</Select.Content>
 		</Select.Root>
-		<p class="text-xs text-muted-foreground">
-			Optional reusable baseline. The inline overrides below take priority over it field-by-field.
-		</p>
 	</div>
 
-	<InlineLimitsFields {providers} {values} idPrefix={id('inline')} scope="token" />
+	<Separator />
+
+	<InlineLimitsFields
+		{providers}
+		{values}
+		idPrefix={id('inline')}
+		scope="token"
+		extraAdvancedActive={values.scopes.length > 0}
+	>
+		{#snippet advanced()}
+			<div class="space-y-2">
+				<div class="flex text-muted-foreground items-center gap-1.5">
+					<Label>Scopes</Label>
+					<FieldHint text="Leave all unchecked to grant every scope." />
+				</div>
+				<CheckboxGroup
+					name="scopes"
+					idPrefix={id('scope')}
+					options={scopeOptions}
+					selected={values.scopes}
+				/>
+			</div>
+		{/snippet}
+	</InlineLimitsFields>
 
 	{@render bottomFields?.()}
 

@@ -68,7 +68,7 @@
 							<Button {...props}><Plus class="size-4" /> New preset</Button>
 						{/snippet}
 					</Dialog.Trigger>
-					<Dialog.Content>
+					<Dialog.Content class="max-h-[88vh] overflow-y-auto sm:max-w-lg">
 						<Dialog.Header>
 							<Dialog.Title>Create preset</Dialog.Title>
 							<Dialog.Description>
@@ -217,7 +217,7 @@
 		if (!v) editing = null;
 	}}
 >
-	<Dialog.Content>
+	<Dialog.Content class="max-h-[88vh] overflow-y-auto sm:max-w-lg">
 		<Dialog.Header>
 			<Dialog.Title>Edit preset</Dialog.Title>
 			<Dialog.Description>

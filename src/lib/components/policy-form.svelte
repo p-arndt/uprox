@@ -1,12 +1,13 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
+	import { Separator } from '$lib/components/ui/separator/index.js';
+	import InlineLimitsFields from '$lib/components/inline-limits-fields.svelte';
+	import type { InlineLimitValues } from '$lib/components/inline-limits';
 
 	export interface PolicyFormValues {
 		id?: string;
@@ -41,32 +42,20 @@
 		resetOnSuccess?: boolean;
 	} = $props();
 
-	// Tabs unmount inactive content in bits-ui, which would drop fields from the
-	// submitted form — so we drive the panels ourselves and only toggle visibility,
-	// keeping every input mounted regardless of the active tab.
-	let tab = $state('access');
-
-	// OpenAI and Azure share the "gpt-*"/o-series namespace; a policy can pin which
-	// one serves it. Other providers (e.g. Anthropic) route unambiguously by name.
-	const sharedNamespaceProviders = $derived(
-		providers.filter((p) => p.id === 'openai' || p.id === 'azure')
-	);
-	// seeded once from the prop; the edit dialog remounts this form per policy
-	// (keyed on id), so re-seeding happens naturally on mount
-	let preferred = $state(untrack(() => values.preferredProvider));
-	const preferredLabel = (id: string) =>
-		id ? (sharedNamespaceProviders.find((p) => p.id === id)?.label ?? id) : 'No preference';
-
-	let tracing = $state(untrack(() => values.tracingEnabled));
-	const tracingOptions = [
-		{ value: '', label: 'Inherit org default' },
-		{ value: 'true', label: 'Always on' },
-		{ value: 'false', label: 'Always off' }
-	];
-	const tracingLabel = (v: string) =>
-		tracingOptions.find((o) => o.value === v)?.label ?? 'Inherit org default';
-
 	const id = (field: string) => `${idPrefix}-${field}`;
+
+	// The shared access/limits fields are string-typed; a policy stores its rate &
+	// budgets as numbers, so coerce for the initial render (submission is native).
+	const inlineValues: InlineLimitValues = untrack(() => ({
+		allowedProviders: values.allowedProviders,
+		allowedModels: values.allowedModels,
+		preferredProvider: values.preferredProvider,
+		rateLimitPerMinute: String(values.rateLimitPerMinute),
+		dailyBudgetUsd: String(values.dailyBudgetUsd),
+		monthlyBudgetUsd: String(values.monthlyBudgetUsd),
+		cacheTtlSeconds: values.cacheTtlSeconds,
+		tracingEnabled: values.tracingEnabled
+	}));
 </script>
 
 <form
@@ -92,152 +81,9 @@
 		/>
 	</div>
 
-	<Tabs.Root bind:value={tab}>
-		<Tabs.List class="grid w-full grid-cols-4">
-			<Tabs.Trigger value="access">Access</Tabs.Trigger>
-			<Tabs.Trigger value="limits">Limits</Tabs.Trigger>
-			<Tabs.Trigger value="caching">Caching</Tabs.Trigger>
-			<Tabs.Trigger value="tracing">Tracing</Tabs.Trigger>
-		</Tabs.List>
-	</Tabs.Root>
+	<Separator />
 
-	<!-- Access -->
-	<div class="space-y-4" class:hidden={tab !== 'access'}>
-		<div class="space-y-2">
-			<Label>Allowed providers</Label>
-			<div class="flex flex-wrap gap-4">
-				{#each providers as p (p.id)}
-					<label class="flex items-center gap-2 text-sm">
-						<input
-							type="checkbox"
-							name="allowedProviders"
-							value={p.id}
-							checked={values.allowedProviders.includes(p.id)}
-							class="size-4 accent-foreground"
-						/>
-						{p.label}
-					</label>
-				{/each}
-			</div>
-			<p class="text-xs text-muted-foreground">None checked = all providers allowed.</p>
-		</div>
-
-		<div class="space-y-2">
-			<Label for={id('allowedModels')}>Allowed models</Label>
-			<Input
-				id={id('allowedModels')}
-				name="allowedModels"
-				placeholder="gpt-4o*, claude-3-5-sonnet"
-				value={values.allowedModels}
-			/>
-			<p class="text-xs text-muted-foreground">
-				Comma-separated. Trailing <code>*</code> matches a prefix. Blank = all models.
-			</p>
-		</div>
-
-		<div class="space-y-2">
-			<Label for={id('preferredProvider')}>Preferred OpenAI backend</Label>
-			<Select.Root type="single" name="preferredProvider" bind:value={preferred}>
-				<Select.Trigger id={id('preferredProvider')} class="w-full">
-					{preferredLabel(preferred)}
-				</Select.Trigger>
-				<Select.Content>
-					<Select.Item value="" label="No preference">No preference</Select.Item>
-					{#each sharedNamespaceProviders as p (p.id)}
-						<Select.Item value={p.id} label={p.label}>{p.label}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-			<p class="text-xs text-muted-foreground">
-				When both OpenAI and Azure are configured, which one serves shared models (<code>gpt-*</code
-				>, o-series). With only one configured, that one is used.
-			</p>
-		</div>
-	</div>
-
-	<!-- Limits -->
-	<div class="space-y-4" class:hidden={tab !== 'limits'}>
-		<div class="space-y-2">
-			<Label for={id('rateLimitPerMinute')}>Rate limit (req/min)</Label>
-			<Input
-				id={id('rateLimitPerMinute')}
-				name="rateLimitPerMinute"
-				type="number"
-				min="0"
-				value={values.rateLimitPerMinute}
-			/>
-			<p class="text-xs text-muted-foreground">0 = unlimited.</p>
-		</div>
-		<div class="grid grid-cols-2 gap-4">
-			<div class="space-y-2">
-				<Label for={id('dailyBudgetUsd')}>Daily budget (USD)</Label>
-				<Input
-					id={id('dailyBudgetUsd')}
-					name="dailyBudgetUsd"
-					type="number"
-					min="0"
-					step="0.01"
-					value={values.dailyBudgetUsd}
-				/>
-			</div>
-			<div class="space-y-2">
-				<Label for={id('monthlyBudgetUsd')}>Monthly budget (USD)</Label>
-				<Input
-					id={id('monthlyBudgetUsd')}
-					name="monthlyBudgetUsd"
-					type="number"
-					min="0"
-					step="0.01"
-					value={values.monthlyBudgetUsd}
-				/>
-			</div>
-		</div>
-		<p class="text-xs text-muted-foreground">
-			Spend ceilings (UTC windows) for whatever inherits this preset — the service aggregate when
-			attached to a service, the per-token cap when attached to a token. 0 = unlimited. A service or
-			token can override these inline. Crossing the org's alert threshold can email admins — see
-			Settings.
-		</p>
-	</div>
-
-	<!-- Caching -->
-	<div class="space-y-4" class:hidden={tab !== 'caching'}>
-		<div class="space-y-2">
-			<Label for={id('cacheTtlSeconds')}>Cache TTL (seconds)</Label>
-			<Input
-				id={id('cacheTtlSeconds')}
-				name="cacheTtlSeconds"
-				type="number"
-				min="0"
-				placeholder="inherit org default"
-				value={values.cacheTtlSeconds}
-			/>
-			<p class="text-xs text-muted-foreground">
-				Overrides the org-wide cache setting. Blank = inherit, 0 = force off, &gt;0 = TTL.
-			</p>
-		</div>
-	</div>
-
-	<!-- Tracing -->
-	<div class="space-y-4" class:hidden={tab !== 'tracing'}>
-		<div class="space-y-2">
-			<Label for={id('tracingEnabled')}>Request tracing</Label>
-			<Select.Root type="single" name="tracingEnabled" bind:value={tracing}>
-				<Select.Trigger id={id('tracingEnabled')} class="w-full">
-					{tracingLabel(tracing)}
-				</Select.Trigger>
-				<Select.Content>
-					{#each tracingOptions as o (o.value)}
-						<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-			<p class="text-xs text-muted-foreground">
-				Overrides the org-wide tracing setting for this policy's services. Capturing payloads stores
-				prompt &amp; response content — see the trace viewer.
-			</p>
-		</div>
-	</div>
+	<InlineLimitsFields {providers} values={inlineValues} {idPrefix} scope="policy" />
 
 	<Dialog.Footer>
 		<Button type="submit">{submitLabel}</Button>
