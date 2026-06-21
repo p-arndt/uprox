@@ -8,7 +8,8 @@ import {
 	orgUsageByProvider,
 	orgUsageByToken,
 	orgUsageTotals,
-	orgUsageSeries
+	orgUsageSeries,
+	orgBudgetStatus
 } from '$lib/server/data';
 import {
 	USAGE_RANGES,
@@ -39,7 +40,7 @@ export const load: PageServerLoad = async (event) => {
 	const unit = resolveSeriesBucket(range, bucket);
 	const prevRange = shiftRangeBack(range);
 
-	const [totals, prevTotals, byModel, byProvider, byToken, series, prevSeries, policies] =
+	const [totals, prevTotals, byModel, byProvider, byToken, series, prevSeries, policies, budgets] =
 		await Promise.all([
 			orgUsageTotals(range, { serviceId }),
 			// previous equal-length window — powers the headline deltas
@@ -49,7 +50,10 @@ export const load: PageServerLoad = async (event) => {
 			orgUsageByToken(range, { serviceId, limit: BREAKDOWN_LIMIT }),
 			orgUsageSeries(range, { serviceId, unit }),
 			orgUsageSeries(prevRange, { serviceId, unit }),
-			listPolicies()
+			listPolicies(),
+			// per-service spend ceilings (current UTC day/month windows) for the budget
+			// gauge; narrowed to this service below
+			orgBudgetStatus()
 		]);
 
 	return {
@@ -76,6 +80,8 @@ export const load: PageServerLoad = async (event) => {
 		byProvider,
 		byToken,
 		series,
-		prevPoints: prevSeries.points
+		prevPoints: prevSeries.points,
+		// 0/1-element: only present when this service's policy sets a ceiling
+		budget: budgets.filter((b) => b.serviceId === serviceId)
 	};
 };
