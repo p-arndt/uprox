@@ -1,19 +1,15 @@
 <script lang="ts">
-	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import { Label } from '$lib/components/ui/label/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
 	import PageHeader from '$lib/components/page-header.svelte';
 	import EmptyState from '$lib/components/empty-state.svelte';
 	import ConfirmAction from '$lib/components/confirm-action.svelte';
-	import InlineLimitsFields from '$lib/components/inline-limits-fields.svelte';
-	import { emptyInlineLimits, type InlineLimitValues } from '$lib/components/inline-limits';
+	import ServiceForm, { type ServiceFormValues } from '$lib/components/service-form.svelte';
+	import { emptyInlineLimits } from '$lib/components/inline-limits';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -21,58 +17,54 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Pencil from '@lucide/svelte/icons/pencil';
 
-	let { data } = $props();
+	let { data, form } = $props();
 	let open = $state(false);
-	let createType = $state('app');
-	let createPolicyId = $state('');
-	let createProviderSecretId = $state('');
-	let createInline = $state(emptyInlineLimits());
-	let editing = $state<
-		| ({
-				id: string;
-				name: string;
-				type: string;
-				description: string;
-				policyId: string;
-				providerSecretId: string;
-		  } & InlineLimitValues)
-		| null
-	>(null);
+	let editing = $state<ServiceFormValues | null>(null);
 
 	const policyName = $derived(new Map(data.policies.map((p) => [p.id, p.name] as const)));
-	const typeOptions = [
-		{ value: 'app', label: 'App' },
-		{ value: 'agent', label: 'Agent' },
-		{ value: 'workload', label: 'Workload' }
-	];
-	const policyLabel = (id: string) => (id ? (policyName.get(id) ?? id) : 'No preset');
+	const canManage = $derived(can(data.role, 'services:manage', data.memberPermissions));
+	const secretOptions = $derived(data.providerSecrets ?? []);
+
+	const createValues: ServiceFormValues = {
+		...emptyInlineLimits(),
+		name: '',
+		type: 'app',
+		description: '',
+		policyId: '',
+		providerSecretId: ''
+	};
+
+	// Close the active dialog and refresh once a create/update succeeds.
+	$effect(() => {
+		if (form?.success) {
+			open = false;
+			editing = null;
+			invalidateAll();
+		}
+	});
 
 	// null inline column → '' (inherit) in the form; budgets are numeric strings,
 	// normalized to a plain number for display.
 	const numStr = (v: number | string | null) => (v == null ? '' : String(Number(v)));
 	type ServiceRow = (typeof data.services)[number];
-	const inlineFrom = (s: ServiceRow): InlineLimitValues => ({
-		allowedProviders: s.allowedProviders ?? [],
-		allowedModels: (s.allowedModels ?? []).join(', '),
-		preferredProvider: s.preferredProvider ?? '',
-		rateLimitPerMinute: s.rateLimitPerMinute == null ? '' : String(s.rateLimitPerMinute),
-		dailyBudgetUsd: numStr(s.dailyBudgetUsd),
-		monthlyBudgetUsd: numStr(s.monthlyBudgetUsd),
-		cacheTtlSeconds: s.cacheTtlSeconds == null ? '' : String(s.cacheTtlSeconds),
-		tracingEnabled: s.tracingEnabled == null ? '' : String(s.tracingEnabled)
-	});
-	const canManage = $derived(can(data.role, 'services:manage', data.memberPermissions));
-
-	// per-service upstream-key picker — only present when some provider has >1 key
-	const secretOptions = $derived(data.providerSecrets ?? []);
-	const secretName = $derived(
-		new Map(
-			secretOptions.map(
-				(s) => [s.id, `${s.providerLabel} — ${s.label || `••••${s.hint}`}`] as const
-			)
-		)
-	);
-	const secretLabel = (id: string) => (id ? (secretName.get(id) ?? id) : 'Automatic (default key)');
+	function startEdit(s: ServiceRow) {
+		editing = {
+			id: s.id,
+			name: s.name,
+			type: s.type,
+			description: s.description ?? '',
+			policyId: s.policyId ?? '',
+			providerSecretId: s.providerSecretId ?? '',
+			allowedProviders: s.allowedProviders ?? [],
+			allowedModels: (s.allowedModels ?? []).join(', '),
+			preferredProvider: s.preferredProvider ?? '',
+			rateLimitPerMinute: s.rateLimitPerMinute == null ? '' : String(s.rateLimitPerMinute),
+			dailyBudgetUsd: numStr(s.dailyBudgetUsd),
+			monthlyBudgetUsd: numStr(s.monthlyBudgetUsd),
+			cacheTtlSeconds: s.cacheTtlSeconds == null ? '' : String(s.cacheTtlSeconds),
+			tracingEnabled: s.tracingEnabled == null ? '' : String(s.tracingEnabled)
+		};
+	}
 </script>
 
 <div class="mx-auto max-w-5xl space-y-6">
@@ -88,100 +80,21 @@
 							<Button {...props}><Plus class="size-4" /> New service</Button>
 						{/snippet}
 					</Dialog.Trigger>
-					<Dialog.Content>
+					<Dialog.Content class="max-h-[88vh] overflow-y-auto sm:max-w-lg">
 						<Dialog.Header>
 							<Dialog.Title>Create service</Dialog.Title>
 							<Dialog.Description>A service represents one machine identity.</Dialog.Description>
 						</Dialog.Header>
-						<form
-							method="post"
+						<ServiceForm
 							action="?/create"
-							class="space-y-4"
-							use:enhance={() => {
-								return async ({ result, update }) => {
-									await update({ reset: true });
-									if (result.type === 'success') {
-										open = false;
-										await invalidateAll();
-									}
-								};
-							}}
-						>
-							<div class="space-y-2">
-								<Label for="name">Name</Label>
-								<Input id="name" name="name" placeholder="support-agent" required />
-							</div>
-							<div class="space-y-2">
-								<Label for="type">Type</Label>
-								<Select.Root type="single" name="type" bind:value={createType}>
-									<Select.Trigger id="type" class="w-full">
-										{typeOptions.find((o) => o.value === createType)?.label}
-									</Select.Trigger>
-									<Select.Content>
-										{#each typeOptions as o (o.value)}
-											<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-							</div>
-							<div class="space-y-2">
-								<Label for="policyId">Preset</Label>
-								<Select.Root type="single" name="policyId" bind:value={createPolicyId}>
-									<Select.Trigger id="policyId" class="w-full"
-										>{policyLabel(createPolicyId)}</Select.Trigger
-									>
-									<Select.Content>
-										<Select.Item value="" label="No preset">No preset</Select.Item>
-										{#each data.policies as p (p.id)}
-											<Select.Item value={p.id} label={p.name}>{p.name}</Select.Item>
-										{/each}
-									</Select.Content>
-								</Select.Root>
-								<p class="text-xs text-muted-foreground">
-									Optional reusable baseline. The limits below override it field-by-field.
-								</p>
-							</div>
-							<InlineLimitsFields
-								providers={data.providers}
-								values={createInline}
-								idPrefix="svc-create"
-								scope="service"
-							/>
-							{#if secretOptions.length > 0}
-								<div class="space-y-2">
-									<Label for="providerSecretId">Upstream key</Label>
-									<Select.Root
-										type="single"
-										name="providerSecretId"
-										bind:value={createProviderSecretId}
-									>
-										<Select.Trigger id="providerSecretId" class="w-full">
-											{secretLabel(createProviderSecretId)}
-										</Select.Trigger>
-										<Select.Content>
-											<Select.Item value="" label="Automatic (default key)">
-												Automatic (default key)
-											</Select.Item>
-											{#each secretOptions as s (s.id)}
-												<Select.Item value={s.id} label={secretName.get(s.id) ?? s.id}>
-													{secretName.get(s.id) ?? s.id}
-												</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-									<p class="text-xs text-muted-foreground">
-										Pin which provider key this service uses — e.g. a specific Azure resource.
-									</p>
-								</div>
-							{/if}
-							<div class="space-y-2">
-								<Label for="description">Description</Label>
-								<Input id="description" name="description" placeholder="Optional" />
-							</div>
-							<Dialog.Footer>
-								<Button type="submit">Create service</Button>
-							</Dialog.Footer>
-						</form>
+							submitLabel="Create service"
+							idPrefix="svc-create"
+							values={createValues}
+							policies={data.policies}
+							providers={data.providers}
+							{secretOptions}
+							resetOnSuccess
+						/>
 					</Dialog.Content>
 				</Dialog.Root>
 			{/if}
@@ -233,16 +146,7 @@
 											size="icon"
 											class="size-8 text-muted-foreground hover:text-foreground"
 											title="Edit service"
-											onclick={() =>
-												(editing = {
-													id: s.id,
-													name: s.name,
-													type: s.type,
-													description: s.description ?? '',
-													policyId: s.policyId ?? '',
-													providerSecretId: s.providerSecretId ?? '',
-													...inlineFrom(s)
-												})}
+											onclick={() => startEdit(s)}
 										>
 											<Pencil class="size-4" />
 										</Button>
@@ -284,113 +188,23 @@
 		if (!v) editing = null;
 	}}
 >
-	<Dialog.Content>
+	<Dialog.Content class="max-h-[88vh] overflow-y-auto sm:max-w-lg">
 		<Dialog.Header>
 			<Dialog.Title>Edit service</Dialog.Title>
 			<Dialog.Description>Update this machine identity.</Dialog.Description>
 		</Dialog.Header>
 		{#if editing}
-			<form
-				method="post"
-				action="?/update"
-				class="space-y-4"
-				use:enhance={() => {
-					return async ({ result, update }) => {
-						await update({ reset: true });
-						if (result.type === 'success') {
-							editing = null;
-							await invalidateAll();
-						}
-					};
-				}}
-			>
-				<input type="hidden" name="id" value={editing?.id} />
-				<div class="space-y-2">
-					<Label for="edit-name">Name</Label>
-					<Input
-						id="edit-name"
-						name="name"
-						placeholder="support-agent"
-						bind:value={editing.name}
-						required
-					/>
-				</div>
-				<div class="space-y-2">
-					<Label for="edit-type">Type</Label>
-					<Select.Root type="single" name="type" bind:value={editing.type}>
-						<Select.Trigger id="edit-type" class="w-full">
-							{typeOptions.find((o) => o.value === editing?.type)?.label}
-						</Select.Trigger>
-						<Select.Content>
-							{#each typeOptions as o (o.value)}
-								<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-				<div class="space-y-2">
-					<Label for="edit-policyId">Preset</Label>
-					<Select.Root type="single" name="policyId" bind:value={editing.policyId}>
-						<Select.Trigger id="edit-policyId" class="w-full"
-							>{policyLabel(editing?.policyId ?? '')}</Select.Trigger
-						>
-						<Select.Content>
-							<Select.Item value="" label="No preset">No preset</Select.Item>
-							{#each data.policies as p (p.id)}
-								<Select.Item value={p.id} label={p.name}>{p.name}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-					<p class="text-xs text-muted-foreground">
-						Optional reusable baseline. The limits below override it field-by-field.
-					</p>
-				</div>
-				<InlineLimitsFields
-					providers={data.providers}
-					values={editing}
+			{#key editing.id}
+				<ServiceForm
+					action="?/update"
+					submitLabel="Save changes"
 					idPrefix="svc-edit"
-					scope="service"
+					values={editing}
+					policies={data.policies}
+					providers={data.providers}
+					{secretOptions}
 				/>
-				{#if secretOptions.length > 0}
-					<div class="space-y-2">
-						<Label for="edit-providerSecretId">Upstream key</Label>
-						<Select.Root
-							type="single"
-							name="providerSecretId"
-							bind:value={editing.providerSecretId}
-						>
-							<Select.Trigger id="edit-providerSecretId" class="w-full">
-								{secretLabel(editing?.providerSecretId ?? '')}
-							</Select.Trigger>
-							<Select.Content>
-								<Select.Item value="" label="Automatic (default key)">
-									Automatic (default key)
-								</Select.Item>
-								{#each secretOptions as s (s.id)}
-									<Select.Item value={s.id} label={secretName.get(s.id) ?? s.id}>
-										{secretName.get(s.id) ?? s.id}
-									</Select.Item>
-								{/each}
-							</Select.Content>
-						</Select.Root>
-						<p class="text-xs text-muted-foreground">
-							Pin which provider key this service uses — e.g. a specific Azure resource.
-						</p>
-					</div>
-				{/if}
-				<div class="space-y-2">
-					<Label for="edit-description">Description</Label>
-					<Input
-						id="edit-description"
-						name="description"
-						placeholder="Optional"
-						bind:value={editing.description}
-					/>
-				</div>
-				<Dialog.Footer>
-					<Button type="submit">Save changes</Button>
-				</Dialog.Footer>
-			</form>
+			{/key}
 		{/if}
 	</Dialog.Content>
 </Dialog.Root>

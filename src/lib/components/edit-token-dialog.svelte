@@ -24,7 +24,7 @@
 		if (!v) onClose();
 	}}
 >
-	<Dialog.Content>
+	<Dialog.Content class="max-h-[88vh] overflow-y-auto sm:max-w-lg">
 		<Dialog.Header>
 			<Dialog.Title>Edit token</Dialog.Title>
 			<Dialog.Description>
