@@ -10,6 +10,7 @@
 	import Ban from '@lucide/svelte/icons/ban';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Eye from '@lucide/svelte/icons/eye';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 
 	let {
 		token,
@@ -73,42 +74,65 @@
 		</span>
 	</Table.Cell>
 	<Table.Cell>
-		{#if !token.revokedAt && canManage}
+		{#if canManage}
 			<div class="flex items-center justify-end gap-0.5">
-				{#if token.recopyable}
-					<form
-						method="post"
-						action="?/reveal"
-						use:enhance={() =>
-							async ({ update }) =>
-								update({ reset: false })}
-					>
-						<input type="hidden" name="id" value={token.id} />
-						<Button
-							type="submit"
-							variant="ghost"
-							size="icon"
-							class={hoverBtn}
-							title="Reveal & copy token"
+				{#if !token.revokedAt}
+					{#if token.recopyable}
+						<form
+							method="post"
+							action="?/reveal"
+							use:enhance={() =>
+								async ({ update }) =>
+									update({ reset: false })}
 						>
-							<Eye class="size-4" />
-						</Button>
-					</form>
+							<input type="hidden" name="id" value={token.id} />
+							<Button
+								type="submit"
+								variant="ghost"
+								size="icon"
+								class={hoverBtn}
+								title="Reveal & copy token"
+							>
+								<Eye class="size-4" />
+							</Button>
+						</form>
+					{/if}
+					<Button
+						variant="ghost"
+						size="icon"
+						class={hoverBtn}
+						title="Edit token"
+						onclick={() => onEdit(token)}
+					>
+						<Pencil class="size-4" />
+					</Button>
+					<ConfirmAction
+						action="?/revoke"
+						title={`Revoke “${token.name}”?`}
+						description="Any service still using this token will immediately fail to authenticate. This can't be undone."
+						actionLabel="Revoke token"
+					>
+						{#snippet trigger({ props })}
+							<Button
+								{...props}
+								variant="ghost"
+								size="icon"
+								class="{hoverBtn} hover:text-destructive"
+								title="Revoke token"
+							>
+								<Ban class="size-4" />
+							</Button>
+						{/snippet}
+						{#snippet fields()}
+							<input type="hidden" name="id" value={token.id} />
+						{/snippet}
+					</ConfirmAction>
 				{/if}
-				<Button
-					variant="ghost"
-					size="icon"
-					class={hoverBtn}
-					title="Edit token"
-					onclick={() => onEdit(token)}
-				>
-					<Pencil class="size-4" />
-				</Button>
 				<ConfirmAction
-					action="?/revoke"
-					title={`Revoke “${token.name}”?`}
-					description="Any service still using this token will immediately fail to authenticate. This can't be undone."
-					actionLabel="Revoke token"
+					action="?/delete"
+					title={`Delete “${token.name}”?`}
+					description="This permanently removes the token and its configuration. Audit-log history is kept but no longer linked to this token. This can't be undone."
+					actionLabel="Delete token"
 				>
 					{#snippet trigger({ props })}
 						<Button
@@ -116,9 +140,9 @@
 							variant="ghost"
 							size="icon"
 							class="{hoverBtn} hover:text-destructive"
-							title="Revoke token"
+							title="Delete token permanently"
 						>
-							<Ban class="size-4" />
+							<Trash2 class="size-4" />
 						</Button>
 					{/snippet}
 					{#snippet fields()}
