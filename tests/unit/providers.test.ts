@@ -291,6 +291,38 @@ describe('cache default prices', () => {
 		expect(DEFAULT_MODEL_PRICES['gpt-4o']).toEqual({ in: 2.5, out: 10, cacheRead: 1.25 });
 	});
 
+	it('seeds the GPT-5.6 tiers, which bill cache writes at 1.25× input', () => {
+		expect(DEFAULT_MODEL_PRICES['gpt-5.6-sol']).toEqual({
+			in: 5,
+			out: 30,
+			cacheRead: 0.5,
+			cacheWrite: 6.25
+		});
+		expect(DEFAULT_MODEL_PRICES['gpt-5.6-terr']).toEqual({
+			in: 2.5,
+			out: 15,
+			cacheRead: 0.25,
+			cacheWrite: 3.125
+		});
+		expect(DEFAULT_MODEL_PRICES['gpt-5.6-luna']).toEqual({
+			in: 1,
+			out: 6,
+			cacheRead: 0.1,
+			cacheWrite: 1.25
+		});
+	});
+
+	it('leaves cache writes unpriced on pre-5.6 OpenAI models', () => {
+		expect(DEFAULT_MODEL_PRICES['gpt-5.5'].cacheWrite).toBeUndefined();
+		expect(DEFAULT_MODEL_PRICES['gpt-4o'].cacheWrite).toBeUndefined();
+	});
+
+	it('resolves dated GPT-5.6 ids to their tier price', () => {
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'gpt-5.6-luna-2026-02-16')).toBe(
+			DEFAULT_MODEL_PRICES['gpt-5.6-luna']
+		);
+	});
+
 	it('seeds Gemini prices with a cache read discount and no write cost', () => {
 		expect(DEFAULT_MODEL_PRICES['gemini-2.5-flash']).toEqual({
 			in: 0.3,

@@ -316,12 +316,16 @@ const anthropic = (input: number, out: number): ModelPrice => ({
 	cacheRead: round4(input * 0.1),
 	cacheWrite: round4(input * 1.25)
 });
-// OpenAI/Azure charge only a read discount (no write cost). The discount varies
-// by family: the GPT-5 series caches at 0.1× input, GPT-4.x/o-series at ~0.5×.
-const openai = (input: number, out: number, readRatio: number): ModelPrice => ({
+// OpenAI/Azure discount cache reads by family: the GPT-5 series caches at 0.1×
+// input, GPT-4.x/o-series at ~0.5×. Cache *writes* are free up to GPT-5.5; from
+// the GPT-5.6 family on they cost 1.25× the uncached input rate, so those models
+// pass a writeRatio. Omitting it leaves cacheWrite unset, which costFromPrice
+// reads as "no write cost" only because the tokens are always zero there.
+const openai = (input: number, out: number, readRatio: number, writeRatio?: number): ModelPrice => ({
 	in: input,
 	out,
-	cacheRead: round4(input * readRatio)
+	cacheRead: round4(input * readRatio),
+	...(writeRatio != null ? { cacheWrite: round4(input * writeRatio) } : {})
 });
 // Gemini, like OpenAI, charges a cache-read discount but no per-token cache-write
 // cost on its OpenAI-compatible surface (explicit caches are billed by storage
@@ -336,6 +340,9 @@ const gemini = (input: number, out: number, cacheRead: number): ModelPrice => ({
 
 export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	// OpenAI — current GPT-5 series (most specific keys first, see lookup note below)
+	'gpt-5.6-luna': openai(1, 6, 0.1, 1.25),
+	'gpt-5.6-terr': openai(2.5, 15, 0.1, 1.25),
+	'gpt-5.6-sol': openai(5, 30, 0.1, 1.25),
 	'gpt-5.5-pro': openai(30, 180, 0.1),
 	'gpt-5.5': openai(5, 30, 0.1),
 	'gpt-5.4-pro': openai(30, 180, 0.1),
