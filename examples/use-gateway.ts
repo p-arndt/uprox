@@ -105,10 +105,13 @@ async function toolUseRoundTrip() {
 	];
 
 	// First call: the model chooses to invoke the tool.
+	// Reasoning models reject function tools on /v1/chat/completions unless the
+	// effort is 'none' — the reasoning-enabled path is /v1/responses.
 	const first = await client.chat.completions.create({
 		model: MODEL,
 		messages,
-		tools: TOOLS
+		tools: TOOLS,
+		reasoning_effort: 'none'
 	});
 	const choice = first.choices[0]?.message;
 	const calls = choice?.tool_calls ?? [];
@@ -127,7 +130,12 @@ async function toolUseRoundTrip() {
 	}
 
 	// Second call: the model uses the tool result to produce the final answer.
-	const second = await client.chat.completions.create({ model: MODEL, messages, tools: TOOLS });
+	const second = await client.chat.completions.create({
+		model: MODEL,
+		messages,
+		tools: TOOLS,
+		reasoning_effort: 'none'
+	});
 	console.log('  Final:', second.choices[0]?.message.content);
 }
 
@@ -135,5 +143,5 @@ main().catch((err) => {
 	// Gateway errors come back in OpenAI's error shape, so the SDK throws them.
 	// e.g. 401 invalid token, 403 denied by policy, 502 no provider key configured.
 	console.error('Request failed:', err instanceof Error ? err.message : err);
-	process.exit(1);
+	process.exitCode = 1;
 });
