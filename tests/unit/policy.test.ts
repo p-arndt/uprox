@@ -161,7 +161,7 @@ describe('files scope (regression: Files API enforcement)', () => {
 	});
 
 	it("denies files when the policy's provider allowlist excludes the routed provider", () => {
-		const t = token({ scopes: ['files'], policy: policy({ allowedProviders: ['azure'] }) });
+		const t = token({ scopes: ['files'], effective: eff({ providerLists: [['azure']] }) });
 		const res = evaluatePolicy(t, files);
 		expect(res.allow).toBe(false);
 		expect(res).toMatchObject({ reason: expect.stringContaining('openai') });
