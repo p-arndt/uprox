@@ -293,9 +293,10 @@ export function resolveProvider(
 /**
  * A resolved per-1M-token price. `cacheRead`/`cacheWrite` are the provider
  * prompt-cache rates; when absent they fall back to multipliers of `in` (read
- * 0.1×, write 1.25×) inside {@link costFromPrice}. cacheWrite is meaningful only
- * for Anthropic — OpenAI/Azure don't charge to write a cache entry, so their
- * requests carry zero cache-write tokens and the rate is never applied.
+ * 0.1×, write 1.25×) inside {@link costFromPrice}. A cache *write* token is
+ * still an input token: providers that don't surcharge writes simply bill it at
+ * the plain input rate, so their rows set cacheWrite = in rather than leaving it
+ * unset — the 1.25× fallback would otherwise overcharge them.
  */
 export interface ModelPrice {
 	in: number;
@@ -317,31 +318,33 @@ const anthropic = (input: number, out: number): ModelPrice => ({
 	cacheWrite: round4(input * 1.25)
 });
 // OpenAI/Azure discount cache reads by family: the GPT-5 series caches at 0.1×
-// input, GPT-4.x/o-series at ~0.5×. Cache *writes* are free up to GPT-5.5; from
-// the GPT-5.6 family on they cost 1.25× the uncached input rate, so those models
-// pass a writeRatio. Omitting it leaves cacheWrite unset, which costFromPrice
-// reads as "no write cost" only because the tokens are always zero there.
-const openai = (input: number, out: number, readRatio: number, writeRatio?: number): ModelPrice => ({
+// input, GPT-4.x/o-series at ~0.5×. Cache writes carry no surcharge up to
+// GPT-5.5 (writeRatio stays 1× — a written token is billed as plain input); from
+// the GPT-5.6 family on they cost 1.25× the uncached input rate, and GPT-5.6+
+// reports the count in prompt_tokens_details.cache_write_tokens.
+const openai = (input: number, out: number, readRatio: number, writeRatio = 1): ModelPrice => ({
 	in: input,
 	out,
 	cacheRead: round4(input * readRatio),
-	...(writeRatio != null ? { cacheWrite: round4(input * writeRatio) } : {})
+	cacheWrite: round4(input * writeRatio)
 });
-// Gemini, like OpenAI, charges a cache-read discount but no per-token cache-write
-// cost on its OpenAI-compatible surface (explicit caches are billed by storage
-// time, not tokens). Cached reads are billed at an explicit rate from the docs.
-// Prices use the standard (≤200k-token) context tier; long-context requests are
-// billed higher upstream but priced here at the base rate.
+// Gemini charges a cache-read discount but no per-token cache-write surcharge on
+// its OpenAI-compatible surface (explicit caches are billed by storage time, not
+// tokens), so writes stay at the plain input rate. Cached reads are billed at an
+// explicit rate from the docs. Prices use the standard (≤200k-token) context
+// tier; long-context requests are billed higher upstream but priced here at the
+// base rate.
 const gemini = (input: number, out: number, cacheRead: number): ModelPrice => ({
 	in: input,
 	out,
-	cacheRead
+	cacheRead,
+	cacheWrite: input
 });
 
 export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	// OpenAI — current GPT-5 series (most specific keys first, see lookup note below)
 	'gpt-5.6-luna': openai(1, 6, 0.1, 1.25),
-	'gpt-5.6-terr': openai(2.5, 15, 0.1, 1.25),
+	'gpt-5.6-terra': openai(2.5, 15, 0.1, 1.25),
 	'gpt-5.6-sol': openai(5, 30, 0.1, 1.25),
 	'gpt-5.5-pro': openai(30, 180, 0.1),
 	'gpt-5.5': openai(5, 30, 0.1),
@@ -383,7 +386,10 @@ export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	'gemini-embedding-2': { in: 0.2, out: 0 }
 };
 
-/** Fallback cache-rate multipliers of the input price when a price is unset. */
+// Fallback cache-rate multipliers of the input price when a price is unset —
+// only custom rows leave them null, since every default sets both explicitly.
+// 1.25× fits the two providers that report cache-write tokens at all (Anthropic
+// and GPT-5.6+); both surcharge writes at exactly that rate.
 const FALLBACK_CACHE_READ_MULT = 0.1;
 const FALLBACK_CACHE_WRITE_MULT = 1.25;
 

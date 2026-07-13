@@ -8,7 +8,7 @@
  * cached in memory for a few seconds so the gateway doesn't hit the database on
  * every request; writes invalidate the cache immediately.
  */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { modelPrice } from '$lib/server/db/schema';
 import { audit } from '$lib/server/audit';
@@ -28,8 +28,15 @@ export function invalidatePriceCache(): void {
 
 /**
  * Seed the platform-default prices (isDefault = true rows) from the built-in
- * list. Idempotent — existing defaults are left untouched — so it's safe to run
- * on every server start. This is where the defaults live now (not in a migration).
+ * list. Idempotent, so it's safe to run on every server start. This is where the
+ * defaults live now (not in a migration).
+ *
+ * Defaults are *synced*, not just inserted: a default row is the code's price
+ * list mirrored into the database, so a corrected rate (say, a cache-write price
+ * the provider introduced) reaches existing instances on the next start instead
+ * of being frozen at whatever was seeded first. Instance overrides are separate
+ * (isDefault = false) rows and are never touched here — the conflict target is
+ * the default partial unique index.
  */
 export async function seedDefaultModelPrices(): Promise<void> {
 	const rows = Object.entries(DEFAULT_MODEL_PRICES).map(([model, p]) => ({
@@ -42,9 +49,22 @@ export async function seedDefaultModelPrices(): Promise<void> {
 		cacheWritePerMtok: p.cacheWrite != null ? String(p.cacheWrite) : null
 	}));
 	if (rows.length === 0) return;
-	// ON CONFLICT DO NOTHING against the default partial unique index (model
-	// where isDefault is true), so re-runs never duplicate or overwrite.
-	await db.insert(modelPrice).values(rows).onConflictDoNothing();
+	await db
+		.insert(modelPrice)
+		.values(rows)
+		.onConflictDoUpdate({
+			target: modelPrice.model,
+			targetWhere: eq(modelPrice.isDefault, true),
+			set: {
+				provider: sql`excluded.provider`,
+				inputPerMtok: sql`excluded.input_per_mtok`,
+				outputPerMtok: sql`excluded.output_per_mtok`,
+				cacheReadPerMtok: sql`excluded.cache_read_per_mtok`,
+				cacheWritePerMtok: sql`excluded.cache_write_per_mtok`,
+				updatedAt: new Date()
+			}
+		});
+	invalidatePriceCache();
 }
 
 /** All modelPrice rows for the instance (both defaults and custom overrides). */

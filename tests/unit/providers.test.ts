@@ -286,9 +286,22 @@ describe('cache default prices', () => {
 		});
 	});
 
-	it('seeds OpenAI cache reads with no write cost (GPT-5 0.1×, GPT-4o 0.5×)', () => {
-		expect(DEFAULT_MODEL_PRICES['gpt-5.4']).toEqual({ in: 2.5, out: 15, cacheRead: 0.25 });
-		expect(DEFAULT_MODEL_PRICES['gpt-4o']).toEqual({ in: 2.5, out: 10, cacheRead: 1.25 });
+	it('seeds pre-5.6 OpenAI writes at the plain input rate (no surcharge)', () => {
+		// GPT-5 series reads at 0.1×, GPT-4o at 0.5×; neither surcharges writes, so
+		// cacheWrite == in. Leaving it unset would hand these models the 1.25×
+		// fallback and overcharge every cache write the provider reports.
+		expect(DEFAULT_MODEL_PRICES['gpt-5.4']).toEqual({
+			in: 2.5,
+			out: 15,
+			cacheRead: 0.25,
+			cacheWrite: 2.5
+		});
+		expect(DEFAULT_MODEL_PRICES['gpt-4o']).toEqual({
+			in: 2.5,
+			out: 10,
+			cacheRead: 1.25,
+			cacheWrite: 2.5
+		});
 	});
 
 	it('seeds the GPT-5.6 tiers, which bill cache writes at 1.25× input', () => {
@@ -298,7 +311,7 @@ describe('cache default prices', () => {
 			cacheRead: 0.5,
 			cacheWrite: 6.25
 		});
-		expect(DEFAULT_MODEL_PRICES['gpt-5.6-terr']).toEqual({
+		expect(DEFAULT_MODEL_PRICES['gpt-5.6-terra']).toEqual({
 			in: 2.5,
 			out: 15,
 			cacheRead: 0.25,
@@ -312,9 +325,22 @@ describe('cache default prices', () => {
 		});
 	});
 
-	it('leaves cache writes unpriced on pre-5.6 OpenAI models', () => {
-		expect(DEFAULT_MODEL_PRICES['gpt-5.5'].cacheWrite).toBeUndefined();
-		expect(DEFAULT_MODEL_PRICES['gpt-4o'].cacheWrite).toBeUndefined();
+	it('prices a GPT-5.6 request with both cache reads and writes', () => {
+		const price = DEFAULT_MODEL_PRICES['gpt-5.6-sol'];
+		// prompt_tokens 10k = 6k cache reads + 3k cache writes + 1k fresh input.
+		// 1k @ $5 + 6k @ $0.5 + 3k @ $6.25 + 500 out @ $30
+		// = 5000 + 3000 + 18750 + 15000 = 41750 per 1M = $0.04175
+		expect(costFromPrice(price, 10_000, 500, 6_000, 3_000)).toBe(0.04175);
+	});
+
+	it('bills a pre-5.6 OpenAI cache write as plain input, never at the 1.25× fallback', () => {
+		const price = DEFAULT_MODEL_PRICES['gpt-5.5'];
+		expect(price.cacheWrite).toBe(price.in);
+		// 1M written tokens must cost the same as 1M ordinary input tokens ($5),
+		// not the $6.25 the unset-rate fallback would charge.
+		expect(costFromPrice(price, 1_000_000, 0, 0, 1_000_000)).toBe(
+			costFromPrice(price, 1_000_000, 0, 0, 0)
+		);
 	});
 
 	it('resolves dated GPT-5.6 ids to their tier price', () => {
@@ -323,13 +349,19 @@ describe('cache default prices', () => {
 		);
 	});
 
-	it('seeds Gemini prices with a cache read discount and no write cost', () => {
+	it('seeds Gemini with a cache read discount and no write surcharge', () => {
 		expect(DEFAULT_MODEL_PRICES['gemini-2.5-flash']).toEqual({
 			in: 0.3,
 			out: 2.5,
-			cacheRead: 0.03
+			cacheRead: 0.03,
+			cacheWrite: 0.3
 		});
-		expect(DEFAULT_MODEL_PRICES['gemini-3.5-flash']).toEqual({ in: 1.5, out: 9, cacheRead: 0.15 });
+		expect(DEFAULT_MODEL_PRICES['gemini-3.5-flash']).toEqual({
+			in: 1.5,
+			out: 9,
+			cacheRead: 0.15,
+			cacheWrite: 1.5
+		});
 		// embedding model: input-only, no output cost and no cache rate
 		expect(DEFAULT_MODEL_PRICES['gemini-embedding-001']).toEqual({ in: 0.15, out: 0 });
 	});

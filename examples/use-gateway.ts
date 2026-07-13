@@ -34,7 +34,7 @@ const client = new OpenAI({
 	}
 });
 
-const MODEL = process.env.UPROX_MODEL || 'gpt-5.4-nano';
+const MODEL = process.env.UPROX_MODEL || 'gpt-5.6-luna';
 
 async function main() {
 	console.log('Trace session id:', sessionId, '\n');

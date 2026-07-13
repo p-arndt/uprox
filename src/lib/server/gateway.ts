@@ -18,6 +18,7 @@ import {
 } from '$lib/server/providers';
 import { getAdapter } from '$lib/server/adapters';
 import { mapUsage } from '$lib/server/adapters/gemini';
+import { normalizeUsage, type NormalizedUsage } from '$lib/server/usage';
 import { audit, type AuditEntry } from '$lib/server/audit';
 import { recordTrace } from '$lib/server/trace';
 import { parseTraceparent, parseTraceMetadata } from '$lib/trace';
@@ -91,60 +92,6 @@ async function enforceBudgets(
 	// Reserve only after all checks pass, so a denied request leaves no residue.
 	const releases = buckets.map((b) => reserve(b.scope, b.id));
 	return () => releases.forEach((r) => r());
-}
-
-/** Token usage from an upstream response, normalized across provider shapes. */
-interface NormalizedUsage {
-	/**
-	 * Total input volume *including* any cache read/write tokens. OpenAI's
-	 * `prompt_tokens` already is total; Anthropic reports cache counts separately
-	 * from `input_tokens`, so we fold them in here for one consistent figure.
-	 */
-	input: number | null;
-	output: number | null;
-	/** input tokens served from the provider's prompt cache (cache read) */
-	cacheRead: number | null;
-	/** input tokens written to the provider's prompt cache (Anthropic only) */
-	cacheWrite: number | null;
-}
-
-/**
- * Read and normalize token usage from an upstream usage object. Spans the chat
- * shape (`prompt_tokens` + `prompt_tokens_details.cached_tokens`), the Responses
- * shape (`input_tokens` + `input_tokens_details.cached_tokens`), and Anthropic's
- * (`input_tokens` + top-level `cache_read_input_tokens` / `cache_creation_input_tokens`).
- *
- * The key difference: OpenAI's cached tokens are a subset already counted in
- * `prompt_tokens`, whereas Anthropic's `input_tokens` *excludes* its cache
- * counts. We resolve both to `input` = full input volume, with `cacheRead` /
- * `cacheWrite` as the cache subsets priced separately by the cost calc. Cache
- * traffic is the provider's discount on repeated input — unrelated to uprox's
- * own exact-match response cache. Returns null when no usage is reported.
- */
-function normalizeUsage(usage: unknown): NormalizedUsage | null {
-	if (!isRecord(usage)) return null;
-	const n = (v: unknown) => (typeof v === 'number' ? v : null);
-	const rawInput = n(usage.prompt_tokens) ?? n(usage.input_tokens);
-	const output = n(usage.completion_tokens) ?? n(usage.output_tokens);
-	const details = isRecord(usage.prompt_tokens_details)
-		? usage.prompt_tokens_details
-		: isRecord(usage.input_tokens_details)
-			? usage.input_tokens_details
-			: null;
-	const detailCached = details ? n(details.cached_tokens) : null;
-	// OpenAI nests cached tokens in *_tokens_details (already in rawInput);
-	// Anthropic reports them top-level, separate from input_tokens.
-	const inputIncludesCache = detailCached != null;
-	const cacheRead = detailCached ?? n(usage.cache_read_input_tokens);
-	const cacheWrite = n(usage.cache_creation_input_tokens);
-	const input =
-		rawInput == null
-			? null
-			: inputIncludesCache
-				? rawInput
-				: rawInput + (cacheRead ?? 0) + (cacheWrite ?? 0);
-	if (input == null && output == null && cacheRead == null && cacheWrite == null) return null;
-	return { input, output, cacheRead, cacheWrite };
 }
 
 /**

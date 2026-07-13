@@ -347,10 +347,11 @@ export const modelPrice = pgTable(
 		outputPerMtok: numeric('output_per_mtok', { precision: 12, scale: 4 }).notNull(),
 		// USD per 1,000,000 tokens for provider prompt-cache traffic, distinct from
 		// the full input price. Both nullable: a NULL falls back to a multiplier of
-		// the input price in the cost calc (read 0.1×, write 1.25×), so old default
-		// rows and custom rows without explicit cache prices still price caching
-		// sensibly. cacheWrite applies to Anthropic and to OpenAI's GPT-5.6 family and
-		// later; older OpenAI/Azure models charge nothing to write a cache entry.
+		// the input price in the cost calc (read 0.1×, write 1.25×), so custom rows
+		// without explicit cache prices still price caching sensibly. Only Anthropic
+		// and OpenAI's GPT-5.6 family and later *surcharge* cache writes (1.25×);
+		// elsewhere a written token is billed as plain input, which those default
+		// rows encode by setting cache_write_per_mtok = input_per_mtok.
 		cacheReadPerMtok: numeric('cache_read_per_mtok', { precision: 12, scale: 4 }),
 		cacheWritePerMtok: numeric('cache_write_per_mtok', { precision: 12, scale: 4 }),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
