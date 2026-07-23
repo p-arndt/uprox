@@ -1,10 +1,10 @@
-import { building } from '$app/environment';
+import { building, dev } from '$app/environment';
 import { auth } from '$lib/server/auth';
 import { db } from '$lib/server/db';
 import { gatewayError } from '$lib/server/gateway';
 import { seedDefaultModelPrices } from '$lib/server/pricing';
 import { isSetupComplete } from '$lib/server/setup';
-import { redirect, type Handle } from '@sveltejs/kit';
+import { redirect, text, type Handle } from '@sveltejs/kit';
 import { type ServerInit } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
@@ -25,6 +25,46 @@ export const init: ServerInit = async () => {
 	// Platform-default model prices live in code, not in a migration. Idempotent.
 	await seedDefaultModelPrices();
 	console.log('Default model prices seeded');
+};
+
+/**
+ * Gateway proxy surface — the API-shaped route prefixes. An unmatched path under
+ * one of these is an API client hitting a missing/misspelled endpoint, so it
+ * should get a machine-readable JSON error, not SvelteKit's HTML 404 page.
+ */
+const GATEWAY_PREFIXES = ['/v1/', '/openai/'];
+
+/**
+ * Same-origin CSRF guard for the cookie-authenticated dashboard.
+ *
+ * SvelteKit's built-in origin check is disabled in svelte.config.js
+ * (`csrf.trustedOrigins: ['*']`) because the gateway surface (/v1, /openai) must
+ * accept `multipart/form-data` uploads — e.g. audio transcription — from
+ * server-to-server API clients that send no `Origin` header; the built-in guard
+ * rejects those as "Cross-site … form submissions are forbidden". Those routes
+ * are Bearer-authenticated and therefore not CSRF-vulnerable.
+ *
+ * This hook re-applies the identical same-origin check to every OTHER route, so
+ * the cookie-authenticated SvelteKit form actions (/app/**, /setup, /invite/**)
+ * keep exactly the CSRF protection SvelteKit gave them. Mirrors the built-in
+ * behaviour: production-only, form content-types, unsafe methods.
+ */
+const FORM_CONTENT_TYPES = ['application/x-www-form-urlencoded', 'multipart/form-data', 'text/plain'];
+const CSRF_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+
+function isFormPost(request: Request): boolean {
+	if (!CSRF_METHODS.has(request.method)) return false;
+	const type = (request.headers.get('content-type') ?? '').split(';', 1)[0].trim().toLowerCase();
+	return FORM_CONTENT_TYPES.includes(type);
+}
+
+const handleCsrf: Handle = async ({ event, resolve }) => {
+	const { request, url } = event;
+	const isGateway = GATEWAY_PREFIXES.some((p) => url.pathname.startsWith(p));
+	if (!dev && !isGateway && isFormPost(request) && request.headers.get('origin') !== url.origin) {
+		return text(`Cross-site ${request.method} form submissions are forbidden`, { status: 403 });
+	}
+	return resolve(event);
 };
 
 /**
@@ -111,13 +151,6 @@ const handleAccessLog: Handle = async ({ event, resolve }) => {
 };
 
 /**
- * Gateway proxy surface — the API-shaped route prefixes. An unmatched path under
- * one of these is an API client hitting a missing/misspelled endpoint, so it
- * should get a machine-readable JSON error, not SvelteKit's HTML 404 page.
- */
-const GATEWAY_PREFIXES = ['/v1/', '/openai/'];
-
-/**
  * Turn SvelteKit's generic HTML 404 into an OpenAI-style JSON error for the
  * gateway surface. SvelteKit answers an unmatched route with a 404 whose body is
  * the fallback error HTML; for `/v1/*` and `/openai/*` an SDK expects JSON, so we
@@ -138,6 +171,7 @@ const handleGatewayNotFound: Handle = async ({ event, resolve }) => {
 
 export const handle: Handle = sequence(
 	handleAccessLog,
+	handleCsrf,
 	handleGatewayNotFound,
 	handleSetup,
 	handleBlockPublicSignup,
