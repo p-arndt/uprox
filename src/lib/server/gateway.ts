@@ -771,6 +771,274 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 
 export { loadProviderCreds };
 
+export interface MultipartProxyOptions {
+	auth: GatewayAuth;
+	/** the gateway capability this request exercises (also the policy scope) */
+	scope: Capability;
+	model: string;
+	/** upstream path appended to the provider base url, e.g. "/audio/transcriptions" */
+	path: string;
+	/** the multipart form to forward; `fetch` sets its own content-type + boundary */
+	form: FormData;
+	/** override the routed provider when both OpenAI and Azure are configured */
+	preferProvider?: string;
+}
+
+/**
+ * Model-routed proxy for endpoints whose request body is multipart/form-data —
+ * the OpenAI Audio API (`/audio/transcriptions`). It shares the JSON path's
+ * cross-cutting concerns (route by model → capability check → policy → rate
+ * limit → budget → audit), but forwards a rebuilt {@link FormData} instead of a
+ * JSON body, so the uploaded audio survives with its boundary intact. No
+ * caching or streaming: a transcription isn't a deterministic, replayable
+ * request. Cost is best-effort — token-billed models (gpt-4o-transcribe) report
+ * usage and are priced; whisper-1 reports none and records a null cost.
+ */
+export async function proxyMultipartToProvider(
+	event: RequestEvent,
+	opts: MultipartProxyOptions
+): Promise<Response> {
+	const { auth, scope, model, path, form, preferProvider } = opts;
+	const started = Date.now();
+	const { token, ip } = auth;
+
+	// Request tracing: mirror proxyToProvider, but never store the raw multipart
+	// body (it's binary audio) — record a compact request summary instead.
+	const traceOn = token.effective.tracingEnabled;
+	const traceGroupId = readTraceGroup(event);
+	const traceMetadata = readTraceMetadata(event);
+	const auditTrace = async (entry: AuditEntry, resp?: { response?: string | null }) => {
+		const auditLogId = await audit(entry);
+		if (traceOn && auditLogId) {
+			await recordTrace({
+				auditLogId,
+				serviceId: token.serviceId,
+				groupId: traceGroupId,
+				metadata: traceMetadata,
+				request: { endpoint: path, model },
+				response: resp?.response ?? null,
+				format: 'json'
+			});
+		}
+	};
+
+	// Route by model among configured providers (OpenAI/Azure share the namespace;
+	// preferProvider or the policy's preferredProvider breaks the tie).
+	const configuredProviders = await loadConfiguredProviders();
+	const provider: ProviderDef | null = resolveProvider(
+		model,
+		configuredProviders,
+		preferProvider ?? token.effective.preferredProvider
+	);
+	if (!provider) {
+		const known = providerForModel(model);
+		await auditTrace({
+			action: `gateway.${scope}`,
+			status: 'error',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: known?.id,
+			model,
+			statusCode: known ? 502 : 400,
+			ip,
+			detail: known ? `no ${known.id} secret configured` : `unknown model "${model}"`
+		});
+		return known
+			? gatewayError(
+					502,
+					`No ${PROVIDERS[known.id].label} credentials configured for this instance`,
+					'api_error'
+				)
+			: gatewayError(400, `Unknown or unsupported model: ${model}`, 'model_not_found');
+	}
+
+	if (!providerSupports(provider, scope)) {
+		await auditTrace({
+			action: `gateway.${scope}`,
+			status: 'error',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: 400,
+			ip,
+			detail: `${provider.id} does not support ${scope}`
+		});
+		return gatewayError(
+			400,
+			`${PROVIDERS[provider.id].label} does not support ${scope} requests (model "${model}")`,
+			'model_not_found'
+		);
+	}
+
+	// policy enforcement
+	const decision = evaluatePolicy(token, { provider: provider.id, model, scope });
+	if (!decision.allow) {
+		await auditTrace({
+			action: 'policy.deny',
+			status: 'deny',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: 403,
+			ip,
+			detail: decision.reason
+		});
+		return gatewayError(403, `Request denied by policy: ${decision.reason}`, 'permission_error');
+	}
+
+	// rate limiting (in-memory, per token)
+	const rl = checkRateLimit(token.tokenId, token.effective.rateLimitPerMinute);
+	if (!rl.ok) {
+		await auditTrace({
+			action: 'policy.deny',
+			status: 'deny',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: 429,
+			ip,
+			detail: `rate limit exceeded (${rl.limit}/min)`
+		});
+		return new Response(
+			JSON.stringify({
+				error: {
+					message: `Rate limit exceeded: ${rl.limit} requests/min`,
+					type: 'rate_limit_error',
+					code: null,
+					param: null
+				}
+			}),
+			{
+				status: 429,
+				headers: {
+					'content-type': 'application/json',
+					'retry-after': String(rl.retryAfter ?? 1)
+				}
+			}
+		);
+	}
+
+	// budget enforcement (reservation covers the in-flight gap; released below)
+	const budgetGate = await enforceBudgets(token, provider, model, ip, auditTrace);
+	if (budgetGate instanceof Response) return budgetGate;
+	const releaseReservation = budgetGate;
+
+	const creds = await loadProviderCreds(provider.id, token.providerSecretId);
+	if (!creds) {
+		releaseReservation();
+		await auditTrace({
+			action: `gateway.${scope}`,
+			status: 'error',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: 502,
+			ip,
+			detail: `no ${provider.id} secret configured`
+		});
+		return gatewayError(
+			502,
+			`No ${PROVIDERS[provider.id].label} credentials configured for this instance`,
+			'api_error'
+		);
+	}
+
+	const baseUrl = resolveBaseUrl(provider, creds.baseUrl);
+	if (!baseUrl) {
+		releaseReservation();
+		await auditTrace({
+			action: `gateway.${scope}`,
+			status: 'error',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: 502,
+			ip,
+			detail: `no ${provider.id} endpoint configured`
+		});
+		return gatewayError(
+			502,
+			`No ${PROVIDERS[provider.id].label} endpoint configured for this instance`,
+			'api_error'
+		);
+	}
+
+	// Forward the query string (Azure's ?api-version=… etc.) verbatim. Do NOT set
+	// content-type: fetch derives the multipart boundary from the FormData body.
+	const upstreamUrl = `${baseUrl}${path}${event.url.search}`;
+	let upstream: Response;
+	try {
+		upstream = await fetch(upstreamUrl, {
+			method: 'POST',
+			headers: authHeaders(provider, creds.apiKey),
+			body: form
+		});
+	} catch (err) {
+		releaseReservation();
+		await auditTrace({
+			action: `gateway.${scope}`,
+			status: 'error',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: 502,
+			latencyMs: Date.now() - started,
+			ip,
+			detail: err instanceof Error ? err.message : 'upstream fetch failed'
+		});
+		return gatewayError(502, 'Upstream provider request failed', 'api_error');
+	}
+
+	// Buffer the response and parse usage best-effort. Transcriptions may return
+	// JSON (`response_format=json|verbose_json`) or plain text (`text|srt|vtt`);
+	// the JSON.parse fails harmlessly on the latter, leaving cost null.
+	const text = await upstream.text();
+	let cost: number | null = null;
+	let inputTokens: number | null = null;
+	let outputTokens: number | null = null;
+	try {
+		const parsed = JSON.parse(text) as { usage?: unknown };
+		const usage = normalizeUsage(parsed.usage);
+		if (usage) {
+			inputTokens = usage.input;
+			outputTokens = usage.output;
+			const { estimateCostUsd } = await import('$lib/server/providers');
+			cost = await estimateCostUsd(model, usage.input ?? undefined, usage.output ?? undefined);
+		}
+	} catch {
+		// non-JSON (text/srt/vtt) or no usage; leave cost null
+	}
+
+	await auditTrace(
+		{
+			action: `gateway.${scope}`,
+			status: upstream.ok ? 'ok' : 'error',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: provider.id,
+			model,
+			statusCode: upstream.status,
+			costUsd: cost,
+			inputTokens,
+			outputTokens,
+			latencyMs: Date.now() - started,
+			ip
+		},
+		{ response: text }
+	);
+	releaseReservation();
+
+	// Preserve the upstream content-type (json vs text/plain for srt/vtt).
+	const outCt = upstream.headers.get('content-type') ?? 'application/json';
+	return new Response(text, { status: upstream.status, headers: { 'content-type': outCt } });
+}
+
 /**
  * Native-Gemini error envelope (`{ error: { code, message, status } }`), so the
  * Google GenAI SDK — which expects native errors, not OpenAI ones — parses a

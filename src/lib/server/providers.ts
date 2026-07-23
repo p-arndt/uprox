@@ -71,7 +71,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 		label: 'OpenAI',
 		baseUrl: 'https://api.openai.com/v1',
 		modelPrefixes: OPENAI_MODEL_PREFIXES,
-		capabilities: ['chat', 'responses', 'embeddings', 'models', 'images']
+		capabilities: ['chat', 'responses', 'embeddings', 'models', 'images', 'transcriptions']
 	},
 	anthropic: {
 		id: 'anthropic',
@@ -113,7 +113,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 		// as the preferred backend for them, and accepts arbitrary names too, since
 		// Azure deployment names are operator-chosen. See `resolveProvider`.
 		modelPrefixes: OPENAI_MODEL_PREFIXES,
-		capabilities: ['chat', 'responses', 'embeddings', 'models', 'images'],
+		capabilities: ['chat', 'responses', 'embeddings', 'models', 'images', 'transcriptions'],
 		authScheme: 'api-key',
 		requiresEndpoint: true,
 		acceptsAnyModel: true
@@ -145,7 +145,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 		// Bearer auth, and it claims any model no other provider's prefix matches.
 		baseUrl: '',
 		modelPrefixes: [],
-		capabilities: ['chat', 'responses', 'embeddings', 'models', 'images'],
+		capabilities: ['chat', 'responses', 'embeddings', 'models', 'images', 'transcriptions'],
 		requiresEndpoint: true,
 		acceptsAnyModel: true
 	}
@@ -358,6 +358,13 @@ export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	'gpt-4.1': openai(2, 8, 0.5),
 	'gpt-4.1-mini': openai(0.4, 1.6, 0.5),
 	o3: openai(2, 8, 0.5),
+	// OpenAI — speech-to-text (token-billed models only). gpt-4o-transcribe and
+	// its mini report token usage, so they cost like a text model; `in` is the
+	// text-input rate (audio-input tokens aren't separable in the usage figure).
+	// whisper-1 is billed per audio-minute, not per token — it reports no usage,
+	// so it's intentionally absent and its requests carry a null cost.
+	'gpt-4o-transcribe': openai(2.5, 10, 0.5),
+	'gpt-4o-mini-transcribe': openai(1.25, 5, 0.5),
 	// OpenAI — embeddings (input-only; no output tokens and no prompt caching)
 	'text-embedding-3-small': { in: 0.02, out: 0 },
 	'text-embedding-3-large': { in: 0.13, out: 0 },

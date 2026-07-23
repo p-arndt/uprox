@@ -35,6 +35,13 @@ describe('providerSupports', () => {
 		expect(providerSupports(PROVIDERS.custom, 'chat')).toBe(true);
 		expect(providerSupports(PROVIDERS.custom, 'responses')).toBe(true);
 		expect(providerSupports(PROVIDERS.custom, 'images')).toBe(true);
+		// audio transcription: OpenAI/Azure/custom serve it; Anthropic and native
+		// Gemini (no OpenAI-compatible audio surface) do not.
+		expect(providerSupports(PROVIDERS.openai, 'transcriptions')).toBe(true);
+		expect(providerSupports(PROVIDERS.azure, 'transcriptions')).toBe(true);
+		expect(providerSupports(PROVIDERS.custom, 'transcriptions')).toBe(true);
+		expect(providerSupports(PROVIDERS.anthropic, 'transcriptions')).toBe(false);
+		expect(providerSupports(PROVIDERS.gemini, 'transcriptions')).toBe(false);
 	});
 });
 
@@ -401,5 +408,19 @@ describe('resolvePrice', () => {
 
 	it('returns null when no prefix matches', () => {
 		expect(resolvePrice(prices, 'claude-opus-4-7')).toBeNull();
+	});
+
+	it('prices the token-billed transcribe models but leaves whisper unpriced', () => {
+		// gpt-4o-transcribe reports token usage, so it has its own default price —
+		// and its longer key wins over the plain gpt-4o entry.
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'gpt-4o-transcribe')).toBe(
+			DEFAULT_MODEL_PRICES['gpt-4o-transcribe']
+		);
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'gpt-4o-mini-transcribe')).toBe(
+			DEFAULT_MODEL_PRICES['gpt-4o-mini-transcribe']
+		);
+		// whisper-1 is billed per audio-minute, not per token: no default price,
+		// so its requests record a null cost.
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'whisper-1')).toBeNull();
 	});
 });

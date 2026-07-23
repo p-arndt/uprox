@@ -12,7 +12,8 @@ export const GATEWAY_SCOPES = [
 	'embeddings',
 	'models',
 	'images',
-	'files'
+	'files',
+	'transcriptions'
 ] as const;
 
 export type Capability = (typeof GATEWAY_SCOPES)[number];
