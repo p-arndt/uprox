@@ -42,6 +42,12 @@ describe('providerSupports', () => {
 		expect(providerSupports(PROVIDERS.custom, 'transcriptions')).toBe(true);
 		expect(providerSupports(PROVIDERS.anthropic, 'transcriptions')).toBe(false);
 		expect(providerSupports(PROVIDERS.gemini, 'transcriptions')).toBe(false);
+		// realtime ephemeral tokens: OpenAI/Azure/custom; not Anthropic or Gemini.
+		expect(providerSupports(PROVIDERS.openai, 'realtime')).toBe(true);
+		expect(providerSupports(PROVIDERS.azure, 'realtime')).toBe(true);
+		expect(providerSupports(PROVIDERS.custom, 'realtime')).toBe(true);
+		expect(providerSupports(PROVIDERS.anthropic, 'realtime')).toBe(false);
+		expect(providerSupports(PROVIDERS.gemini, 'realtime')).toBe(false);
 	});
 });
 

@@ -13,7 +13,8 @@ export const GATEWAY_SCOPES = [
 	'models',
 	'images',
 	'files',
-	'transcriptions'
+	'transcriptions',
+	'realtime'
 ] as const;
 
 export type Capability = (typeof GATEWAY_SCOPES)[number];

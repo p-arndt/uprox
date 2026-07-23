@@ -94,14 +94,23 @@ docker build -t uprox . && docker run -p 3000:3000 --env-file .env uprox
 OpenAI-compatible gateway, authenticated with a `Bearer uprox_live_…` token (or
 `api-key: uprox_live_…` for Azure-SDK clients):
 
-| Endpoint                                                | Notes                                                                                  |
-| ------------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `POST /v1/chat/completions`                             | streaming supported                                                                    |
-| `POST /v1/responses`                                    | OpenAI Responses API; streaming supported                                              |
-| `POST /v1/embeddings`                                   |                                                                                        |
-| `POST /v1/audio/transcriptions`                         | speech-to-text (multipart); `whisper-1`, `gpt-4o-transcribe`, `gpt-4o-mini-transcribe` |
-| `GET  /v1/models`                                       | aggregated from your configured providers                                              |
-| `/v1/files`, `/v1/files/{id}`, `/v1/files/{id}/content` | upload/list/retrieve/delete/download — used by SDKs that auto-upload image inputs      |
+| Endpoint                                                            | Notes                                                                                  |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `POST /v1/chat/completions`                                         | streaming supported                                                                    |
+| `POST /v1/responses`                                                | OpenAI Responses API; streaming supported                                              |
+| `POST /v1/embeddings`                                               |                                                                                        |
+| `POST /v1/audio/transcriptions`                                     | speech-to-text (multipart); `whisper-1`, `gpt-4o-transcribe`, `gpt-4o-mini-transcribe` |
+| `POST /v1/realtime/client_secrets`                                  | mint an ephemeral Realtime token; client connects to OpenAI directly (WebRTC/WS)       |
+| `POST /v1/realtime/sessions`, `/v1/realtime/transcription_sessions` | legacy Realtime ephemeral-token endpoints                                              |
+| `GET  /v1/models`                                                   | aggregated from your configured providers                                              |
+| `/v1/files`, `/v1/files/{id}`, `/v1/files/{id}/content`             | upload/list/retrieve/delete/download — used by SDKs that auto-upload image inputs      |
+
+**Realtime.** uprox mints the ephemeral client secret so your provider key never
+reaches the browser; the client then opens the Realtime session (WebRTC or
+WebSocket) straight to the provider with that short-lived token. Because that
+audio stream doesn't pass through uprox, its per-session token usage isn't
+metered here — only the token mint is audited. (A future WebSocket relay could
+keep the stream in-path for full metering.)
 
 ### Azure OpenAI SDK clients
 
