@@ -160,6 +160,10 @@ const handleAccessLog: Handle = async ({ event, resolve }) => {
 const handleGatewayNotFound: Handle = async ({ event, resolve }) => {
 	const response = await resolve(event);
 	if (response.status !== 404) return response;
+	// A route that ran and returned its own JSON 404 (e.g. an upstream provider
+	// 404 forwarded by proxyToProvider) is already machine-readable — only
+	// SvelteKit's HTML fallback for an unmatched route should be rewritten.
+	if ((response.headers.get('content-type') ?? '').includes('application/json')) return response;
 	const path = event.url.pathname;
 	if (!GATEWAY_PREFIXES.some((p) => path.startsWith(p))) return response;
 	return gatewayError(

@@ -593,12 +593,21 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	const upstreamBody = adapter ? adapter.translateRequest(scope, outboundBody) : outboundBody;
 
 	// proxy upstream
+	// Realtime endpoints are gated behind `OpenAI-Beta: realtime=v1`; default it
+	// when the client omitted the header, but honour a client-supplied value.
+	const incomingBeta =
+		event.request.headers.get('openai-beta') ?? (scope === 'realtime' ? 'realtime=v1' : null);
 	let upstream: Response;
 	try {
 		upstream = await fetch(upstreamUrl, {
 			method: 'POST',
 			headers: {
 				'content-type': 'application/json',
+				// Forward the beta opt-in header some OpenAI endpoints require —
+				// e.g. the Realtime endpoints need `OpenAI-Beta: realtime=v1`, and
+				// without it OpenAI 404s the route. Only for pass-through providers;
+				// adapters speak their own native API.
+				...(!adapter && incomingBeta ? { 'openai-beta': incomingBeta } : {}),
 				...authHeaders(provider, creds.apiKey)
 			},
 			body: JSON.stringify(upstreamBody)
