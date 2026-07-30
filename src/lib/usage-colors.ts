@@ -70,6 +70,9 @@ export const STATUS_COLORS: Record<string, string> = {
  */
 export function colorForSeries(dim: string, key: string, rank: number): string {
 	if (dim === 'status') return STATUS_COLORS[key] ?? OTHERS_COLOR;
+	// Meters are a fixed vocabulary, so they keep fixed colours — the band in the
+	// over-time chart must match the swatch in the composition bar above it.
+	if (dim === 'meter') return METER_COLOR[key] ?? OTHERS_COLOR;
 	return seriesColor(rank);
 }
 

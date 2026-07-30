@@ -8,6 +8,7 @@
 		countFilterValues,
 		dimensionLabel,
 		removeFilterValue,
+		FILTERABLE_DIMENSIONS,
 		type UsageDimension,
 		type UsageFilter,
 		type UsageFilterOptions
@@ -43,13 +44,16 @@
 	} = $props();
 
 	const dims = $derived(USAGE_DIMENSIONS.filter((d) => dimensions.includes(d.key)));
+	// The filter popover offers a strict subset: `meter` is groupable but has no
+	// SQL predicate behind it (see FILTERABLE_DIMENSIONS).
+	const filterDims = $derived(dims.filter((d) => FILTERABLE_DIMENSIONS.includes(d.key)));
 
 	let groupOpen = $state(false);
 	let filterOpen = $state(false);
 	// Which dimension the filter popover lists values for; defaults to whatever
 	// this page actually allows rather than a hard-coded 'service'.
 	let picked = $state<UsageDimension | null>(null);
-	const pickerDim = $derived(picked ?? dimensions[0]);
+	const pickerDim = $derived(picked ?? filterDims[0]?.key ?? dimensions[0]);
 
 	const activeCount = $derived(countFilterValues(filters));
 
@@ -121,7 +125,7 @@
 		<Popover.Content align="start" class="w-80 p-0">
 			<!-- dimension switcher for the value list below -->
 			<div class="flex flex-wrap gap-1 border-b p-2">
-				{#each dims as d (d.key)}
+				{#each filterDims as d (d.key)}
 					<button
 						type="button"
 						onclick={() => (picked = d.key)}

@@ -33,11 +33,19 @@
 
 	type Metric = 'cost' | 'requests' | 'tokens';
 	let metric = $state<Metric>('cost');
-	const METRICS: { key: Metric; label: string }[] = [
+	const ALL_METRICS: { key: Metric; label: string }[] = [
 		{ key: 'cost', label: 'Spend' },
 		{ key: 'requests', label: 'Requests' },
 		{ key: 'tokens', label: 'Tokens' }
 	];
+	// A request contributes to several meters at once, so it can't be attributed
+	// to one — the requests metric is dropped rather than shown as zero.
+	const METRICS = $derived(
+		groupBy === 'meter' ? ALL_METRICS.filter((m) => m.key !== 'requests') : ALL_METRICS
+	);
+	$effect(() => {
+		if (groupBy === 'meter' && metric === 'requests') metric = 'cost';
+	});
 
 	type ChartType = 'bars' | 'area';
 	let chartType = $state<ChartType>('bars');
@@ -71,7 +79,7 @@
 		month: 'monthly'
 	};
 
-	const metricLabel = $derived(METRICS.find((m) => m.key === metric)!.label);
+	const metricLabel = $derived(METRICS.find((m) => m.key === metric)?.label ?? 'Spend');
 	const shape = $derived(
 		normalized
 			? '100% stacked'

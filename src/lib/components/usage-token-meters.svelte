@@ -14,6 +14,10 @@
 	// reading the same page with different toggle states saw different headline
 	// numbers. A composition is strictly more informative and always adds up.
 
+	// Deliberately no over-time chart here: "Group by: Token meter" renders the
+	// meters through the main cost-analysis chart, with the granularity, tooltip
+	// and metric controls that come with it. A second, lesser copy of the same
+	// thing buried at the bottom of this card was redundant.
 	let {
 		breakdown,
 		title = 'Token meters',

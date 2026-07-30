@@ -15,7 +15,8 @@ export const USAGE_DIMENSIONS = [
 	{ key: 'model', label: 'Model', plural: 'Models' },
 	{ key: 'provider', label: 'Provider', plural: 'Providers' },
 	{ key: 'token', label: 'Machine token', plural: 'Machine tokens' },
-	{ key: 'status', label: 'Status', plural: 'Statuses' }
+	{ key: 'status', label: 'Status', plural: 'Statuses' },
+	{ key: 'meter', label: 'Token meter', plural: 'Token meters' }
 ] as const;
 
 export type UsageDimension = (typeof USAGE_DIMENSIONS)[number]['key'];
@@ -27,6 +28,20 @@ export type UsageDimension = (typeof USAGE_DIMENSIONS)[number]['key'];
  * traffic — and it's the one dimension every scope (org, service, token) shares.
  */
 export const DEFAULT_GROUP_BY: UsageDimension = 'model';
+
+/**
+ * Dimensions that can be *filtered* on, which is a strict subset of those that
+ * can be grouped by. `meter` is groupable but not filterable: a meter is a slice
+ * of a request's token counts, not a property of the request, so one row feeds
+ * several meters at once and "where meter = output" has no meaning in SQL.
+ */
+export const FILTERABLE_DIMENSIONS = USAGE_DIMENSIONS.filter((d) => d.key !== 'meter').map(
+	(d) => d.key
+) as readonly UsageDimension[];
+
+export function isFilterableDimension(value: unknown): value is UsageDimension {
+	return isUsageDimension(value) && FILTERABLE_DIMENSIONS.includes(value);
+}
 
 const DIMENSION_KEYS = USAGE_DIMENSIONS.map((d) => d.key) as readonly string[];
 
@@ -79,7 +94,8 @@ export function parseFilters(raw: string[]): UsageFilter[] {
 		if (sep <= 0) continue;
 		const dim = entry.slice(0, sep);
 		const value = entry.slice(sep + 1);
-		if (!isUsageDimension(dim) || value === '') continue;
+		// non-filterable dimensions (meter) can't produce a SQL predicate
+		if (!isFilterableDimension(dim) || value === '') continue;
 		const list = byDim.get(dim) ?? [];
 		// de-dupe so a hand-edited URL can't inflate the IN-list
 		if (!list.includes(value)) list.push(value);

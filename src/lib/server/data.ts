@@ -1273,8 +1273,16 @@ function usageConds(
  * so NULLs (a deleted service, a denial that never resolved a model) collapse to
  * one addressable `NULL_VALUE` bucket instead of vanishing from the grouping.
  */
+/**
+ * The dimensions that really are a column on `audit_log`. `meter` is excluded by
+ * construction: it's a decomposition of a row's token counts, not a property of
+ * the row, so typing these maps over this narrower set makes "a meter reached
+ * the SQL layer" a compile error rather than a runtime surprise.
+ */
+type SqlDimension = Exclude<UsageDimension, 'meter'>;
+
 const DIMENSION_SQL: Record<
-	UsageDimension,
+	SqlDimension,
 	{ value: ReturnType<typeof sql>; label: ReturnType<typeof sql>; hint?: ReturnType<typeof sql> }
 > = {
 	service: {
@@ -1306,7 +1314,7 @@ const DIMENSION_SQL: Record<
  * dimensions need one — a query grouping by model shouldn't pay for the service
  * join. Empty fragments are a no-op when interpolated.
  */
-const DIMENSION_JOIN: Record<UsageDimension, ReturnType<typeof sql>> = {
+const DIMENSION_JOIN: Record<SqlDimension, ReturnType<typeof sql>> = {
 	service: sql`left join ${service} on ${service.id} = ${auditLog.serviceId}`,
 	token: sql`left join ${machineToken} on ${machineToken.id} = ${auditLog.tokenId}`,
 	model: sql``,
@@ -1316,7 +1324,12 @@ const DIMENSION_JOIN: Record<UsageDimension, ReturnType<typeof sql>> = {
 
 /** One filter clause: OR within the dimension's values, AND across dimensions. */
 function filterCond(f: UsageFilter) {
-	const col = DIMENSION_SQL[f.dim].value;
+	const entry = DIMENSION_SQL[f.dim as SqlDimension];
+	// Belt and braces: parseFilters already drops non-filterable dimensions, so a
+	// meter can't get here — but a filter with no column must be a no-op rather
+	// than a crash or, worse, a silently dropped AND leg.
+	if (!entry) return sql`true`;
+	const col = entry.value;
 	// Each value is its own bound parameter — never interpolated — so the list is
 	// inert regardless of what the URL carried.
 	const list = sql.join(
@@ -1579,8 +1592,33 @@ export async function orgUsageByDimension(
 	dim: UsageDimension,
 	opts: { filters?: UsageFilter[]; limit?: number; serviceId?: string; tokenId?: string } = {}
 ): Promise<DimensionUsageRow[]> {
-	const d = DIMENSION_SQL[dim];
-	const join = DIMENSION_JOIN[dim];
+	// `meter` isn't a column — it's a decomposition of each row's token counts —
+	// so it's served by the meter aggregate rather than a group-by.
+	if (dim === 'meter') {
+		const b = await orgTokenMeters(range, {
+			filters: opts.filters,
+			serviceId: opts.serviceId,
+			tokenId: opts.tokenId
+		});
+		return b.meters
+			.filter((m) => m.tokens > 0)
+			.map((m) => ({
+				key: m.key,
+				label: METER_ORDER.find((x) => x.key === m.key)?.label ?? m.key,
+				hint: null,
+				costUsd: m.costUsd,
+				// A request contributes to several meters at once, so "requests per
+				// meter" has no meaning; left at zero rather than invented.
+				requests: 0,
+				denied: 0,
+				inputTokens: m.key === 'output' ? 0 : m.tokens,
+				outputTokens: m.key === 'output' ? m.tokens : 0
+			}))
+			.sort((x, y) => y.costUsd - x.costUsd);
+	}
+
+	const d = DIMENSION_SQL[dim as SqlDimension];
+	const join = DIMENSION_JOIN[dim as SqlDimension];
 	const scope = [
 		...(opts.serviceId ? [sql`${auditLog.serviceId} = ${opts.serviceId}::uuid`] : []),
 		...(opts.tokenId ? [sql`${auditLog.tokenId} = ${opts.tokenId}::uuid`] : [])
@@ -1695,6 +1733,15 @@ export async function orgUsageSeriesGrouped(
 		tokenId?: string;
 	} = {}
 ): Promise<GroupedSeriesResult> {
+	if (dim === 'meter') {
+		return orgTokenMetersSeries(range, {
+			unit: opts.unit,
+			filters: opts.filters,
+			serviceId: opts.serviceId,
+			tokenId: opts.tokenId
+		});
+	}
+
 	const unit = resolveSeriesBucket(range, opts.unit ?? 'auto');
 	const step = BUCKET_STEP[unit];
 	const startIso = range.start.toISOString();
@@ -1725,7 +1772,7 @@ export async function orgUsageSeriesGrouped(
 		return { unit, buckets: [], series: [], hasOthers: false };
 	}
 
-	const d = DIMENSION_SQL[dim];
+	const d = DIMENSION_SQL[dim as SqlDimension];
 	const topKeys = top.map((r) => r.key);
 	const keyList = sql.join(
 		topKeys.map((k) => sql`${k}`),
@@ -1865,6 +1912,15 @@ export async function orgUsageFilterOptions(
 export interface TokenMeter {
 	key: 'input' | 'cacheRead' | 'cacheWrite' | 'output' | 'embedding';
 	tokens: number;
+	/**
+	 * Actual spend attributed to this meter. Derived by pricing each meter at its
+	 * own list rate and then scaling the five so they sum to the spend actually
+	 * recorded — an allocation, not an independent measurement, because the
+	 * provider bills one number per request and never itemises it. Scaling is what
+	 * keeps the meters reconciling with the headline instead of drifting whenever
+	 * a price row is edited after the fact.
+	 */
+	costUsd: number;
 }
 
 export interface TokenMeterBreakdown {
@@ -1940,6 +1996,14 @@ export async function orgTokenMeters(
 	let savedInputTokens = 0;
 	let savedOutputTokens = 0;
 	let providerCacheSavedUsd = 0;
+	// list-price cost per meter, pre-scaling
+	const listCost: Record<TokenMeter['key'], number> = {
+		input: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		output: 0,
+		embedding: 0
+	};
 
 	for (const r of rows) {
 		const embIn = Number(r.embeddingInput ?? 0);
@@ -1964,23 +2028,35 @@ export async function orgTokenMeters(
 		savedInputTokens += Number(r.savedInput ?? 0);
 		savedOutputTokens += Number(r.savedOutput ?? 0);
 
-		if (read > 0 && r.model) {
-			const p = resolveModelPrice(prices, r.model);
-			if (p) {
-				// Default cache-read multiplier is 0.1× input when the row doesn't
-				// price it explicitly — the same fallback the cost calculation uses.
-				const readRate = p.cacheReadPerMtok ?? p.inputPerMtok * 0.1;
-				providerCacheSavedUsd += (read * Math.max(0, p.inputPerMtok - readRate)) / 1_000_000;
+		const p = r.model ? resolveModelPrice(prices, r.model) : null;
+		if (p) {
+			// Default multipliers match the gateway's own fallbacks when a price row
+			// leaves the cache rates NULL: 0.1x input to read, 1.25x to write.
+			const readRate = p.cacheReadPerMtok ?? p.inputPerMtok * 0.1;
+			const writeRate = p.cacheWritePerMtok ?? p.inputPerMtok * 1.25;
+			const M = 1_000_000;
+			listCost.input += (freshInput * p.inputPerMtok) / M;
+			listCost.cacheRead += (read * readRate) / M;
+			listCost.cacheWrite += (write * writeRate) / M;
+			listCost.output += (Math.max(0, Number(r.outputTokens ?? 0) - embOut) * p.outputPerMtok) / M;
+			listCost.embedding += (embIn * p.inputPerMtok + embOut * p.outputPerMtok) / M;
+			if (read > 0) {
+				providerCacheSavedUsd += (read * Math.max(0, p.inputPerMtok - readRate)) / M;
 			}
 		}
 	}
 
+	// Scale the list-price split onto the spend actually recorded, so the meter
+	// costs sum to `costUsd` exactly. Falls back to the raw list figures when
+	// there's nothing to scale against (no priced traffic, or a zero-cost window).
+	const listTotal = Object.values(listCost).reduce((a, c) => a + c, 0);
+	const scale = listTotal > 0 && costUsd > 0 ? costUsd / listTotal : listTotal > 0 ? 0 : 1;
 	const meters: TokenMeter[] = [
-		{ key: 'input', tokens: input },
-		{ key: 'cacheRead', tokens: cacheRead },
-		{ key: 'cacheWrite', tokens: cacheWrite },
-		{ key: 'output', tokens: output },
-		{ key: 'embedding', tokens: embeddingTokens }
+		{ key: 'input', tokens: input, costUsd: listCost.input * scale },
+		{ key: 'cacheRead', tokens: cacheRead, costUsd: listCost.cacheRead * scale },
+		{ key: 'cacheWrite', tokens: cacheWrite, costUsd: listCost.cacheWrite * scale },
+		{ key: 'output', tokens: output, costUsd: listCost.output * scale },
+		{ key: 'embedding', tokens: embeddingTokens, costUsd: listCost.embedding * scale }
 	];
 
 	return {
@@ -1992,6 +2068,162 @@ export async function orgTokenMeters(
 		savedOutputTokens,
 		providerCacheSavedUsd
 	};
+}
+
+/** The meters in display order — the same order the composition bar stacks in. */
+const METER_ORDER: { key: TokenMeter['key']; label: string }[] = [
+	{ key: 'input', label: 'Input (fresh)' },
+	{ key: 'cacheRead', label: 'Input (cache read)' },
+	{ key: 'cacheWrite', label: 'Input (cache write)' },
+	{ key: 'output', label: 'Output' },
+	{ key: 'embedding', label: 'Embeddings' }
+];
+
+/**
+ * The token meters bucketed over time, shaped as a {@link GroupedSeriesResult}
+ * so the cost-analysis stacked chart can render it unchanged — same tooltip,
+ * axis and 100%-stacked mode, no second charting path to keep in step.
+ *
+ * Answers the question the single composition bar can't: whether the mix is
+ * *moving*. A cache-read share climbing week over week is the thing an operator
+ * is trying to engineer for, and a flat total can hide it entirely.
+ *
+ * Meters partition each bucket exactly, by the same subtraction
+ * `orgTokenMeters` uses (and the gateway's own cost formula before it), so the
+ * bars sum to that bucket's real token volume.
+ */
+export async function orgTokenMetersSeries(
+	range: ResolvedRange,
+	opts: {
+		unit?: BucketChoice;
+		filters?: UsageFilter[];
+		serviceId?: string;
+		tokenId?: string;
+	} = {}
+): Promise<GroupedSeriesResult> {
+	const unit = resolveSeriesBucket(range, opts.unit ?? 'auto');
+	const step = BUCKET_STEP[unit];
+	const startIso = range.start.toISOString();
+	const upperIso = (range.end ?? new Date()).toISOString();
+	const emb = sql`${auditLog.model} ilike '%embedding%'`;
+	const scope = sql.join(
+		[
+			...(opts.serviceId ? [sql`${auditLog.serviceId} = ${opts.serviceId}::uuid`] : []),
+			...(opts.tokenId ? [sql`${auditLog.tokenId} = ${opts.tokenId}::uuid`] : [])
+		].map((c) => sql` and ${c}`),
+		sql``
+	);
+
+	// Grouped by (bucket, model): the model is needed to price each meter at its
+	// own rate, exactly as orgTokenMeters does for the window as a whole. The
+	// generate_series left join still pads empty buckets — they come back as a
+	// single row with a null model and zero sums.
+	const rows = await db.execute<{
+		bucket: string;
+		model: string | null;
+		input: number;
+		output: number;
+		cache_read: number;
+		cache_write: number;
+		emb_in: number;
+		emb_out: number;
+		cost: string;
+	}>(sql`
+		select
+			to_char(g.bucket, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as bucket,
+			${auditLog.model} as model,
+			coalesce(sum(${auditLog.inputTokens}) filter (where not (${emb})), 0)::bigint as input,
+			coalesce(sum(${auditLog.outputTokens}) filter (where not (${emb})), 0)::bigint as output,
+			coalesce(sum(${auditLog.providerCachedTokens}) filter (where not (${emb})), 0)::bigint as cache_read,
+			coalesce(sum(${auditLog.cacheWriteTokens}) filter (where not (${emb})), 0)::bigint as cache_write,
+			coalesce(sum(${auditLog.inputTokens}) filter (where ${emb}), 0)::bigint as emb_in,
+			coalesce(sum(${auditLog.outputTokens}) filter (where ${emb}), 0)::bigint as emb_out,
+			coalesce(sum(${auditLog.costUsd}), 0)::text as cost
+		from generate_series(
+			date_trunc(${unit}, ${startIso}::timestamp),
+			date_trunc(${unit}, ${upperIso}::timestamp),
+			${step}::interval
+		) as g(bucket)
+		left join ${auditLog}
+			on date_trunc(${unit}, ${auditLog.createdAt}) = g.bucket
+			and ${usageCondsSql(range, opts.filters)}${scope}
+		group by g.bucket, ${auditLog.model}
+		order by g.bucket asc
+	`);
+
+	const prices = await listModelPrices();
+	const buckets: string[] = [];
+	const idx = new Map<string, number>();
+	type Cell = { tokens: number; list: number };
+	const blank = (): Record<TokenMeter['key'], Cell> => ({
+		input: { tokens: 0, list: 0 },
+		cacheRead: { tokens: 0, list: 0 },
+		cacheWrite: { tokens: 0, list: 0 },
+		output: { tokens: 0, list: 0 },
+		embedding: { tokens: 0, list: 0 }
+	});
+	const perBucket: Record<TokenMeter['key'], Cell>[] = [];
+	const actualCost: number[] = [];
+
+	for (const r of rows) {
+		if (!idx.has(r.bucket)) {
+			idx.set(r.bucket, buckets.length);
+			buckets.push(r.bucket);
+			perBucket.push(blank());
+			actualCost.push(0);
+		}
+		const b = idx.get(r.bucket)!;
+		const cell = perBucket[b];
+		actualCost[b] += Number(r.cost ?? 0);
+
+		const read = Number(r.cache_read ?? 0);
+		const write = Number(r.cache_write ?? 0);
+		const embIn = Number(r.emb_in ?? 0);
+		const embOut = Number(r.emb_out ?? 0);
+		// same partition as orgTokenMeters: cache read/write are subsets of prompt
+		const fresh = Math.max(0, Number(r.input ?? 0) - read - write);
+		const out = Number(r.output ?? 0);
+
+		cell.input.tokens += fresh;
+		cell.cacheRead.tokens += read;
+		cell.cacheWrite.tokens += write;
+		cell.output.tokens += out;
+		cell.embedding.tokens += embIn + embOut;
+
+		const p = r.model ? resolveModelPrice(prices, r.model) : null;
+		if (p) {
+			const M = 1_000_000;
+			const readRate = p.cacheReadPerMtok ?? p.inputPerMtok * 0.1;
+			const writeRate = p.cacheWritePerMtok ?? p.inputPerMtok * 1.25;
+			cell.input.list += (fresh * p.inputPerMtok) / M;
+			cell.cacheRead.list += (read * readRate) / M;
+			cell.cacheWrite.list += (write * writeRate) / M;
+			cell.output.list += (out * p.outputPerMtok) / M;
+			cell.embedding.list += (embIn * p.inputPerMtok + embOut * p.outputPerMtok) / M;
+		}
+	}
+
+	const series: GroupedSeries[] = METER_ORDER.map((m) => {
+		const points = buckets.map((_, b) => {
+			const cell = perBucket[b][m.key];
+			// Scale the bucket's list-price split onto the spend actually recorded
+			// there, so the stacked bars sum to that bucket's real cost.
+			const listTotal = Object.values(perBucket[b]).reduce((a, c) => a + c.list, 0);
+			const scale = listTotal > 0 && actualCost[b] > 0 ? actualCost[b] / listTotal : 0;
+			return { requests: 0, denied: 0, costUsd: cell.list * scale, tokens: cell.tokens };
+		});
+		return {
+			key: m.key,
+			label: m.label,
+			hint: null,
+			points,
+			costUsd: points.reduce((a, c) => a + c.costUsd, 0),
+			requests: 0,
+			tokens: points.reduce((a, c) => a + c.tokens, 0)
+		};
+	}).filter((x) => x.tokens > 0);
+
+	return { unit, buckets, series, hasOthers: false };
 }
 
 /** Price row shape the meter costing needs. */
