@@ -1,0 +1,6 @@
+release:
+  branch: main
+  remote: origin
+  tag: "{{ version }}"         # "{{ version }}" for tags without a v prefix
+  commit: "version: {{ tag }}"
+  push: true
