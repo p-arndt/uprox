@@ -155,6 +155,15 @@
 			{/each}
 		</Sidebar.Content>
 		<Sidebar.Footer>
+			<!-- Build version. Sits above the account row so it reads as a property of
+			     the instance rather than of the signed-in user. Hidden when the
+			     sidebar collapses to icons, where there's no room for text. -->
+			<p
+				class="px-2 pb-1 text-[11px] text-muted-foreground tabular-nums group-data-[collapsible=icon]:hidden"
+				title="uprox version {data.version}"
+			>
+				uprox v{data.version}
+			</p>
 			<div class="flex items-center gap-2 rounded-lg px-2 py-1.5">
 				<div
 					class="flex size-8 items-center justify-center rounded-full bg-muted text-xs font-medium"
