@@ -1,23 +1,22 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import UsageDashboard from '$lib/components/usage-dashboard.svelte';
-	import UsageRangeToolbar from '$lib/components/usage-range-toolbar.svelte';
-	import { type BreakdownSection } from '$lib/components/usage-breakdown.svelte';
+	import UsageRangePicker from '$lib/components/usage-range-picker.svelte';
+	import UsageWorkbench from '$lib/components/usage-workbench.svelte';
 	import { resolve } from '$app/paths';
 	import { enhance } from '$app/forms';
 	import { goto, invalidateAll } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import { buildUsageHref, type UsageUrlOverrides } from '$lib/usage-url';
+	import type { UsageDimension, UsageFilter } from '$lib/usage-group';
+	import type { DimensionUsageRow } from '$lib/server/data';
 	import { toast } from 'svelte-sonner';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
-	import Cpu from '@lucide/svelte/icons/cpu';
-	import Server from '@lucide/svelte/icons/server';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import Eye from '@lucide/svelte/icons/eye';
 	import Copy from '@lucide/svelte/icons/copy';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
@@ -51,7 +50,9 @@
 				range: data.range,
 				bucket: data.bucket,
 				customFrom: data.customFrom,
-				customTo: data.customTo
+				customTo: data.customTo,
+				groupBy: data.groupBy,
+				filters: data.filters
 			},
 			overrides
 		) as ResolvedPathname;
@@ -83,36 +84,46 @@
 		return { label: 'active', dot: 'bg-emerald-500', pulse: true };
 	});
 
-	const hasTraffic = $derived(data.byModel.length > 0);
-
-	// A token belongs to one service, so by-service/by-token collapse to a single
-	// row — model is the dimension that varies, plus provider when it spans more
-	// than one upstream.
-	const sections = $derived.by(() => {
-		const out: BreakdownSection[] = [
-			{
-				key: 'model',
-				label: 'Model',
-				icon: Cpu,
-				rows: data.byModel,
-				truncated: data.byModel.length >= data.breakdownLimit
-			}
-		];
-		if (data.byProvider.length > 1)
-			out.push({ key: 'provider', label: 'Provider', icon: Server, rows: data.byProvider });
-		return out;
-	});
+	// Group-by and filters are URL state here too, so a drilled-in token view is
+	// just as shareable as the org-wide one.
+	function setGroupBy(dim: UsageDimension) {
+		goto(hrefWith({ groupBy: dim }), { noScroll: true, keepFocus: true });
+	}
+	function setFilters(filters: UsageFilter[]) {
+		goto(hrefWith({ filters }), { noScroll: true, keepFocus: true });
+	}
 </script>
 
-{#snippet rowLabel(row: import('$lib/components/usage-breakdown.svelte').BreakdownRow, key: string)}
-	{#if key === 'model'}
-		<span class="truncate font-mono font-medium">{row.model}</span>
-		{#if row.provider}
-			<span class="shrink-0 text-xs text-muted-foreground">{row.provider}</span>
-		{/if}
-	{:else if key === 'provider'}
-		<span class="truncate font-medium">{row.provider}</span>
+{#snippet rowLabel(row: DimensionUsageRow, dim: UsageDimension)}
+	{#if dim === 'model'}
+		<span class="truncate font-mono text-[13px] font-medium" title={row.label}>{row.label}</span>
+	{:else}
+		<span class="truncate font-medium" title={row.label}>{row.label}</span>
 	{/if}
+{/snippet}
+
+{#snippet leading()}
+	<UsageRangePicker
+		ranges={data.ranges}
+		range={data.range}
+		{hrefWith}
+		customFrom={data.customFrom}
+		customTo={data.customTo}
+		onApplyCustom={applyCustom}
+	/>
+{/snippet}
+
+{#snippet trailing()}
+	<Button
+		variant="ghost"
+		size="icon"
+		class="size-8"
+		onclick={refresh}
+		disabled={refreshing}
+		aria-label="Refresh usage"
+	>
+		<RefreshCw class="size-4 {refreshing ? 'animate-spin' : ''}" />
+	</Button>
 {/snippet}
 
 <div class="mx-auto max-w-7xl space-y-6">
@@ -136,7 +147,7 @@
 				</p>
 				<div class="flex flex-wrap items-center gap-2">
 					<h2 class="text-lg font-semibold">{data.token.name}</h2>
-					<span class="inline-flex items-center gap-1.5 text-sm capitalize text-muted-foreground">
+					<span class="inline-flex items-center gap-1.5 text-sm text-muted-foreground capitalize">
 						<span
 							class="size-1.5 rounded-full {tokenStatus.dot} {tokenStatus.pulse ? 'dot-pulse' : ''}"
 						></span>
@@ -183,39 +194,18 @@
 				{/if}
 			</div>
 		</div>
-		<UsageRangeToolbar
-			ranges={data.ranges}
-			range={data.range}
-			{hrefWith}
-			customFrom={data.customFrom}
-			customTo={data.customTo}
-			onApplyCustom={applyCustom}
-			onRefresh={refresh}
-			{refreshing}
-		/>
 	</div>
 
-	{#if !hasTraffic}
-		<Card.Root>
-			<Card.Content class="py-16 text-center text-sm text-muted-foreground">
-				No gateway traffic from this token for {rangeLabel}.
-			</Card.Content>
-		</Card.Root>
-	{:else}
-		<UsageDashboard
-			totals={data.totals}
-			prevTotals={data.prevTotals}
-			series={data.series}
-			prevPoints={data.prevPoints}
-			bucket={data.bucket}
-			{rangeLabel}
-			bucketHref={(b) => hrefWith({ bucket: b })}
-			{sections}
-			breakdownLimit={data.breakdownLimit}
-			{rowLabel}
-			breakdownDescription="Requests, cost, and tokens for this token"
-		/>
-	{/if}
+	<UsageWorkbench
+		analysis={data}
+		{rangeLabel}
+		bucketHref={(b) => hrefWith({ bucket: b })}
+		onGroupBy={setGroupBy}
+		onFilters={setFilters}
+		{rowLabel}
+		{leading}
+		{trailing}
+	/>
 </div>
 
 <!-- re-copy reveal: shows the stored secret again for a re-copyable token -->

@@ -1,18 +1,17 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import BudgetAlert from '$lib/components/budget-alert.svelte';
-	import PageHeader from '$lib/components/page-header.svelte';
-	import UsageDashboard from '$lib/components/usage-dashboard.svelte';
-	import UsageRangeToolbar from '$lib/components/usage-range-toolbar.svelte';
-	import { type BreakdownSection } from '$lib/components/usage-breakdown.svelte';
+	import UsageRangePicker from '$lib/components/usage-range-picker.svelte';
+	import UsageWorkbench from '$lib/components/usage-workbench.svelte';
 	import { resolve } from '$app/paths';
 	import { goto, invalidateAll } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import { buildUsageHref, type UsageUrlOverrides } from '$lib/usage-url';
-	import Boxes from '@lucide/svelte/icons/boxes';
-	import Cpu from '@lucide/svelte/icons/cpu';
-	import KeyRound from '@lucide/svelte/icons/key-round';
-	import Server from '@lucide/svelte/icons/server';
+	import { NULL_VALUE, type UsageDimension, type UsageFilter } from '$lib/usage-group';
+	import type { DimensionUsageRow } from '$lib/server/data';
+	import Download from '@lucide/svelte/icons/download';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 
 	let { data } = $props();
 
@@ -36,8 +35,7 @@
 	);
 
 	// Preserve the params we aren't explicitly changing. Stays page-owned so the
-	// resolve()/navigation lint rule is satisfied at the source; only the base path
-	// differs from the service/token pages.
+	// resolve()/navigation lint rule is satisfied at the source.
 	function hrefWith(overrides: UsageUrlOverrides): ResolvedPathname {
 		return buildUsageHref(
 			resolve('/app/usage'),
@@ -45,7 +43,9 @@
 				range: data.range,
 				bucket: data.bucket,
 				customFrom: data.customFrom,
-				customTo: data.customTo
+				customTo: data.customTo,
+				groupBy: data.groupBy,
+				filters: data.filters
 			},
 			overrides
 		) as ResolvedPathname;
@@ -55,121 +55,132 @@
 		goto(hrefWith({ range: 'custom', from, to }), { noScroll: true });
 	}
 
-	const hasTraffic = $derived(data.byService.length > 0 || data.byModel.length > 0);
+	// Group-by and filters are URL state, so every change is a navigation — which
+	// also makes Back walk the analysis history rather than leaving the page.
+	function setGroupBy(dim: UsageDimension) {
+		goto(hrefWith({ groupBy: dim }), { noScroll: true, keepFocus: true });
+	}
+	function setFilters(filters: UsageFilter[]) {
+		goto(hrefWith({ filters }), { noScroll: true, keepFocus: true });
+	}
 
-	// Breakdown dimensions for the tabbed panel. Provider/token only appear when
-	// there's something to show.
-	const sections = $derived.by(() => {
-		const out: BreakdownSection[] = [
-			{ key: 'service', label: 'Service', icon: Boxes, rows: data.byService },
-			{
-				key: 'model',
-				label: 'Model',
-				icon: Cpu,
-				rows: data.byModel,
-				truncated: data.byModel.length >= data.breakdownLimit
-			}
-		];
-		if (data.byProvider.length > 0)
-			out.push({ key: 'provider', label: 'Provider', icon: Server, rows: data.byProvider });
-		if (data.byToken.length > 0)
-			out.push({
-				key: 'token',
-				label: 'Token',
-				icon: KeyRound,
-				rows: data.byToken,
-				truncated: data.byToken.length >= data.breakdownLimit
-			});
-		return out;
+	// The export endpoint takes the page's own query string, so the download is
+	// exactly the view on screen.
+	const exportHref = (shape: 'breakdown' | 'timeseries') =>
+		`${hrefWith({})}&shape=${shape}`.replace('/app/usage?', '/app/usage/export?');
+
+	// The dashed budget line on the chart. Only the instance-wide ceiling maps
+	// cleanly onto an org-wide chart — a per-service ceiling would be comparing a
+	// single service's limit against every service's spend. Divided across the
+	// window's buckets so the line sits at the per-bucket run rate the budget
+	// implies, matching what each column actually measures.
+	const budgetPerBucket = $derived.by(() => {
+		const monthly = data.instanceBudget?.monthly?.budgetUsd;
+		if (!monthly || monthly <= 0) return null;
+		const unit = data.grouped.unit;
+		if (unit === 'day') return monthly / 30;
+		if (unit === 'hour') return monthly / 30 / 24;
+		if (unit === 'week') return monthly / 4.345;
+		if (unit === 'month') return monthly;
+		return null;
 	});
 </script>
 
-{#snippet rowLabel(row: import('$lib/components/usage-breakdown.svelte').BreakdownRow, key: string)}
-	{#if key === 'service'}
-		{#if row.serviceId}
-			<a
-				href={resolve('/app/services/[id]', { id: row.serviceId })}
-				class="truncate font-medium hover:underline"
-			>
-				{row.serviceName ?? 'Unnamed service'}
-			</a>
-		{:else}
-			<span class="truncate font-medium text-muted-foreground">Deleted service</span>
-		{/if}
-	{:else if key === 'model'}
-		<span class="truncate font-mono font-medium">{row.model}</span>
-		{#if row.provider}
-			<span class="shrink-0 text-xs text-muted-foreground">{row.provider}</span>
-		{/if}
-	{:else if key === 'provider'}
-		<span class="truncate font-medium">{row.provider}</span>
-	{:else if key === 'token'}
-		{#if row.tokenId}
-			<a
-				href={resolve('/app/tokens/[id]', { id: row.tokenId })}
-				class="truncate font-medium hover:underline"
-			>
-				{row.tokenName ?? 'Revoked token'}
-			</a>
-		{:else}
-			<span class="truncate font-medium">{row.tokenName ?? 'Revoked token'}</span>
-		{/if}
-		{#if row.serviceName}
-			<span class="shrink-0 text-xs text-muted-foreground">· {row.serviceName}</span>
-		{/if}
-		{#if row.tokenDisplay}
-			<span class="shrink-0 font-mono text-xs text-muted-foreground">{row.tokenDisplay}</span>
-		{/if}
+{#snippet rowLabel(row: DimensionUsageRow, dim: UsageDimension)}
+	{#if dim === 'service' && row.key !== NULL_VALUE}
+		<a
+			href={resolve('/app/services/[id]', { id: row.key })}
+			class="truncate font-medium hover:underline"
+			title={row.label}
+		>
+			{row.label}
+		</a>
+	{:else if dim === 'token' && row.key !== NULL_VALUE}
+		<a
+			href={resolve('/app/tokens/[id]', { id: row.key })}
+			class="truncate font-medium hover:underline"
+			title={row.label}
+		>
+			{row.label}
+		</a>
+	{:else if dim === 'model'}
+		<span class="truncate font-mono text-[13px] font-medium" title={row.label}>{row.label}</span>
+	{:else}
+		<span class="truncate font-medium" title={row.label}>{row.label}</span>
 	{/if}
 {/snippet}
 
-<div class="mx-auto max-w-7xl space-y-6">
-	<PageHeader
-		title="Usage"
-		description="Spend, requests, and token volume by service, model, and machine token."
+{#snippet leading()}
+	<UsageRangePicker
+		ranges={data.ranges}
+		range={data.range}
+		{hrefWith}
+		customFrom={data.customFrom}
+		customTo={data.customTo}
+		onApplyCustom={applyCustom}
+	/>
+{/snippet}
+
+{#snippet trailing()}
+	<Button
+		variant="ghost"
+		size="icon"
+		class="size-8"
+		onclick={refresh}
+		disabled={refreshing}
+		aria-label="Refresh usage"
 	>
-		{#snippet action()}
-			<!-- Date range. Granularity lives with the trend chart. -->
-			<UsageRangeToolbar
-				ranges={data.ranges}
-				range={data.range}
-				{hrefWith}
-				customFrom={data.customFrom}
-				customTo={data.customTo}
-				onApplyCustom={applyCustom}
-				onRefresh={refresh}
-				{refreshing}
-			/>
-		{/snippet}
-	</PageHeader>
+		<RefreshCw class="size-4 {refreshing ? 'animate-spin' : ''}" />
+	</Button>
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger>
+			{#snippet child({ props })}
+				<Button {...props} variant="outline" size="sm" class="gap-1.5">
+					<Download class="size-4" />
+					Export
+				</Button>
+			{/snippet}
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Content align="end">
+			<DropdownMenu.Item>
+				{#snippet child({ props })}
+					<a {...props} href={exportHref('breakdown')} download> Breakdown (CSV) </a>
+				{/snippet}
+			</DropdownMenu.Item>
+			<DropdownMenu.Item>
+				{#snippet child({ props })}
+					<a {...props} href={exportHref('timeseries')} download> Time series (CSV) </a>
+				{/snippet}
+			</DropdownMenu.Item>
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
+{/snippet}
+
+<div class="mx-auto max-w-7xl space-y-5">
+	<div>
+		<h1 class="text-xl font-semibold tracking-tight">Cost analysis</h1>
+		<p class="text-sm text-muted-foreground">
+			Spend, requests and token volume — sliced by service, model, provider or machine token.
+		</p>
+	</div>
 
 	<BudgetAlert
 		statuses={data.instanceBudget ? [data.instanceBudget, ...data.budgets] : data.budgets}
 		threshold={data.budgetThreshold}
 	/>
 
-	{#if !hasTraffic}
-		<Card.Root>
-			<Card.Content class="py-16 text-center text-sm text-muted-foreground">
-				No gateway traffic for {rangeLabel}.
-			</Card.Content>
-		</Card.Root>
-	{:else}
-		<UsageDashboard
-			totals={data.totals}
-			prevTotals={data.prevTotals}
-			series={data.series}
-			prevPoints={data.prevPoints}
-			bucket={data.bucket}
-			{rangeLabel}
-			bucketHref={(b) => hrefWith({ bucket: b })}
-			{sections}
-			breakdownLimit={data.breakdownLimit}
-			{rowLabel}
-			showExcludeToggles
-			budget={data.budgets}
-			instanceBudget={data.instanceBudget}
-			budgetThreshold={data.budgetThreshold}
-		/>
-	{/if}
+	<UsageWorkbench
+		analysis={data}
+		{rangeLabel}
+		bucketHref={(b) => hrefWith({ bucket: b })}
+		onGroupBy={setGroupBy}
+		onFilters={setFilters}
+		{rowLabel}
+		{leading}
+		{trailing}
+		budgets={data.budgets}
+		instanceBudget={data.instanceBudget}
+		budgetThreshold={data.budgetThreshold}
+		{budgetPerBucket}
+	/>
 </div>

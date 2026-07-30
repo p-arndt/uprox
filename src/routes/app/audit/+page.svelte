@@ -5,7 +5,7 @@
 	import PageHeader from '$lib/components/page-header.svelte';
 	import EmptyState from '$lib/components/empty-state.svelte';
 	import SearchInput from '$lib/components/search-input.svelte';
-	import { formatDateTime, relativeTime, formatUsd } from '$lib/format';
+	import { formatDateTime, relativeTime, formatUsd, formatCount } from '$lib/format';
 	import { eventTone, toneDot, toneText, actionIcon, isGatewayAction } from '$lib/events';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
 	import Search from '@lucide/svelte/icons/search';
@@ -155,7 +155,7 @@
 									{e.costUsd ? formatUsd(e.costUsd) : '—'}
 								</Table.Cell>
 								<Table.Cell class="text-right text-muted-foreground tabular-nums">
-									{e.providerCachedTokens ? `${e.providerCachedTokens.toLocaleString()} tok` : '—'}
+									{e.providerCachedTokens ? `${formatCount(e.providerCachedTokens)} tok` : '—'}
 								</Table.Cell>
 								<Table.Cell class="text-right text-muted-foreground tabular-nums">
 									{e.latencyMs != null ? `${e.latencyMs}ms` : '—'}

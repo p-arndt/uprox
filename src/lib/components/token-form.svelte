@@ -140,7 +140,7 @@
 	>
 		{#snippet advanced()}
 			<div class="space-y-2">
-				<div class="flex text-muted-foreground items-center gap-1.5">
+				<div class="flex items-center gap-1.5 text-muted-foreground">
 					<Label>Scopes</Label>
 					<FieldHint text="Leave all unchecked to grant every scope." />
 				</div>

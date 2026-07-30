@@ -7,7 +7,8 @@ import {
 	resolveSeriesBucket,
 	shiftRangeBack,
 	MAX_SERIES_BUCKETS,
-	USAGE_RANGES
+	USAGE_RANGES,
+	DEFAULT_USAGE_RANGE
 } from '$lib/usage-range';
 
 // Pin "now" to a mid-month, mid-day UTC instant so calendar buckets are
@@ -23,10 +24,13 @@ describe('resolveUsageRange', () => {
 		vi.useRealTimers();
 	});
 
-	it('falls back to the default (30d) for unknown or missing keys', () => {
-		expect(resolveUsageRange(undefined).key).toBe('30d');
-		expect(resolveUsageRange(null).key).toBe('30d');
-		expect(resolveUsageRange('nonsense').key).toBe('30d');
+	// Asserted against DEFAULT_USAGE_RANGE rather than a literal: these tests are
+	// about the fallback *behaviour*, not about which preset is currently the
+	// default, and hard-coding the key made them fail the moment it changed.
+	it('falls back to the default for unknown or missing keys', () => {
+		expect(resolveUsageRange(undefined).key).toBe(DEFAULT_USAGE_RANGE);
+		expect(resolveUsageRange(null).key).toBe(DEFAULT_USAGE_RANGE);
+		expect(resolveUsageRange('nonsense').key).toBe(DEFAULT_USAGE_RANGE);
 	});
 
 	it('"today" starts at 00:00 UTC and runs to now (no end)', () => {
@@ -94,10 +98,16 @@ describe('resolveUsageRange', () => {
 	});
 
 	it('"custom" falls back to the default when a bound is missing or malformed', () => {
-		expect(resolveUsageRange('custom', { from: '2026-06-03', to: null }).key).toBe('30d');
-		expect(resolveUsageRange('custom', { from: 'nonsense', to: '2026-06-09' }).key).toBe('30d');
-		expect(resolveUsageRange('custom', { from: '2026-02-30', to: '2026-06-09' }).key).toBe('30d');
-		expect(resolveUsageRange('custom').key).toBe('30d');
+		expect(resolveUsageRange('custom', { from: '2026-06-03', to: null }).key).toBe(
+			DEFAULT_USAGE_RANGE
+		);
+		expect(resolveUsageRange('custom', { from: 'nonsense', to: '2026-06-09' }).key).toBe(
+			DEFAULT_USAGE_RANGE
+		);
+		expect(resolveUsageRange('custom', { from: '2026-02-30', to: '2026-06-09' }).key).toBe(
+			DEFAULT_USAGE_RANGE
+		);
+		expect(resolveUsageRange('custom').key).toBe(DEFAULT_USAGE_RANGE);
 	});
 });
 
@@ -203,7 +213,7 @@ describe('normalizeRangeKey', () => {
 		for (const r of USAGE_RANGES) expect(normalizeRangeKey(r.key)).toBe(r.key);
 	});
 	it('coerces anything else to the default', () => {
-		expect(normalizeRangeKey('')).toBe('30d');
-		expect(normalizeRangeKey('7days')).toBe('30d');
+		expect(normalizeRangeKey('')).toBe(DEFAULT_USAGE_RANGE);
+		expect(normalizeRangeKey('7days')).toBe(DEFAULT_USAGE_RANGE);
 	});
 });

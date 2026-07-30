@@ -4,7 +4,7 @@
 	import BudgetAlert from '$lib/components/budget-alert.svelte';
 	import { resolve } from '$app/paths';
 	import type { Pathname, ResolvedPathname } from '$app/types';
-	import { relativeTime, formatDateTime, formatUsd, formatTokens } from '$lib/format';
+	import { relativeTime, formatDateTime, formatUsd, formatTokens, formatCount } from '$lib/format';
 	import { eventTone, toneDot, toneText, actionIcon } from '$lib/events';
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import KeyRound from '@lucide/svelte/icons/key-round';
@@ -169,7 +169,7 @@
 						</Card.Header>
 						<Card.Content>
 							<div class="text-3xl font-semibold tabular-nums {c.alert ? 'text-destructive' : ''}">
-								{c.value.toLocaleString()}
+								{formatCount(c.value)}
 							</div>
 						</Card.Content>
 					</Card.Root>
@@ -233,7 +233,7 @@
 						</p>
 						{#if data.stats.cacheHits > 0}
 							<p class="text-xs text-muted-foreground tabular-nums">
-								{data.stats.cacheHits.toLocaleString()} replayed responses · {formatUsd(
+								{formatCount(data.stats.cacheHits)} replayed responses · {formatUsd(
 									data.stats.cacheSavedUsd
 								)} saved
 							</p>
@@ -247,7 +247,7 @@
 							>Requests · 14 days</Card.Title
 						>
 						<span class="text-xs text-muted-foreground tabular-nums"
-							>{last7Requests.toLocaleString()} this week</span
+							>{formatCount(last7Requests)} this week</span
 						>
 					</Card.Header>
 					<Card.Content>

@@ -8,15 +8,7 @@
  */
 
 export type UsageRangeKey =
-	| 'today'
-	| 'yesterday'
-	| 'last-24h'
-	| '7d'
-	| '30d'
-	| 'this-month'
-	| 'last-month'
-	| '90d'
-	| 'ytd';
+	'today' | 'yesterday' | 'last-24h' | '7d' | '30d' | 'this-month' | 'last-month' | '90d' | 'ytd';
 
 export interface UsageRangeOption {
 	key: UsageRangeKey;
@@ -36,7 +28,13 @@ export const USAGE_RANGES: readonly UsageRangeOption[] = [
 	{ key: 'ytd', label: 'Year to date' }
 ];
 
-export const DEFAULT_USAGE_RANGE: UsageRangeKey = '30d';
+/**
+ * Today by default: the usage pages are opened to answer "what is happening
+ * right now" far more often than "what did last month total", and a 30-day
+ * default buried today's spike in a month of history. Longer windows are one
+ * click away in the range picker, and are what the URL carries when shared.
+ */
+export const DEFAULT_USAGE_RANGE: UsageRangeKey = 'today';
 
 /**
  * Resolved-range keys cover the presets above plus `'custom'`, which is driven by
@@ -138,7 +136,11 @@ export function resolveUsageRange(
 			return { key: k, start: new Date(Date.UTC(now.getUTCFullYear(), 0, 1)) };
 		case '30d':
 		default:
-			return { key: '30d', start: new Date(now.getTime() - 30 * DAY_MS) };
+			// `key: k`, never a hard-coded '30d': `k` has already been coerced to a
+			// valid range key, and writing the literal here meant the returned key
+			// silently disagreed with the resolved window whenever the default
+			// changed.
+			return { key: k, start: new Date(now.getTime() - 30 * DAY_MS) };
 	}
 }
 

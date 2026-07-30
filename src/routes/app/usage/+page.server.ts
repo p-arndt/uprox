@@ -1,89 +1,25 @@
 import type { PageServerLoad } from './$types';
 import { requireOrg } from '$lib/server/org';
-import {
-	orgUsageByModel,
-	orgUsageByProvider,
-	orgUsageByService,
-	orgUsageByToken,
-	orgUsageTotals,
-	orgUsageSeries,
-	orgBudgetStatus,
-	instanceBudgetStatus,
-	getSettings
-} from '$lib/server/data';
-import {
-	USAGE_RANGES,
-	resolveUsageRange,
-	resolveSeriesBucket,
-	normalizeBucket,
-	shiftRangeBack
-} from '$lib/usage-range';
-
-const DAY_MS = 86_400_000;
-const ymd = (d: Date) => d.toISOString().slice(0, 10);
-
-/** Default top-N for the breakdown tables; surfaced so the page can flag truncation. */
-const BREAKDOWN_LIMIT = 50;
+import { orgBudgetStatus, instanceBudgetStatus, getSettings } from '$lib/server/data';
+import { loadUsageAnalysis } from '$lib/server/usage-analysis';
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
-	const params = event.url.searchParams;
-	const range = resolveUsageRange(params.get('range'), {
-		from: params.get('from'),
-		to: params.get('to')
-	});
-	// Resolve the effective bucket once so the current and previous-period series
-	// share an identical granularity (and therefore align bucket-for-bucket).
-	const bucket = normalizeBucket(params.get('bucket'));
-	const unit = resolveSeriesBucket(range, bucket);
-	const prevRange = shiftRangeBack(range);
 
-	const [
-		totals,
-		prevTotals,
-		byModel,
-		byProvider,
-		byService,
-		byToken,
-		series,
-		prevSeries,
-		budgets,
-		instanceBudget,
-		settings
-	] = await Promise.all([
-		orgUsageTotals(range),
-		// previous equal-length window — powers the headline deltas
-		orgUsageTotals(prevRange),
-		orgUsageByModel(range, { limit: BREAKDOWN_LIMIT }),
-		orgUsageByProvider(range),
-		orgUsageByService(range),
-		orgUsageByToken(range, { limit: BREAKDOWN_LIMIT }),
-		orgUsageSeries(range, { unit }),
-		orgUsageSeries(prevRange, { unit }),
-		// budgets always reflect the current UTC day/month window, not the selected range
+	const [analysis, budgets, instanceBudget, settings] = await Promise.all([
+		// org-wide: every dimension is available, and the three donuts show the
+		// compositions an operator reaches for first
+		loadUsageAnalysis(event, { donutDims: ['service', 'model', 'provider'] }),
+		// budgets always reflect the current UTC day/month window, not the selected
+		// range, and are deliberately NOT filtered: a ceiling applies to all of a
+		// service's traffic, so showing a filtered figure against it would mislead.
 		orgBudgetStatus(),
 		instanceBudgetStatus(),
 		getSettings()
 	]);
 
 	return {
-		range: range.key,
-		ranges: USAGE_RANGES,
-		bucket,
-		breakdownLimit: BREAKDOWN_LIMIT,
-		// the applied custom window echoed back (inclusive end) so the picker pre-fills
-		customFrom: range.key === 'custom' ? ymd(range.start) : null,
-		customTo:
-			range.key === 'custom' && range.end ? ymd(new Date(range.end.getTime() - DAY_MS)) : null,
-		totals,
-		prevTotals,
-		byModel,
-		byProvider,
-		byService,
-		byToken,
-		series,
-		// only the points are needed for the overlay; the unit matches `series`
-		prevPoints: prevSeries.points,
+		...analysis,
 		budgets,
 		instanceBudget,
 		budgetThreshold: settings.budgetAlertThresholdPct / 100

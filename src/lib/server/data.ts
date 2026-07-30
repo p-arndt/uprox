@@ -8,7 +8,8 @@ import {
 	auditLog,
 	requestTrace,
 	traceSpan,
-	settings
+	settings,
+	modelPrice
 } from '$lib/server/db/schema';
 import { encrypt, decrypt } from '$lib/server/crypto';
 import { issueToken } from '$lib/server/tokens';
@@ -22,6 +23,14 @@ import {
 	type ResolvedRange,
 	type SeriesBucket
 } from '$lib/usage-range';
+import {
+	NULL_VALUE,
+	OTHERS_KEY,
+	type UsageDimension,
+	type UsageFilter,
+	type UsageFilterOption,
+	type UsageFilterOptions
+} from '$lib/usage-group';
 
 /**
  * Inline limit & access overrides settable directly on a service or token —
@@ -1163,7 +1172,13 @@ const BUCKET_STEP: Record<SeriesBucket, string> = {
  */
 export async function orgUsageSeries(
 	range: ResolvedRange,
-	opts: { serviceId?: string; tokenId?: string; unit?: BucketChoice } = {}
+	opts: {
+		serviceId?: string;
+		tokenId?: string;
+		unit?: BucketChoice;
+		/** dimension filters from the cost-analysis toolbar */
+		filters?: UsageFilter[];
+	} = {}
 ): Promise<UsageSeries> {
 	const unit = resolveSeriesBucket(range, opts.unit ?? 'auto');
 	const step = BUCKET_STEP[unit];
@@ -1174,6 +1189,7 @@ export async function orgUsageSeries(
 		? sql`and ${auditLog.serviceId} = ${opts.serviceId}::uuid`
 		: sql``;
 	const tokenFilter = opts.tokenId ? sql`and ${auditLog.tokenId} = ${opts.tokenId}::uuid` : sql``;
+	const dimFilters = (opts.filters ?? []).map((f) => sql`and ${filterCond(f)}`);
 
 	const rows = await db.execute<{
 		bucket: string;
@@ -1200,6 +1216,7 @@ export async function orgUsageSeries(
 			and ${auditLog.action} like 'gateway.%'
 			${serviceFilter}
 			${tokenFilter}
+			${sql.join(dimFilters, sql` `)}
 		group by g.bucket
 		order by g.bucket asc
 	`);
@@ -1226,14 +1243,104 @@ export async function orgUsageSeries(
  * exclusively. Pass the result to `and(...)` — `undefined` legs are ignored by
  * drizzle.
  */
-function usageConds(range: ResolvedRange, serviceId?: string, tokenId?: string) {
+function usageConds(
+	range: ResolvedRange,
+	serviceId?: string,
+	tokenId?: string,
+	filters?: UsageFilter[]
+) {
 	return [
 		sql`${auditLog.action} like 'gateway.%'`,
 		gte(auditLog.createdAt, range.start),
 		range.end ? lt(auditLog.createdAt, range.end) : undefined,
 		serviceId ? eq(auditLog.serviceId, serviceId) : undefined,
-		tokenId ? eq(auditLog.tokenId, tokenId) : undefined
+		tokenId ? eq(auditLog.tokenId, tokenId) : undefined,
+		...(filters ?? []).map(filterCond)
 	];
+}
+
+/* ------------------------- dimension → column mapping ------------------------- */
+
+/**
+ * The SQL identity of each groupable dimension. This map is the ONLY place a
+ * dimension key becomes a column, which is what keeps the URL-supplied `group=`
+ * and `f=` values safe: an unknown key never reaches here (it's rejected by
+ * `isUsageDimension` first), and the values themselves are always bound as
+ * parameters, never interpolated.
+ *
+ * `value` is compared and grouped as text — including for the uuid columns — so
+ * a hand-edited filter value can't blow up the query with a uuid cast error, and
+ * so NULLs (a deleted service, a denial that never resolved a model) collapse to
+ * one addressable `NULL_VALUE` bucket instead of vanishing from the grouping.
+ */
+const DIMENSION_SQL: Record<
+	UsageDimension,
+	{ value: ReturnType<typeof sql>; label: ReturnType<typeof sql>; hint?: ReturnType<typeof sql> }
+> = {
+	service: {
+		value: sql`coalesce(${auditLog.serviceId}::text, ${NULL_VALUE})`,
+		label: sql`max(${service.name})`
+	},
+	model: {
+		value: sql`coalesce(${auditLog.model}, ${NULL_VALUE})`,
+		label: sql`max(${auditLog.model})`,
+		hint: sql`max(${auditLog.provider})`
+	},
+	provider: {
+		value: sql`coalesce(${auditLog.provider}, ${NULL_VALUE})`,
+		label: sql`max(${auditLog.provider})`
+	},
+	token: {
+		value: sql`coalesce(${auditLog.tokenId}::text, ${NULL_VALUE})`,
+		label: sql`max(${machineToken.name})`,
+		hint: sql`max(${machineToken.display})`
+	},
+	status: {
+		value: sql`coalesce(${auditLog.status}, ${NULL_VALUE})`,
+		label: sql`max(${auditLog.status})`
+	}
+};
+
+/**
+ * The join a dimension needs to resolve its human-readable label. Only the id
+ * dimensions need one — a query grouping by model shouldn't pay for the service
+ * join. Empty fragments are a no-op when interpolated.
+ */
+const DIMENSION_JOIN: Record<UsageDimension, ReturnType<typeof sql>> = {
+	service: sql`left join ${service} on ${service.id} = ${auditLog.serviceId}`,
+	token: sql`left join ${machineToken} on ${machineToken.id} = ${auditLog.tokenId}`,
+	model: sql``,
+	provider: sql``,
+	status: sql``
+};
+
+/** One filter clause: OR within the dimension's values, AND across dimensions. */
+function filterCond(f: UsageFilter) {
+	const col = DIMENSION_SQL[f.dim].value;
+	// Each value is its own bound parameter — never interpolated — so the list is
+	// inert regardless of what the URL carried.
+	const list = sql.join(
+		f.values.map((v) => sql`${v}`),
+		sql`, `
+	);
+	return sql`${col} in (${list})`;
+}
+
+/**
+ * The usage predicate as a single raw-SQL fragment, for the queries built with
+ * `db.execute` rather than the query builder (the time-series ones, which need
+ * `generate_series`). Same semantics as {@link usageConds}; the bounds are bound
+ * as ISO strings cast with `::timestamp` — discarding the `Z` and staying
+ * UTC-aligned — because a raw template can't bind a JS `Date`.
+ */
+function usageCondsSql(range: ResolvedRange, filters?: UsageFilter[]) {
+	const parts = [
+		sql`${auditLog.action} like 'gateway.%'`,
+		sql`${auditLog.createdAt} >= ${range.start.toISOString()}::timestamp`,
+		...(range.end ? [sql`${auditLog.createdAt} < ${range.end.toISOString()}::timestamp`] : []),
+		...(filters ?? []).map(filterCond)
+	];
+	return sql.join(parts, sql` and `);
 }
 
 export interface ModelUsage {
@@ -1439,6 +1546,505 @@ export async function orgUsageByToken(
 	}));
 }
 
+/* ------------------------ grouped (cost-analysis) usage ----------------------- */
+
+/** One row of a by-dimension breakdown: a single series' totals over the window. */
+export interface DimensionUsageRow {
+	/** the raw grouping value — a uuid, a model name, or NULL_VALUE/OTHERS_KEY */
+	key: string;
+	/** display name; falls back to the key when the joined row is gone */
+	label: string;
+	/** secondary detail (a model's provider, a token's masked display) */
+	hint: string | null;
+	costUsd: number;
+	requests: number;
+	denied: number;
+	inputTokens: number;
+	outputTokens: number;
+}
+
+/**
+ * Gateway traffic over the window grouped by an arbitrary dimension, ranked by
+ * spend. This is the generalisation of the four hand-written `orgUsageByX`
+ * breakdowns above, and the single source for the cost-analysis page's donuts,
+ * detail table, and the series ranking the stacked chart stacks in.
+ *
+ * Ranked by cost (not request count, which the older breakdowns use) because
+ * this drives a *cost* analysis: the series worth a colour slot is the expensive
+ * one, not merely the chatty one. Ties fall back to request count so a window of
+ * all-zero spend still ranks deterministically.
+ */
+export async function orgUsageByDimension(
+	range: ResolvedRange,
+	dim: UsageDimension,
+	opts: { filters?: UsageFilter[]; limit?: number; serviceId?: string; tokenId?: string } = {}
+): Promise<DimensionUsageRow[]> {
+	const d = DIMENSION_SQL[dim];
+	const join = DIMENSION_JOIN[dim];
+	const scope = [
+		...(opts.serviceId ? [sql`${auditLog.serviceId} = ${opts.serviceId}::uuid`] : []),
+		...(opts.tokenId ? [sql`${auditLog.tokenId} = ${opts.tokenId}::uuid`] : [])
+	];
+	const where = sql.join([usageCondsSql(range, opts.filters), ...scope], sql` and `);
+
+	const rows = await db.execute<{
+		key: string;
+		label: string | null;
+		hint: string | null;
+		cost: string;
+		requests: number;
+		denied: number;
+		input_tokens: number;
+		output_tokens: number;
+	}>(sql`
+		select
+			${d.value} as key,
+			${d.label} as label,
+			${d.hint ?? sql`null::text`} as hint,
+			coalesce(sum(${auditLog.costUsd}), 0)::text as cost,
+			count(*)::int as requests,
+			(count(*) filter (where ${auditLog.status} = 'deny'))::int as denied,
+			coalesce(sum(${auditLog.inputTokens}), 0)::bigint as input_tokens,
+			coalesce(sum(${auditLog.outputTokens}), 0)::bigint as output_tokens
+		from ${auditLog}
+		${join}
+		where ${where}
+		-- Group by the select ordinal, not by repeating the expression: the NULL
+		-- sentinel inside it is a bound parameter, and two occurrences bind as two
+		-- distinct placeholders, so Postgres would not recognise them as the same
+		-- expression ("must appear in the GROUP BY clause").
+		group by 1
+		order by coalesce(sum(${auditLog.costUsd}), 0) desc, count(*) desc
+		${opts.limit ? sql`limit ${opts.limit}` : sql``}
+	`);
+
+	return rows.map((r) => ({
+		key: r.key,
+		label: r.label ?? fallbackLabel(dim, r.key),
+		hint: r.hint,
+		costUsd: Number(r.cost ?? 0),
+		requests: Number(r.requests ?? 0),
+		denied: Number(r.denied ?? 0),
+		inputTokens: Number(r.input_tokens ?? 0),
+		outputTokens: Number(r.output_tokens ?? 0)
+	}));
+}
+
+/**
+ * What to call a series whose joined row no longer exists (a deleted service, a
+ * revoked-and-purged token) or whose column was NULL. Naming it explicitly beats
+ * showing a bare uuid, and beats dropping the row — the spend was real and still
+ * has to reconcile against the total.
+ */
+function fallbackLabel(dim: UsageDimension, key: string): string {
+	if (key === OTHERS_KEY) return 'Others';
+	if (key !== NULL_VALUE) return key;
+	if (dim === 'service') return 'Deleted service';
+	if (dim === 'token') return 'Revoked token';
+	if (dim === 'model') return 'No model';
+	if (dim === 'provider') return 'Unrouted';
+	return 'Unknown';
+}
+
+/** One coloured band of the stacked chart: a series and its value per bucket. */
+export interface GroupedSeries {
+	key: string;
+	label: string;
+	hint: string | null;
+	/** aligned 1:1 with {@link GroupedSeriesResult.buckets} */
+	points: { requests: number; denied: number; costUsd: number; tokens: number }[];
+	/** window totals, for the legend and tooltip */
+	costUsd: number;
+	requests: number;
+	tokens: number;
+}
+
+export interface GroupedSeriesResult {
+	unit: SeriesBucket;
+	/** UTC-aligned bucket starts, ISO-8601 with a trailing Z */
+	buckets: string[];
+	series: GroupedSeries[];
+	/** true when traffic outside the top-N was folded into the "Others" series */
+	hasOthers: boolean;
+}
+
+/**
+ * Traffic over the window, bucketed in time AND split by a dimension — the query
+ * behind the stacked cost chart.
+ *
+ * Runs in two passes rather than one: first rank the dimension to find the
+ * top-N series, then fetch the time split with everything outside that set
+ * folded into a single `Others` band. The alternative — pulling every
+ * (bucket, series) pair and rolling up in JS — is unbounded on a dimension like
+ * model, where a busy month can carry hundreds of distinct values.
+ *
+ * The `generate_series × unnest` cross join pads every (bucket, series) cell, so
+ * the returned arrays are dense and the chart can index them positionally
+ * without gap-checking. A series that was quiet in a bucket gets a real zero.
+ */
+export async function orgUsageSeriesGrouped(
+	range: ResolvedRange,
+	dim: UsageDimension,
+	opts: {
+		unit?: BucketChoice;
+		filters?: UsageFilter[];
+		/** how many real series get their own band before the rest fold into Others */
+		limit?: number;
+		/** narrow to one service / token, for the detail pages */
+		serviceId?: string;
+		tokenId?: string;
+	} = {}
+): Promise<GroupedSeriesResult> {
+	const unit = resolveSeriesBucket(range, opts.unit ?? 'auto');
+	const step = BUCKET_STEP[unit];
+	const startIso = range.start.toISOString();
+	const upperIso = (range.end ?? new Date()).toISOString();
+	const limit = opts.limit ?? 8;
+	// The page-level scope, applied identically to the ranking pass and the
+	// time-split pass so the bands can't sum to more than the scoped total.
+	const scope = sql.join(
+		[
+			...(opts.serviceId ? [sql`${auditLog.serviceId} = ${opts.serviceId}::uuid`] : []),
+			...(opts.tokenId ? [sql`${auditLog.tokenId} = ${opts.tokenId}::uuid`] : [])
+		].map((c) => sql` and ${c}`),
+		sql``
+	);
+
+	const ranked = await orgUsageByDimension(range, dim, {
+		filters: opts.filters,
+		serviceId: opts.serviceId,
+		tokenId: opts.tokenId
+	});
+	const top = ranked.slice(0, limit);
+	const hasOthers = ranked.length > top.length;
+
+	// Nothing to stack. Returns empty arrays rather than a padded axis: with no
+	// series there is no axis to pad against, and the chart's own empty state
+	// reads better than a grid of zeroes.
+	if (top.length === 0) {
+		return { unit, buckets: [], series: [], hasOthers: false };
+	}
+
+	const d = DIMENSION_SQL[dim];
+	const topKeys = top.map((r) => r.key);
+	const keyList = sql.join(
+		topKeys.map((k) => sql`${k}`),
+		sql`, `
+	);
+	// The key each row contributes to: itself if it's a top-N series, else the
+	// Others bucket. Computed in SQL so the fold happens before the group-by.
+	const foldedKey = sql`(case when ${d.value} in (${keyList}) then ${d.value} else ${OTHERS_KEY} end)`;
+	// The axis of series to pad against — the top-N plus Others when non-empty.
+	const axisKeys = hasOthers ? [...topKeys, OTHERS_KEY] : topKeys;
+	const axisList = sql.join(
+		axisKeys.map((k) => sql`${k}`),
+		sql`, `
+	);
+
+	const rows = await db.execute<{
+		bucket: string;
+		key: string;
+		requests: number;
+		denied: number;
+		cost: string;
+		tokens: number;
+	}>(sql`
+		select
+			to_char(g.bucket, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as bucket,
+			k.key as key,
+			count(${auditLog.id})::int as requests,
+			(count(${auditLog.id}) filter (where ${auditLog.status} = 'deny'))::int as denied,
+			coalesce(sum(${auditLog.costUsd}), 0)::text as cost,
+			coalesce(sum(coalesce(${auditLog.inputTokens}, 0) + coalesce(${auditLog.outputTokens}, 0)), 0)::bigint as tokens
+		from generate_series(
+			date_trunc(${unit}, ${startIso}::timestamp),
+			date_trunc(${unit}, ${upperIso}::timestamp),
+			${step}::interval
+		) as g(bucket)
+		cross join (select unnest(array[${axisList}]::text[]) as key) as k
+		-- no label join here: the grouping expressions read audit_log columns only,
+		-- and the display names already came back with the ranking pass above
+		left join ${auditLog}
+			on date_trunc(${unit}, ${auditLog.createdAt}) = g.bucket
+			and ${foldedKey} = k.key
+			and ${usageCondsSql(range, opts.filters)}${scope}
+		group by g.bucket, k.key
+		order by g.bucket asc
+	`);
+
+	// Positional rebuild: buckets in first-seen (ascending) order, then one dense
+	// point array per series indexed by that bucket order.
+	const buckets: string[] = [];
+	const bucketIndex = new Map<string, number>();
+	for (const r of rows) {
+		if (!bucketIndex.has(r.bucket)) {
+			bucketIndex.set(r.bucket, buckets.length);
+			buckets.push(r.bucket);
+		}
+	}
+
+	const meta = new Map(top.map((r) => [r.key, r]));
+	const series: GroupedSeries[] = axisKeys.map((key) => {
+		const m = meta.get(key);
+		return {
+			key,
+			label: m?.label ?? fallbackLabel(dim, key),
+			hint: m?.hint ?? null,
+			points: buckets.map(() => ({ requests: 0, denied: 0, costUsd: 0, tokens: 0 })),
+			costUsd: 0,
+			requests: 0,
+			tokens: 0
+		};
+	});
+	const seriesIndex = new Map(series.map((s, i) => [s.key, i]));
+
+	for (const r of rows) {
+		const si = seriesIndex.get(r.key);
+		const bi = bucketIndex.get(r.bucket);
+		if (si === undefined || bi === undefined) continue;
+		const s = series[si];
+		const point = {
+			requests: Number(r.requests ?? 0),
+			denied: Number(r.denied ?? 0),
+			costUsd: Number(r.cost ?? 0),
+			tokens: Number(r.tokens ?? 0)
+		};
+		s.points[bi] = point;
+		s.costUsd += point.costUsd;
+		s.requests += point.requests;
+		s.tokens += point.tokens;
+	}
+
+	return { unit, buckets, series, hasOthers };
+}
+
+/**
+ * The values each dimension can be filtered to, derived from the traffic
+ * actually present in the window. Deriving from traffic rather than from the
+ * service/token tables means the picker never offers a service that hasn't
+ * called the gateway — and still offers a deleted one that did.
+ *
+ * Deliberately computed against the *unfiltered* window so removing a pill can
+ * always be undone; a picker that narrowed itself as you filtered would make
+ * some combinations unreachable.
+ */
+export async function orgUsageFilterOptions(
+	range: ResolvedRange,
+	dims: readonly UsageDimension[],
+	opts: { limit?: number; serviceId?: string; tokenId?: string } = {}
+): Promise<UsageFilterOptions> {
+	const limit = opts.limit ?? 100;
+	const entries = await Promise.all(
+		dims.map(async (dim) => {
+			const rows = await orgUsageByDimension(range, dim, {
+				limit,
+				serviceId: opts.serviceId,
+				tokenId: opts.tokenId
+			});
+			const options: UsageFilterOption[] = rows.map((r) => ({
+				value: r.key,
+				label: r.label,
+				hint: r.hint
+			}));
+			return [dim, options] as const;
+		})
+	);
+	return Object.fromEntries(entries) as UsageFilterOptions;
+}
+
+/* ------------------------------- token meters -------------------------------- */
+
+/**
+ * One consumption meter — uprox's answer to an Azure "meter", the sub-line a
+ * resource's cost decomposes into. A gateway request doesn't bill as one
+ * undifferentiated blob of tokens: fresh input, cache reads, cache writes,
+ * output and embeddings are each metered at a different rate (see the
+ * `*_per_mtok` columns on model_price), which is exactly why they deserve to be
+ * separate rows rather than the two "exclude this" toggles they used to be.
+ */
+export interface TokenMeter {
+	key: 'input' | 'cacheRead' | 'cacheWrite' | 'output' | 'embedding';
+	tokens: number;
+}
+
+export interface TokenMeterBreakdown {
+	meters: TokenMeter[];
+	/** every metered token in the window — the meters sum to exactly this */
+	totalTokens: number;
+	/** actual spend recorded for the window */
+	costUsd: number;
+	/** exact USD uprox's own response cache avoided (replayed requests) */
+	savedUsd: number;
+	/** input tokens uprox replayed from its response cache (never sent upstream) */
+	savedInputTokens: number;
+	savedOutputTokens: number;
+	/**
+	 * Estimated USD the *provider's* prompt cache avoided: cache-read tokens
+	 * priced at the delta between full input and the cache-read rate, per model.
+	 * An estimate, unlike savedUsd — the provider bills the discount, it doesn't
+	 * itemise it — so it is always labelled as such in the UI.
+	 */
+	providerCacheSavedUsd: number;
+}
+
+/**
+ * Decompose the window's token volume into its billing meters, with the cost
+ * each caching layer avoided.
+ *
+ * The meters partition the total exactly — every token lands in exactly one row
+ * and they sum to `totalTokens` — because a breakdown whose parts don't add up
+ * to the whole is worse than no breakdown. Specifically: embeddings are carved
+ * out of input/output first (a provider never prompt-caches them), then cache
+ * reads are carved out of what's left of input.
+ */
+export async function orgTokenMeters(
+	range: ResolvedRange,
+	opts: { filters?: UsageFilter[]; serviceId?: string; tokenId?: string } = {}
+): Promise<TokenMeterBreakdown> {
+	const embedding = sql`${auditLog.model} ilike '%embedding%'`;
+	const conds = usageConds(range, opts.serviceId, opts.tokenId, opts.filters);
+
+	// Per-model so the provider-cache saving can be priced at that model's own
+	// rate; the meters themselves are just sums and get folded together after.
+	const rows = await db
+		.select({
+			model: auditLog.model,
+			inputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}), 0)::bigint`,
+			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`,
+			// Cache reads split by whether the row is an embedding call. Only the
+			// non-embedding portion becomes its own meter: an embedding row's cache
+			// reads are already inside that row's input, which the embedding meter
+			// claims whole, so counting them again would inflate the total.
+			cacheRead: sql<number>`coalesce(sum(${auditLog.providerCachedTokens}) filter (where not (${embedding})), 0)::bigint`,
+			cacheWrite: sql<number>`coalesce(sum(${auditLog.cacheWriteTokens}) filter (where not (${embedding})), 0)::bigint`,
+			embeddingInput: sql<number>`coalesce(sum(${auditLog.inputTokens}) filter (where ${embedding}), 0)::bigint`,
+			embeddingOutput: sql<number>`coalesce(sum(${auditLog.outputTokens}) filter (where ${embedding}), 0)::bigint`,
+			cost: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)::text`,
+			saved: sql<string>`coalesce(sum(${auditLog.savedUsd}), 0)::text`,
+			savedInput: sql<number>`coalesce(sum(${auditLog.savedInputTokens}), 0)::bigint`,
+			savedOutput: sql<number>`coalesce(sum(${auditLog.savedOutputTokens}), 0)::bigint`
+		})
+		.from(auditLog)
+		.where(and(...conds))
+		.groupBy(auditLog.model);
+
+	const prices = await listModelPrices();
+
+	let input = 0;
+	let cacheRead = 0;
+	let cacheWrite = 0;
+	let output = 0;
+	let embeddingTokens = 0;
+	let costUsd = 0;
+	let savedUsd = 0;
+	let savedInputTokens = 0;
+	let savedOutputTokens = 0;
+	let providerCacheSavedUsd = 0;
+
+	for (const r of rows) {
+		const embIn = Number(r.embeddingInput ?? 0);
+		const embOut = Number(r.embeddingOutput ?? 0);
+		const read = Number(r.cacheRead ?? 0);
+		const write = Number(r.cacheWrite ?? 0);
+		// Fresh input is what's left of the prompt after the embedding, cache-read
+		// and cache-write portions are carved out — the exact same subtraction the
+		// gateway's own cost formula performs (`promptTokens - cacheRead -
+		// cacheWrite`), so the meters partition the total the way the bill does.
+		// Clamped at zero: the counts come from upstream independently, so a
+		// malformed usage block could otherwise drive a meter negative.
+		const freshInput = Math.max(0, Number(r.inputTokens ?? 0) - embIn - read - write);
+
+		input += freshInput;
+		cacheRead += read;
+		cacheWrite += write;
+		output += Math.max(0, Number(r.outputTokens ?? 0) - embOut);
+		embeddingTokens += embIn + embOut;
+		costUsd += Number(r.cost ?? 0);
+		savedUsd += Number(r.saved ?? 0);
+		savedInputTokens += Number(r.savedInput ?? 0);
+		savedOutputTokens += Number(r.savedOutput ?? 0);
+
+		if (read > 0 && r.model) {
+			const p = resolveModelPrice(prices, r.model);
+			if (p) {
+				// Default cache-read multiplier is 0.1× input when the row doesn't
+				// price it explicitly — the same fallback the cost calculation uses.
+				const readRate = p.cacheReadPerMtok ?? p.inputPerMtok * 0.1;
+				providerCacheSavedUsd += (read * Math.max(0, p.inputPerMtok - readRate)) / 1_000_000;
+			}
+		}
+	}
+
+	const meters: TokenMeter[] = [
+		{ key: 'input', tokens: input },
+		{ key: 'cacheRead', tokens: cacheRead },
+		{ key: 'cacheWrite', tokens: cacheWrite },
+		{ key: 'output', tokens: output },
+		{ key: 'embedding', tokens: embeddingTokens }
+	];
+
+	return {
+		meters,
+		totalTokens: meters.reduce((s, m) => s + m.tokens, 0),
+		costUsd,
+		savedUsd,
+		savedInputTokens,
+		savedOutputTokens,
+		providerCacheSavedUsd
+	};
+}
+
+/** Price row shape the meter costing needs. */
+interface ResolvedPrice {
+	model: string;
+	inputPerMtok: number;
+	outputPerMtok: number;
+	cacheReadPerMtok: number | null;
+	cacheWritePerMtok: number | null;
+}
+
+/**
+ * All price rows, instance overrides shadowing the platform defaults for the
+ * same model. Read once per meter query rather than joined per row — the table
+ * is small (hundreds of rows at most) and this keeps the aggregate query simple.
+ */
+async function listModelPrices(): Promise<ResolvedPrice[]> {
+	const rows = await db
+		.select({
+			model: modelPrice.model,
+			isDefault: modelPrice.isDefault,
+			inputPerMtok: modelPrice.inputPerMtok,
+			outputPerMtok: modelPrice.outputPerMtok,
+			cacheReadPerMtok: modelPrice.cacheReadPerMtok,
+			cacheWritePerMtok: modelPrice.cacheWritePerMtok
+		})
+		.from(modelPrice);
+
+	const byModel = new Map<string, ResolvedPrice>();
+	// custom rows win, so apply defaults first and let overrides replace them
+	for (const r of [...rows].sort((a, b) => Number(b.isDefault) - Number(a.isDefault))) {
+		byModel.set(r.model.toLowerCase(), {
+			model: r.model.toLowerCase(),
+			inputPerMtok: Number(r.inputPerMtok ?? 0),
+			outputPerMtok: Number(r.outputPerMtok ?? 0),
+			cacheReadPerMtok: r.cacheReadPerMtok == null ? null : Number(r.cacheReadPerMtok),
+			cacheWritePerMtok: r.cacheWritePerMtok == null ? null : Number(r.cacheWritePerMtok)
+		});
+	}
+	return [...byModel.values()];
+}
+
+/** Longest-prefix match, mirroring how the gateway prices a request. */
+function resolveModelPrice(prices: ResolvedPrice[], model: string): ResolvedPrice | null {
+	const key = model.toLowerCase();
+	let best: ResolvedPrice | null = null;
+	for (const p of prices) {
+		if (key === p.model) return p;
+		if (key.startsWith(p.model) && (!best || p.model.length > best.model.length)) best = p;
+	}
+	return best;
+}
+
 export interface UsageTotals {
 	requests: number;
 	costUsd: number;
@@ -1468,7 +2074,7 @@ export interface UsageTotals {
  */
 export async function orgUsageTotals(
 	range: ResolvedRange,
-	opts: { serviceId?: string; tokenId?: string } = {}
+	opts: { serviceId?: string; tokenId?: string; filters?: UsageFilter[] } = {}
 ): Promise<UsageTotals> {
 	const embedding = sql`${auditLog.model} ilike '%embedding%'`;
 	const [row] = await db
@@ -1493,7 +2099,7 @@ export async function orgUsageTotals(
 			embeddingOutputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}) filter (where ${embedding}), 0)::bigint`
 		})
 		.from(auditLog)
-		.where(and(...usageConds(range, opts.serviceId, opts.tokenId)));
+		.where(and(...usageConds(range, opts.serviceId, opts.tokenId, opts.filters)));
 
 	return {
 		requests: Number(row?.requests ?? 0),

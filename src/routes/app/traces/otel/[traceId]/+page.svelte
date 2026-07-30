@@ -95,7 +95,7 @@
 							style="left:{barLeft(s)}%;width:{barWidth(s)}%"
 						></span>
 					</span>
-					<span class="w-14 shrink-0 text-right tabular-nums text-muted-foreground">
+					<span class="w-14 shrink-0 text-right text-muted-foreground tabular-nums">
 						{fmtDur(s.durationMs)}
 					</span>
 				</button>

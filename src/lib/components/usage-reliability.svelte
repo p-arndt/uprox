@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatCount } from '$lib/format';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import type { UsageTotals } from '$lib/server/data';
 
@@ -18,12 +19,12 @@
 			<div class="text-xs text-muted-foreground">Error rate</div>
 			<div class="text-xl font-semibold tabular-nums">{(errorRate * 100).toFixed(1)}%</div>
 			<p class="text-xs text-muted-foreground tabular-nums">
-				{totals.errors.toLocaleString()} of {totals.requests.toLocaleString()}
+				{formatCount(totals.errors)} of {formatCount(totals.requests)}
 			</p>
 		</div>
 		<div>
 			<div class="text-xs text-muted-foreground">Denied</div>
-			<div class="text-xl font-semibold tabular-nums">{totals.denied.toLocaleString()}</div>
+			<div class="text-xl font-semibold tabular-nums">{formatCount(totals.denied)}</div>
 			<p class="text-xs text-muted-foreground">blocked by policy or budget</p>
 		</div>
 		<div>

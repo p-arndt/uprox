@@ -180,7 +180,7 @@
 								>
 									{callLabel(c)}
 								</span>
-								<span class="ml-auto shrink-0 tabular-nums text-muted-foreground">
+								<span class="ml-auto shrink-0 text-muted-foreground tabular-nums">
 									{fmtMs(c.latencyMs)}
 								</span>
 							</span>

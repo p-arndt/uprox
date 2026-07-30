@@ -1,7 +1,7 @@
 <script lang="ts">
 	// A minimal inline trend line for the headline stat cards — the glanceable
 	// per-bucket shape behind a single figure (cf. the OpenAI usage cards). Shares
-	// the 0–100 viewBox + non-scaling-stroke approach with usage-chart.svelte so it
+	// the 0–100 viewBox + non-scaling-stroke approach with the usage charts so it
 	// stretches to any width while keeping an even stroke. Purely decorative, so
 	// it's aria-hidden; the real numbers live in the card text.
 

@@ -1,19 +1,18 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import UsageDashboard from '$lib/components/usage-dashboard.svelte';
-	import UsageRangeToolbar from '$lib/components/usage-range-toolbar.svelte';
-	import { type BreakdownSection } from '$lib/components/usage-breakdown.svelte';
+	import UsageRangePicker from '$lib/components/usage-range-picker.svelte';
+	import UsageWorkbench from '$lib/components/usage-workbench.svelte';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import { resolve } from '$app/paths';
 	import { goto, invalidateAll } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import { buildUsageHref, type UsageUrlOverrides } from '$lib/usage-url';
+	import { NULL_VALUE, type UsageDimension, type UsageFilter } from '$lib/usage-group';
+	import type { DimensionUsageRow } from '$lib/server/data';
 	import { relativeTime } from '$lib/format';
 	import Boxes from '@lucide/svelte/icons/boxes';
-	import Cpu from '@lucide/svelte/icons/cpu';
-	import KeyRound from '@lucide/svelte/icons/key-round';
-	import Server from '@lucide/svelte/icons/server';
 	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 
 	let { data } = $props();
 
@@ -32,7 +31,9 @@
 				range: data.range,
 				bucket: data.bucket,
 				customFrom: data.customFrom,
-				customTo: data.customTo
+				customTo: data.customTo,
+				groupBy: data.groupBy,
+				filters: data.filters
 			},
 			overrides
 		) as ResolvedPathname;
@@ -55,55 +56,54 @@
 		}
 	}
 
-	const hasTraffic = $derived(data.byModel.length > 0 || data.byToken.length > 0);
-
-	const sections = $derived.by(() => {
-		const out: BreakdownSection[] = [
-			{
-				key: 'model',
-				label: 'Model',
-				icon: Cpu,
-				rows: data.byModel,
-				truncated: data.byModel.length >= data.breakdownLimit
-			},
-			{
-				key: 'token',
-				label: 'Token',
-				icon: KeyRound,
-				rows: data.byToken,
-				truncated: data.byToken.length >= data.breakdownLimit,
-				emptyText: 'No per-token activity in this window.'
-			}
-		];
-		if (data.byProvider.length > 1)
-			out.push({ key: 'provider', label: 'Provider', icon: Server, rows: data.byProvider });
-		return out;
-	});
+	// Group-by and filters are URL state here too, so a drilled-in service view
+	// is just as shareable as the org-wide one.
+	function setGroupBy(dim: UsageDimension) {
+		goto(hrefWith({ groupBy: dim }), { noScroll: true, keepFocus: true });
+	}
+	function setFilters(filters: UsageFilter[]) {
+		goto(hrefWith({ filters }), { noScroll: true, keepFocus: true });
+	}
 </script>
 
-{#snippet rowLabel(row: import('$lib/components/usage-breakdown.svelte').BreakdownRow, key: string)}
-	{#if key === 'model'}
-		<span class="truncate font-mono font-medium">{row.model}</span>
-		{#if row.provider}
-			<span class="shrink-0 text-xs text-muted-foreground">{row.provider}</span>
-		{/if}
-	{:else if key === 'token'}
-		{#if row.tokenId}
-			<a
-				href={resolve('/app/tokens/[id]', { id: row.tokenId })}
-				class="truncate font-medium hover:underline"
-			>
-				{row.tokenName ?? 'Revoked token'}
-			</a>
-		{:else}
-			<span class="truncate font-medium">{row.tokenName ?? 'Revoked token'}</span>
-		{/if}
-		{#if row.tokenDisplay}
-			<span class="shrink-0 font-mono text-xs text-muted-foreground">{row.tokenDisplay}</span>
-		{/if}
-	{:else if key === 'provider'}
-		<span class="truncate font-medium">{row.provider}</span>
+{#snippet rowLabel(row: DimensionUsageRow, dim: UsageDimension)}
+	{#if dim === 'token' && row.key !== NULL_VALUE}
+		<a
+			href={resolve('/app/tokens/[id]', { id: row.key })}
+			class="truncate font-medium hover:underline"
+			title={row.label}
+		>
+			{row.label}
+		</a>
+	{:else if dim === 'model'}
+		<span class="truncate font-mono text-[13px] font-medium" title={row.label}>{row.label}</span>
+	{:else}
+		<span class="truncate font-medium" title={row.label}>{row.label}</span>
 	{/if}
+{/snippet}
+
+{#snippet leading()}
+	<UsageRangePicker
+		ranges={data.ranges}
+		range={data.range}
+		{hrefWith}
+		customFrom={data.customFrom}
+		customTo={data.customTo}
+		onApplyCustom={applyCustom}
+	/>
+{/snippet}
+
+{#snippet trailing()}
+	<Button
+		variant="ghost"
+		size="icon"
+		class="size-8"
+		onclick={refresh}
+		disabled={refreshing}
+		aria-label="Refresh usage"
+	>
+		<RefreshCw class="size-4 {refreshing ? 'animate-spin' : ''}" />
+	</Button>
 {/snippet}
 
 <div class="mx-auto max-w-7xl space-y-6">
@@ -137,38 +137,18 @@
 				</p>
 			</div>
 		</div>
-		<UsageRangeToolbar
-			ranges={data.ranges}
-			range={data.range}
-			{hrefWith}
-			customFrom={data.customFrom}
-			customTo={data.customTo}
-			onApplyCustom={applyCustom}
-			onRefresh={refresh}
-			{refreshing}
-		/>
 	</div>
 
-	{#if !hasTraffic}
-		<Card.Root>
-			<Card.Content class="py-16 text-center text-sm text-muted-foreground">
-				No gateway traffic from this service for {rangeLabel}.
-			</Card.Content>
-		</Card.Root>
-	{:else}
-		<UsageDashboard
-			totals={data.totals}
-			prevTotals={data.prevTotals}
-			series={data.series}
-			prevPoints={data.prevPoints}
-			bucket={data.bucket}
-			{rangeLabel}
-			bucketHref={(b) => hrefWith({ bucket: b })}
-			{sections}
-			breakdownLimit={data.breakdownLimit}
-			{rowLabel}
-			breakdownDescription="Where this service's spend and token volume land"
-			budget={data.budget}
-		/>
-	{/if}
+	<UsageWorkbench
+		analysis={data}
+		{rangeLabel}
+		bucketHref={(b) => hrefWith({ bucket: b })}
+		onGroupBy={setGroupBy}
+		onFilters={setFilters}
+		{rowLabel}
+		{leading}
+		{trailing}
+		budgets={data.budget}
+		budgetThreshold={data.budgetThreshold}
+	/>
 </div>

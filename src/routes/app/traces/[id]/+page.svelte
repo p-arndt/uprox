@@ -109,7 +109,7 @@
 					<Waypoints class="size-3.5 text-muted-foreground" />
 					<span class="font-medium">Session</span>
 					<span class="truncate font-mono text-muted-foreground">{t.groupId}</span>
-					<span class="ml-auto tabular-nums text-muted-foreground"
+					<span class="ml-auto text-muted-foreground tabular-nums"
 						>{fmtMs(windowEnd - windowStart)}</span
 					>
 				</div>
@@ -139,7 +139,7 @@
 								style="left:{barLeft(s)}%;width:{barWidth(s)}%"
 							></span>
 						</span>
-						<span class="w-12 shrink-0 text-right tabular-nums text-muted-foreground">
+						<span class="w-12 shrink-0 text-right text-muted-foreground tabular-nums">
 							{fmtMs(s.latencyMs)}
 						</span>
 					</a>

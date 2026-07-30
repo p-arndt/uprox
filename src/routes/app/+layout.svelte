@@ -48,7 +48,7 @@
 			label: 'Monitor',
 			items: [
 				{ href: '/app', label: 'Overview', icon: LayoutDashboard, exact: true },
-				{ href: '/app/usage', label: 'Usage', icon: ChartColumn },
+				{ href: '/app/usage', label: 'Cost analysis', icon: ChartColumn },
 				{ href: '/app/traces', label: 'Traces', icon: Waypoints }
 			]
 		},

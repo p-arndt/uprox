@@ -32,6 +32,30 @@
 	--chart-3: oklch(0.7 0.14 305);
 	--chart-4: oklch(0.48 0.2 288);
 	--chart-5: oklch(0.78 0.1 295);
+	/* Categorical series palette — identity colors for the grouped usage charts.
+	   Distinct from --chart-* (a monochrome violet ramp, which is right for a
+	   single series but unreadable once colour has to carry *identity* across a
+	   stack). Slot 1 is the brand violet so an ungrouped chart still reads as
+	   uprox; slots 2-8 fan out across hue.
+
+	   The ORDER is the colourblind-safety mechanism, not decoration: it was
+	   validated pairwise-adjacent (deuteran/protan/tritan) against this surface,
+	   so stacked segments and legend swatches must be assigned in slot order.
+	   Re-ordering or inserting a hue invalidates that and must be re-checked.
+	   Light mode: slots 3, 4 and 5 fall below 3:1 against white, so every chart
+	   using them ships a legend with text labels plus the detail table — colour
+	   is never the only channel. */
+	--series-1: #7a49e4;
+	--series-2: #eb6834;
+	--series-3: #1baf7a;
+	--series-4: #eda100;
+	--series-5: #e87ba4;
+	--series-6: #008300;
+	--series-7: #2a78d6;
+	--series-8: #e34948;
+	/* the "everything past the top-N" bucket — deliberately neutral so it never
+	   competes with a real series for attention */
+	--series-other: #898781;
 	--radius: 0.625rem;
 	--sidebar: oklch(0.985 0 0);
 	--sidebar-foreground: oklch(0.145 0 0);
@@ -67,6 +91,19 @@
 	--chart-3: oklch(0.75 0.14 305);
 	--chart-4: oklch(0.55 0.2 288);
 	--chart-5: oklch(0.82 0.1 295);
+	/* The same eight hues re-stepped for the dark card surface — a selected
+	   palette, not an automatic lightening of the light one. Validated as a set
+	   against oklch(0.205 0 0); all eight clear 3:1 here, so the light-mode
+	   contrast caveat above doesn't apply in dark. */
+	--series-1: #8e61fc;
+	--series-2: #d95926;
+	--series-3: #199e70;
+	--series-4: #c98500;
+	--series-5: #d55181;
+	--series-6: #008300;
+	--series-7: #3987e5;
+	--series-8: #e66767;
+	--series-other: #898781;
 	--sidebar: oklch(0.205 0 0);
 	--sidebar-foreground: oklch(0.985 0 0);
 	--sidebar-primary: oklch(0.62 0.22 292);
@@ -87,6 +124,15 @@
 	--color-sidebar-primary: var(--sidebar-primary);
 	--color-sidebar-foreground: var(--sidebar-foreground);
 	--color-sidebar: var(--sidebar);
+	--color-series-1: var(--series-1);
+	--color-series-2: var(--series-2);
+	--color-series-3: var(--series-3);
+	--color-series-4: var(--series-4);
+	--color-series-5: var(--series-5);
+	--color-series-6: var(--series-6);
+	--color-series-7: var(--series-7);
+	--color-series-8: var(--series-8);
+	--color-series-other: var(--series-other);
 	--color-chart-5: var(--chart-5);
 	--color-chart-4: var(--chart-4);
 	--color-chart-3: var(--chart-3);
