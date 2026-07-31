@@ -1899,6 +1899,164 @@ export async function orgUsageFilterOptions(
 	return Object.fromEntries(entries) as UsageFilterOptions;
 }
 
+/* -------------------------------- top movers --------------------------------- */
+
+export interface UsageMover {
+	key: string;
+	label: string;
+	currentUsd: number;
+	previousUsd: number;
+	deltaUsd: number;
+	/** null when there's no prior baseline to divide by (a new series) */
+	deltaPct: number | null;
+	isNew: boolean;
+	isGone: boolean;
+}
+
+/**
+ * The series whose spend moved most between the selected window and the
+ * immediately-preceding one of equal length — "what changed", which is the first
+ * question anyone asks when a bill jumps.
+ *
+ * Ranked by ABSOLUTE dollar change, not percentage: a model going from $0.01 to
+ * $0.05 is +400% and irrelevant, while one going from $400 to $480 is +20% and
+ * the actual story. The percentage is still shown, just not what sorts.
+ */
+export async function orgTopMovers(
+	range: ResolvedRange,
+	prevRange: ResolvedRange,
+	dim: UsageDimension,
+	opts: { filters?: UsageFilter[]; serviceId?: string; tokenId?: string; limit?: number } = {}
+): Promise<UsageMover[]> {
+	const [current, previous] = await Promise.all([
+		orgUsageByDimension(range, dim, opts),
+		orgUsageByDimension(prevRange, dim, opts)
+	]);
+
+	const prevByKey = new Map(previous.map((r) => [r.key, r]));
+	const movers: UsageMover[] = current.map((r) => {
+		const prior = prevByKey.get(r.key);
+		const previousUsd = prior?.costUsd ?? 0;
+		return {
+			key: r.key,
+			label: r.label,
+			currentUsd: r.costUsd,
+			previousUsd,
+			deltaUsd: r.costUsd - previousUsd,
+			deltaPct: previousUsd > 0 ? ((r.costUsd - previousUsd) / previousUsd) * 100 : null,
+			isNew: previousUsd <= 0 && r.costUsd > 0,
+			isGone: false
+		};
+	});
+
+	// Series that existed before and have gone silent are movers too — arguably
+	// the most interesting kind, since a disappearance is easy to miss otherwise.
+	const currentKeys = new Set(current.map((r) => r.key));
+	for (const r of previous) {
+		if (currentKeys.has(r.key) || r.costUsd <= 0) continue;
+		movers.push({
+			key: r.key,
+			label: r.label,
+			currentUsd: 0,
+			previousUsd: r.costUsd,
+			deltaUsd: -r.costUsd,
+			deltaPct: -100,
+			isNew: false,
+			isGone: true
+		});
+	}
+
+	return movers
+		.filter((m) => Math.abs(m.deltaUsd) > 0)
+		.sort((a, b) => Math.abs(b.deltaUsd) - Math.abs(a.deltaUsd))
+		.slice(0, opts.limit ?? 8);
+}
+
+/* ----------------------------- model efficiency ------------------------------ */
+
+export interface ModelEfficiency {
+	model: string;
+	provider: string | null;
+	requests: number;
+	costUsd: number;
+	inputTokens: number;
+	outputTokens: number;
+	/** USD per 1,000 tokens (input + output) — the comparable unit price */
+	costPer1kTokens: number;
+	costPerRequest: number;
+	/** output ÷ input; high means verbose answers, which is where cost lands */
+	outputRatio: number | null;
+	/** share of input served from the provider's prompt cache */
+	cacheReadShare: number;
+	latencyP50: number | null;
+	latencyP95: number | null;
+}
+
+/**
+ * Per-model unit economics — the table behind "should we switch models".
+ *
+ * Cost per 1k tokens is the comparable figure: raw spend just says which model
+ * you used most. The output ratio sits beside it because a model with a cheap
+ * headline rate that answers at twice the length is not cheaper, and that
+ * interaction is invisible in any single column.
+ */
+export async function orgModelEfficiency(
+	range: ResolvedRange,
+	opts: { filters?: UsageFilter[]; serviceId?: string; tokenId?: string; limit?: number } = {}
+): Promise<ModelEfficiency[]> {
+	const rows = await db
+		.select({
+			model: auditLog.model,
+			provider: sql<string | null>`max(${auditLog.provider})`,
+			requests: sql<number>`count(*)::int`,
+			cost: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)::text`,
+			inputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}), 0)::bigint`,
+			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`,
+			cachedTokens: sql<number>`coalesce(sum(${auditLog.providerCachedTokens}), 0)::bigint`,
+			latencyP50: sql<
+				number | null
+			>`percentile_cont(0.5) within group (order by ${auditLog.latencyMs})`,
+			latencyP95: sql<
+				number | null
+			>`percentile_cont(0.95) within group (order by ${auditLog.latencyMs})`
+		})
+		.from(auditLog)
+		.where(
+			and(
+				sql`${auditLog.model} is not null`,
+				...usageConds(range, opts.serviceId, opts.tokenId, opts.filters)
+			)
+		)
+		.groupBy(auditLog.model)
+		.orderBy(desc(sql`coalesce(sum(${auditLog.costUsd}), 0)`))
+		.limit(opts.limit ?? 25);
+
+	return rows.map((r) => {
+		const input = Number(r.inputTokens ?? 0);
+		const output = Number(r.outputTokens ?? 0);
+		const cached = Number(r.cachedTokens ?? 0);
+		const cost = Number(r.cost ?? 0);
+		const requests = Number(r.requests ?? 0);
+		const tokens = input + output;
+		return {
+			model: r.model as string,
+			provider: r.provider,
+			requests,
+			costUsd: cost,
+			inputTokens: input,
+			outputTokens: output,
+			costPer1kTokens: tokens > 0 ? (cost / tokens) * 1000 : 0,
+			costPerRequest: requests > 0 ? cost / requests : 0,
+			// Embedding models emit no output, so a ratio would be a misleading 0
+			// rather than "not applicable" — null renders as an em dash.
+			outputRatio: input > 0 && output > 0 ? output / input : null,
+			cacheReadShare: input > 0 ? cached / input : 0,
+			latencyP50: r.latencyP50 == null ? null : Math.round(Number(r.latencyP50)),
+			latencyP95: r.latencyP95 == null ? null : Math.round(Number(r.latencyP95))
+		};
+	});
+}
+
 /* ------------------------------- token meters -------------------------------- */
 
 /**

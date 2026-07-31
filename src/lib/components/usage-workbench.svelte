@@ -7,6 +7,8 @@
 	import UsageDonutRow from '$lib/components/usage-donut-row.svelte';
 	import UsageDetailTable from '$lib/components/usage-detail-table.svelte';
 	import UsageTokenMeters from '$lib/components/usage-token-meters.svelte';
+	import UsageMovers from '$lib/components/usage-movers.svelte';
+	import UsageModelEfficiency from '$lib/components/usage-model-efficiency.svelte';
 	import UsageReliability from '$lib/components/usage-reliability.svelte';
 	import BudgetGauge from '$lib/components/budget-gauge.svelte';
 	import { dimensionLabel, type UsageDimension, type UsageFilter } from '$lib/usage-group';
@@ -104,6 +106,10 @@
 		{budgetPerBucket}
 	/>
 
+	{#if analysis.movers.length > 0}
+		<UsageMovers movers={analysis.movers} dim={analysis.groupBy} {rangeLabel} />
+	{/if}
+
 	{#if analysis.donuts.length > 0}
 		<UsageDonutRow panels={analysis.donuts} scopeTotal={analysis.totals.costUsd} />
 	{/if}
@@ -126,6 +132,8 @@
 			/>
 		</Card.Content>
 	</Card.Root>
+
+	<UsageModelEfficiency rows={analysis.efficiency} />
 
 	<UsageTokenMeters breakdown={analysis.meters} />
 

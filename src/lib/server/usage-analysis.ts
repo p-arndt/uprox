@@ -5,7 +5,9 @@ import {
 	orgUsageFilterOptions,
 	orgUsageTotals,
 	orgUsageSeries,
-	orgTokenMeters
+	orgTokenMeters,
+	orgTopMovers,
+	orgModelEfficiency
 } from '$lib/server/data';
 import {
 	USAGE_RANGES,
@@ -81,6 +83,8 @@ export async function loadUsageAnalysis(
 		donuts,
 		filterOptions,
 		meters,
+		movers,
+		efficiency,
 		series,
 		prevSeries
 	] = await Promise.all([
@@ -98,6 +102,10 @@ export async function loadUsageAnalysis(
 		),
 		orgUsageFilterOptions(range, dimensions, scope),
 		orgTokenMeters(range, { ...scope, filters }),
+		// "what changed" is always measured on the grouping the operator picked,
+		// so the answer lines up with the chart directly above it
+		orgTopMovers(range, prevRange, groupBy, { ...scope, filters }),
+		orgModelEfficiency(range, { ...scope, filters }),
 		// flat series behind the headline sparklines — same window, same filters
 		orgUsageSeries(range, { ...scope, unit, filters }),
 		orgUsageSeries(prevRange, { ...scope, unit, filters })
@@ -123,6 +131,8 @@ export async function loadUsageAnalysis(
 		breakdown,
 		donuts,
 		meters,
+		movers,
+		efficiency,
 		series,
 		// only the points are needed for the overlay; the unit matches `series`
 		prevPoints: prevSeries.points
