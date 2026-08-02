@@ -34,6 +34,29 @@ function parseOptionalPrice(value: FormDataEntryValue | null): number | null | u
 	return Number.isFinite(n) && n >= 0 ? n : null;
 }
 
+/**
+ * Parse the four optional long-context fields. Returns the parsed set, or null
+ * if any present value isn't a non-negative number. A blank long input rate
+ * leaves the model on a single rate card.
+ */
+function parseLongTier(data: FormData) {
+	const fields = [
+		'longInputPerMtok',
+		'longOutputPerMtok',
+		'longCacheReadPerMtok',
+		'longCacheWritePerMtok'
+	] as const;
+	const out: Partial<Record<(typeof fields)[number], number | null | undefined>> = {};
+	for (const f of fields) {
+		const v = parseOptionalPrice(data.get(f));
+		if (v === null) return null;
+		// undefined (blank) is stored as an explicit null so clearing a field in the
+		// edit form actually removes the rate rather than silently keeping the old one.
+		out[f] = v ?? null;
+	}
+	return out;
+}
+
 export const actions: Actions = {
 	create: async (event) => {
 		await requirePermission(event, 'pricing:manage');
@@ -48,6 +71,9 @@ export const actions: Actions = {
 		const cacheWritePerMtok = parseOptionalPrice(data.get('cacheWritePerMtok'));
 		if (cacheReadPerMtok === null || cacheWritePerMtok === null)
 			return fail(400, { message: 'Cache prices must be non-negative numbers' });
+		const long = parseLongTier(data);
+		if (long === null)
+			return fail(400, { message: 'Long-context prices must be non-negative numbers' });
 
 		await createOrgModelPrice({
 			model,
@@ -55,7 +81,8 @@ export const actions: Actions = {
 			inputPerMtok,
 			outputPerMtok,
 			cacheReadPerMtok,
-			cacheWritePerMtok
+			cacheWritePerMtok,
+			...long
 		});
 		return { success: true };
 	},
@@ -72,13 +99,17 @@ export const actions: Actions = {
 		const cacheWritePerMtok = parseOptionalPrice(data.get('cacheWritePerMtok'));
 		if (cacheReadPerMtok === null || cacheWritePerMtok === null)
 			return fail(400, { message: 'Cache prices must be non-negative numbers' });
+		const long = parseLongTier(data);
+		if (long === null)
+			return fail(400, { message: 'Long-context prices must be non-negative numbers' });
 
 		const row = await updateOrgModelPrice(id, {
 			provider: data.get('provider')?.toString() || null,
 			inputPerMtok,
 			outputPerMtok,
 			cacheReadPerMtok,
-			cacheWritePerMtok
+			cacheWritePerMtok,
+			...long
 		});
 		if (!row) return fail(404, { message: 'Not found' });
 		return { success: true };

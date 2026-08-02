@@ -8,7 +8,12 @@
 	import PriceRow from '$lib/components/price-row.svelte';
 	import AddModelDialog from '$lib/components/add-model-dialog.svelte';
 	import { createTableState } from '$lib/state/table.svelte';
-	import { inferProviderId } from '$lib/pricing';
+	import {
+		inferProviderId,
+		tierValues,
+		LONG_CONTEXT_MIN_PROMPT_TOKENS,
+		type PriceTier
+	} from '$lib/pricing';
 	import { can } from '$lib/permissions';
 	import Coins from '@lucide/svelte/icons/coins';
 	import Search from '@lucide/svelte/icons/search';
@@ -54,25 +59,36 @@
 	});
 
 	let providerFilter = $state('all');
+	// Which rate card the four price columns show. Long context is what a request
+	// bills at once its prompt reaches LONG_CONTEXT_MIN_PROMPT_TOKENS; models
+	// without one show "—" and bill the standard card at any size.
+	let tier = $state<PriceTier>('standard');
 
 	const num = (a: number | null, b: number | null) => (a ?? 0) - (b ?? 0);
+	// Sorters read the *shown* tier, so switching cards re-sorts on the visible
+	// numbers rather than the standard ones underneath.
+	type Row = (typeof rows)[number];
+	const by = (pick: (v: ReturnType<typeof tierValues>) => number | null) => (a: Row, b: Row) =>
+		num(pick(tierValues(a, tier)), pick(tierValues(b, tier)));
 	const table = createTableState({
 		rows: () => rows,
 		matches: (r, q) => r.model.toLowerCase().includes(q),
 		predicate: () => (r) => providerFilter === 'all' || r.providerKey === providerFilter,
 		sorters: {
 			model: (a, b) => a.model.localeCompare(b.model),
-			inputPerMtok: (a, b) => num(a.inputPerMtok, b.inputPerMtok),
-			outputPerMtok: (a, b) => num(a.outputPerMtok, b.outputPerMtok),
+			input: by((v) => v.input),
+			output: by((v) => v.output),
 			// cache prices can be null (fall back to the input multiplier); sort those last
-			cacheReadPerMtok: (a, b) => num(a.cacheReadPerMtok, b.cacheReadPerMtok),
-			cacheWritePerMtok: (a, b) => num(a.cacheWritePerMtok, b.cacheWritePerMtok)
+			cacheRead: by((v) => v.cacheRead),
+			cacheWrite: by((v) => v.cacheWrite)
 		},
 		initialSort: 'model',
 		dirFor: (key) => (key === 'model' ? 'asc' : 'desc')
 	});
 
 	const customCount = $derived(data.prices.filter((p) => p.source === 'custom').length);
+	const longCount = $derived(data.prices.filter((p) => p.longInputPerMtok !== null).length);
+	const longThresholdLabel = `${Math.round(LONG_CONTEXT_MIN_PROMPT_TOKENS / 1000)}k`;
 	const showProviderCol = $derived(providerFilter === 'all');
 	const canManage = $derived(can(data.role, 'pricing:manage', data.memberPermissions));
 
@@ -140,13 +156,33 @@
 				</Tabs.List>
 			</Tabs.Root>
 
-			<SearchInput
-				bind:value={table.query}
-				placeholder="Search models…"
-				class="w-full max-w-xs sm:w-64"
-				ariaLabel="Search models"
-			/>
+			<div class="flex flex-wrap items-center gap-3">
+				<Tabs.Root bind:value={tier}>
+					<Tabs.List>
+						<Tabs.Trigger value="standard">Short context</Tabs.Trigger>
+						<Tabs.Trigger value="long">
+							Long context
+							<span class="ml-1.5 text-xs text-muted-foreground">{longCount}</span>
+						</Tabs.Trigger>
+					</Tabs.List>
+				</Tabs.Root>
+
+				<SearchInput
+					bind:value={table.query}
+					placeholder="Search models…"
+					class="w-full max-w-xs sm:w-64"
+					ariaLabel="Search models"
+				/>
+			</div>
 		</div>
+
+		{#if tier === 'long'}
+			<p class="text-xs text-muted-foreground">
+				Long-context rates bill the whole request — input, cache traffic and output — once its
+				prompt reaches {longThresholdLabel} tokens. Models showing “—” have a single rate card and always
+				bill the short-context prices.
+			</p>
+		{/if}
 
 		<div class="rounded-xl border">
 			<Table.Root>
@@ -157,16 +193,16 @@
 							<Table.Head>Provider</Table.Head>
 						{/if}
 						<Table.Head class="text-right">
-							{@render sortHead('Input / 1M', 'inputPerMtok', 'right')}
+							{@render sortHead('Input / 1M', 'input', 'right')}
 						</Table.Head>
 						<Table.Head class="text-right">
-							{@render sortHead('Output / 1M', 'outputPerMtok', 'right')}
+							{@render sortHead('Output / 1M', 'output', 'right')}
 						</Table.Head>
 						<Table.Head class="text-right">
-							{@render sortHead('Cache read / 1M', 'cacheReadPerMtok', 'right')}
+							{@render sortHead('Cache read / 1M', 'cacheRead', 'right')}
 						</Table.Head>
 						<Table.Head class="text-right">
-							{@render sortHead('Cache write / 1M', 'cacheWritePerMtok', 'right')}
+							{@render sortHead('Cache write / 1M', 'cacheWrite', 'right')}
 						</Table.Head>
 						<Table.Head class="w-[1%]">Source</Table.Head>
 						<Table.Head class="w-[1%]"></Table.Head>
@@ -174,7 +210,7 @@
 				</Table.Header>
 				<Table.Body>
 					{#each table.visible as p (p.model)}
-						<PriceRow price={p} showProvider={showProviderCol} {canManage} />
+						<PriceRow price={p} showProvider={showProviderCol} {canManage} {tier} />
 					{/each}
 				</Table.Body>
 			</Table.Root>

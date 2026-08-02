@@ -38,13 +38,30 @@ export const POST: RequestHandler = async (event) => {
 			{ error: 'cacheReadPerMtok and cacheWritePerMtok must be non-negative numbers' },
 			{ status: 400 }
 		);
+	// Optional long-context rate card, billed above LONG_CONTEXT_MIN_PROMPT_TOKENS.
+	// Omitting longInputPerMtok leaves the model on a single rate card.
+	const longInputPerMtok = parseOptional(body.longInputPerMtok);
+	const longOutputPerMtok = parseOptional(body.longOutputPerMtok);
+	const longCacheReadPerMtok = parseOptional(body.longCacheReadPerMtok);
+	const longCacheWritePerMtok = parseOptional(body.longCacheWritePerMtok);
+	if (
+		longInputPerMtok === null ||
+		longOutputPerMtok === null ||
+		longCacheReadPerMtok === null ||
+		longCacheWritePerMtok === null
+	)
+		return json({ error: 'long-context prices must be non-negative numbers' }, { status: 400 });
 	const row = await createOrgModelPrice({
 		model: String(body.model),
 		provider: body.provider ? String(body.provider) : null,
 		inputPerMtok,
 		outputPerMtok,
 		cacheReadPerMtok,
-		cacheWritePerMtok
+		cacheWritePerMtok,
+		longInputPerMtok,
+		longOutputPerMtok,
+		longCacheReadPerMtok,
+		longCacheWritePerMtok
 	});
 	return json(row, { status: 201 });
 };

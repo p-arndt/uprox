@@ -3,6 +3,7 @@
  * OpenAI-compatible surface, so the gateway can proxy a single request shape.
  */
 import type { Capability } from '$lib/scopes';
+import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/pricing';
 
 export type { Capability };
 
@@ -327,7 +328,25 @@ export interface ModelPrice {
 	out: number;
 	cacheRead?: number;
 	cacheWrite?: number;
+	/**
+	 * Long-context rates, billed for a request whose prompt reaches
+	 * {@link LONG_CONTEXT_MIN_PROMPT_TOKENS}. All four are optional and only
+	 * `longIn` decides the tier applies at all: a price with no `longIn` bills
+	 * every request at the standard rates, which is what most models do.
+	 */
+	longIn?: number;
+	longOut?: number;
+	longCacheRead?: number;
+	longCacheWrite?: number;
 }
+
+/**
+ * Prompt size at which a request flips to the long-context rate card. OpenAI
+ * bills the *whole* request — input, cache traffic and output — at the higher
+ * tier once the prompt reaches this many tokens. Re-exported from the shared
+ * pricing module so the dashboard and the cost calc agree on one number.
+ */
+export { LONG_CONTEXT_MIN_PROMPT_TOKENS };
 
 function round4(n: number): number {
 	return Math.round(n * 1e4) / 1e4;
@@ -341,17 +360,40 @@ const anthropic = (input: number, out: number): ModelPrice => ({
 	cacheRead: round4(input * 0.1),
 	cacheWrite: round4(input * 1.25)
 });
+// OpenAI's long-context tier is a flat uplift on the whole rate card: every
+// input-side rate doubles and output goes up by half again.
+const LONG_INPUT_MULT = 2;
+const LONG_OUTPUT_MULT = 1.5;
 // OpenAI/Azure discount cache reads by family: the GPT-5 series caches at 0.1×
 // input, GPT-4.x/o-series at ~0.5×. Cache writes carry no surcharge up to
 // GPT-5.5 (writeRatio stays 1× — a written token is billed as plain input); from
 // the GPT-5.6 family on they cost 1.25× the uncached input rate, and GPT-5.6+
 // reports the count in prompt_tokens_details.cache_write_tokens.
-const openai = (input: number, out: number, readRatio: number, writeRatio = 1): ModelPrice => ({
-	in: input,
-	out,
-	cacheRead: round4(input * readRatio),
-	cacheWrite: round4(input * writeRatio)
-});
+// `long` opts the model into the long-context rate card; the small GPT-5.4 tiers
+// and everything older have a single rate card and leave it off.
+const openai = (
+	input: number,
+	out: number,
+	readRatio: number,
+	writeRatio = 1,
+	long = false
+): ModelPrice => {
+	const price: ModelPrice = {
+		in: input,
+		out,
+		cacheRead: round4(input * readRatio),
+		cacheWrite: round4(input * writeRatio)
+	};
+	if (!long) return price;
+	const longIn = round4(input * LONG_INPUT_MULT);
+	return {
+		...price,
+		longIn,
+		longOut: round4(out * LONG_OUTPUT_MULT),
+		longCacheRead: round4(longIn * readRatio),
+		longCacheWrite: round4(longIn * writeRatio)
+	};
+};
 // Gemini charges a cache-read discount but no per-token cache-write surcharge on
 // its OpenAI-compatible surface (explicit caches are billed by storage time, not
 // tokens), so writes stay at the plain input rate. Cached reads are billed at an
@@ -367,15 +409,18 @@ const gemini = (input: number, out: number, cacheRead: number): ModelPrice => ({
 
 export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	// OpenAI — current GPT-5 series (most specific keys first, see lookup note below)
-	'gpt-5.6-luna': openai(1, 6, 0.1, 1.25),
-	'gpt-5.6-terra': openai(2.5, 15, 0.1, 1.25),
-	'gpt-5.6-sol': openai(5, 30, 0.1, 1.25),
-	'gpt-5.5-pro': openai(30, 180, 0.1),
-	'gpt-5.5': openai(5, 30, 0.1),
-	'gpt-5.4-pro': openai(30, 180, 0.1),
+	'gpt-5.6-luna': openai(0.2, 1.2, 0.1, 1.25, true),
+	'gpt-5.6-terra': openai(2, 12, 0.1, 1.25, true),
+	'gpt-5.6-sol': openai(5, 30, 0.1, 1.25, true),
+	// the pro tiers list no cached-input rate at all — they don't discount cache
+	// traffic, so reads and writes both bill as plain input (readRatio 1).
+	'gpt-5.5-pro': openai(30, 180, 1, 1, true),
+	'gpt-5.5': openai(5, 30, 0.1, 1, true),
+	'gpt-5.4-pro': openai(30, 180, 1, 1, true),
+	// the mini/nano tiers are single-rate-card: no long-context uplift
 	'gpt-5.4-mini': openai(0.75, 4.5, 0.1),
 	'gpt-5.4-nano': openai(0.2, 1.25, 0.1),
-	'gpt-5.4': openai(2.5, 15, 0.1),
+	'gpt-5.4': openai(2.5, 15, 0.1, 1, true),
 	// OpenAI — older models (GPT-4.x / o-series cache reads at ~0.5× input)
 	'gpt-4o': openai(2.5, 10, 0.5),
 	'gpt-4o-mini': openai(0.15, 0.6, 0.5),
@@ -425,11 +470,33 @@ const FALLBACK_CACHE_READ_MULT = 0.1;
 const FALLBACK_CACHE_WRITE_MULT = 1.25;
 
 /**
+ * The rate card a request of this prompt size bills against: the long-context
+ * one once the prompt reaches {@link LONG_CONTEXT_MIN_PROMPT_TOKENS}, else the
+ * standard one. Models without a long-context rate (`longIn` unset) always bill
+ * standard. Within the long card an unset cache rate stays unset, so the
+ * multiplier fallback below applies to the long input rate.
+ */
+export function tierForPromptTokens(
+	price: ModelPrice,
+	promptTokens: number
+): Pick<ModelPrice, 'in' | 'out' | 'cacheRead' | 'cacheWrite'> {
+	if (price.longIn == null || promptTokens < LONG_CONTEXT_MIN_PROMPT_TOKENS) return price;
+	return {
+		in: price.longIn,
+		out: price.longOut ?? price.out,
+		cacheRead: price.longCacheRead,
+		cacheWrite: price.longCacheWrite
+	};
+}
+
+/**
  * Compute USD cost from a resolved per-1M-token price and token counts.
  *
  * `promptTokens` is the *total* input volume including any cache read/write
  * tokens (OpenAI's `prompt_tokens` already is; the gateway folds Anthropic's
- * separate cache counts into it). The full-price portion is what's left after
+ * separate cache counts into it). It also selects the rate card: a prompt at or
+ * above the long-context threshold bills the entire request — output included —
+ * at the model's long-context rates. The full-price portion is what's left after
  * subtracting the cache tokens, which are billed at their own rates. When a
  * cache rate is unset it falls back to a multiple of the input price.
  */
@@ -440,14 +507,15 @@ export function costFromPrice(
 	cacheReadTokens = 0,
 	cacheWriteTokens = 0
 ): number {
-	const cacheReadRate = price.cacheRead ?? price.in * FALLBACK_CACHE_READ_MULT;
-	const cacheWriteRate = price.cacheWrite ?? price.in * FALLBACK_CACHE_WRITE_MULT;
+	const tier = tierForPromptTokens(price, promptTokens);
+	const cacheReadRate = tier.cacheRead ?? tier.in * FALLBACK_CACHE_READ_MULT;
+	const cacheWriteRate = tier.cacheWrite ?? tier.in * FALLBACK_CACHE_WRITE_MULT;
 	const fullPriceInput = Math.max(0, promptTokens - cacheReadTokens - cacheWriteTokens);
 	const cost =
-		(fullPriceInput * price.in +
+		(fullPriceInput * tier.in +
 			cacheReadTokens * cacheReadRate +
 			cacheWriteTokens * cacheWriteRate +
-			(completionTokens ?? 0) * price.out) /
+			(completionTokens ?? 0) * tier.out) /
 		1_000_000;
 	// Round to 8 decimals: rounding to 1e-6 floored cheap models (e.g. gpt-5.4-nano)
 	// to 0 on small requests, since their per-token cost is well below a micro-dollar.

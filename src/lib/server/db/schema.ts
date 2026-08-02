@@ -354,6 +354,14 @@ export const modelPrice = pgTable(
 		// rows encode by setting cache_write_per_mtok = input_per_mtok.
 		cacheReadPerMtok: numeric('cache_read_per_mtok', { precision: 12, scale: 4 }),
 		cacheWritePerMtok: numeric('cache_write_per_mtok', { precision: 12, scale: 4 }),
+		// Long-context rate card, billed once a request's prompt reaches
+		// LONG_CONTEXT_MIN_PROMPT_TOKENS (see providers.ts). All nullable:
+		// long_input_per_mtok being NULL means the model has a single rate card and
+		// every request bills at the standard columns above.
+		longInputPerMtok: numeric('long_input_per_mtok', { precision: 12, scale: 4 }),
+		longOutputPerMtok: numeric('long_output_per_mtok', { precision: 12, scale: 4 }),
+		longCacheReadPerMtok: numeric('long_cache_read_per_mtok', { precision: 12, scale: 4 }),
+		longCacheWritePerMtok: numeric('long_cache_write_per_mtok', { precision: 12, scale: 4 }),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
 		updatedAt: timestamp('updated_at')
 			.defaultNow()

@@ -9,7 +9,8 @@ import {
 	selectProviderSecret,
 	costFromPrice,
 	resolvePrice,
-	DEFAULT_MODEL_PRICES
+	DEFAULT_MODEL_PRICES,
+	LONG_CONTEXT_MIN_PROMPT_TOKENS
 } from '$lib/server/providers';
 
 describe('providerSupports', () => {
@@ -289,6 +290,46 @@ describe('costFromPrice with cache tokens', () => {
 	});
 });
 
+describe('long-context pricing', () => {
+	const sol = DEFAULT_MODEL_PRICES['gpt-5.6-sol'];
+
+	it('bills the standard card right up to the threshold', () => {
+		// 1 token below: 271_999 @ $5/1M
+		expect(costFromPrice(sol, LONG_CONTEXT_MIN_PROMPT_TOKENS - 1, 0)).toBe(
+			((LONG_CONTEXT_MIN_PROMPT_TOKENS - 1) * 5) / 1e6
+		);
+	});
+
+	it('flips the whole request — output included — at the threshold', () => {
+		// exactly at the threshold: input @ $10/1M and output @ $45/1M, not $5/$30
+		expect(costFromPrice(sol, LONG_CONTEXT_MIN_PROMPT_TOKENS, 1_000)).toBe(
+			(LONG_CONTEXT_MIN_PROMPT_TOKENS * 10 + 1_000 * 45) / 1e6
+		);
+	});
+
+	it('prices long-context cache traffic at the long rates', () => {
+		// 300k prompt = 200k cache reads + 50k cache writes + 50k fresh input
+		// 50k @ $10 + 200k @ $1 + 50k @ $12.50 + 1k out @ $45
+		expect(costFromPrice(sol, 300_000, 1_000, 200_000, 50_000)).toBe(
+			(50_000 * 10 + 200_000 * 1 + 50_000 * 12.5 + 1_000 * 45) / 1e6
+		);
+	});
+
+	it('keeps single-rate-card models on the standard rates at any prompt size', () => {
+		const nano = DEFAULT_MODEL_PRICES['gpt-5.4-nano'];
+		expect(nano.longIn).toBeUndefined();
+		expect(costFromPrice(nano, 1_000_000, 0)).toBe(0.2);
+	});
+
+	it('falls back to the long input rate for an unset long cache rate', () => {
+		// a custom row with a long card but no long cache rates: read 0.1× / write
+		// 1.25× of the *long* input price, not the standard one
+		const price = { in: 3, out: 15, longIn: 6, longOut: 22.5 };
+		expect(costFromPrice(price, 300_000, 0, 300_000, 0)).toBe((300_000 * 0.6) / 1e6);
+		expect(costFromPrice(price, 300_000, 0, 0, 300_000)).toBe((300_000 * 7.5) / 1e6);
+	});
+});
+
 describe('cache default prices', () => {
 	it('seeds Anthropic cache reads at 0.1× and writes at 1.25× input', () => {
 		expect(DEFAULT_MODEL_PRICES['claude-sonnet-4-6']).toEqual({
@@ -303,7 +344,7 @@ describe('cache default prices', () => {
 		// GPT-5 series reads at 0.1×, GPT-4o at 0.5×; neither surcharges writes, so
 		// cacheWrite == in. Leaving it unset would hand these models the 1.25×
 		// fallback and overcharge every cache write the provider reports.
-		expect(DEFAULT_MODEL_PRICES['gpt-5.4']).toEqual({
+		expect(DEFAULT_MODEL_PRICES['gpt-5.4']).toMatchObject({
 			in: 2.5,
 			out: 15,
 			cacheRead: 0.25,
@@ -322,19 +363,31 @@ describe('cache default prices', () => {
 			in: 5,
 			out: 30,
 			cacheRead: 0.5,
-			cacheWrite: 6.25
+			cacheWrite: 6.25,
+			longIn: 10,
+			longOut: 45,
+			longCacheRead: 1,
+			longCacheWrite: 12.5
 		});
 		expect(DEFAULT_MODEL_PRICES['gpt-5.6-terra']).toEqual({
-			in: 2.5,
-			out: 15,
-			cacheRead: 0.25,
-			cacheWrite: 3.125
+			in: 2,
+			out: 12,
+			cacheRead: 0.2,
+			cacheWrite: 2.5,
+			longIn: 4,
+			longOut: 18,
+			longCacheRead: 0.4,
+			longCacheWrite: 5
 		});
 		expect(DEFAULT_MODEL_PRICES['gpt-5.6-luna']).toEqual({
-			in: 1,
-			out: 6,
-			cacheRead: 0.1,
-			cacheWrite: 1.25
+			in: 0.2,
+			out: 1.2,
+			cacheRead: 0.02,
+			cacheWrite: 0.25,
+			longIn: 0.4,
+			longOut: 1.8,
+			longCacheRead: 0.04,
+			longCacheWrite: 0.5
 		});
 	});
 
@@ -349,11 +402,20 @@ describe('cache default prices', () => {
 	it('bills a pre-5.6 OpenAI cache write as plain input, never at the 1.25× fallback', () => {
 		const price = DEFAULT_MODEL_PRICES['gpt-5.5'];
 		expect(price.cacheWrite).toBe(price.in);
-		// 1M written tokens must cost the same as 1M ordinary input tokens ($5),
-		// not the $6.25 the unset-rate fallback would charge.
-		expect(costFromPrice(price, 1_000_000, 0, 0, 1_000_000)).toBe(
-			costFromPrice(price, 1_000_000, 0, 0, 0)
+		expect(price.longCacheWrite).toBe(price.longIn);
+		// 200k written tokens must cost the same as 200k ordinary input tokens,
+		// not the 1.25× the unset-rate fallback would charge.
+		expect(costFromPrice(price, 200_000, 0, 0, 200_000)).toBe(
+			costFromPrice(price, 200_000, 0, 0, 0)
 		);
+	});
+
+	it('leaves the pro tiers without a cache discount — they bill cache traffic as input', () => {
+		for (const model of ['gpt-5.5-pro', 'gpt-5.4-pro']) {
+			const price = DEFAULT_MODEL_PRICES[model];
+			expect(price.cacheRead).toBe(price.in);
+			expect(price.cacheWrite).toBe(price.in);
+		}
 	});
 
 	it('resolves dated GPT-5.6 ids to their tier price', () => {

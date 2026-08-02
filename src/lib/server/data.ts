@@ -2384,7 +2384,15 @@ export async function orgTokenMetersSeries(
 	return { unit, buckets, series, hasOthers: false };
 }
 
-/** Price row shape the meter costing needs. */
+/**
+ * Price row shape the meter costing needs.
+ *
+ * Standard-tier rates only: these queries aggregate tokens across many requests,
+ * so there's no prompt size left to decide which rate card each one billed
+ * against. That only skews the *split* between meters — the totals still come
+ * from the per-request `cost_usd` the gateway recorded at the correct tier, and
+ * the split is rescaled onto it (see the `scale` factor in the meter query).
+ */
 interface ResolvedPrice {
 	model: string;
 	inputPerMtok: number;

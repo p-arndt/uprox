@@ -5,6 +5,9 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
+	import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/pricing';
+
+	const longThresholdLabel = `${Math.round(LONG_CONTEXT_MIN_PROMPT_TOKENS / 1000)}k`;
 
 	let {
 		open = $bindable(false),
@@ -118,9 +121,62 @@
 			</div>
 			<p class="text-xs text-muted-foreground">
 				Cache prices are optional — leave blank to fall back to a multiple of the input price (read
-				0.1×, write 1.25×). Cache writes apply to Anthropic only; OpenAI/Azure don't charge to write
-				a cache entry.
+				0.1×, write 1.25×). Cache writes apply to Anthropic and GPT-5.6 or later; elsewhere a
+				written token bills as plain input.
 			</p>
+
+			<div class="space-y-3 rounded-lg border p-3">
+				<p class="text-xs text-muted-foreground">
+					Long context (optional) — rates billed for the whole request once its prompt reaches {longThresholdLabel}
+					tokens. Leave the input rate blank for models with a single rate card.
+				</p>
+				<div class="grid grid-cols-2 gap-4">
+					<div class="space-y-2">
+						<Label for="longInputPerMtok">Input $ / 1M</Label>
+						<Input
+							id="longInputPerMtok"
+							name="longInputPerMtok"
+							type="number"
+							step="0.0001"
+							min="0"
+							placeholder="none"
+						/>
+					</div>
+					<div class="space-y-2">
+						<Label for="longOutputPerMtok">Output $ / 1M</Label>
+						<Input
+							id="longOutputPerMtok"
+							name="longOutputPerMtok"
+							type="number"
+							step="0.0001"
+							min="0"
+							placeholder="none"
+						/>
+					</div>
+					<div class="space-y-2">
+						<Label for="longCacheReadPerMtok">Cache read $ / 1M</Label>
+						<Input
+							id="longCacheReadPerMtok"
+							name="longCacheReadPerMtok"
+							type="number"
+							step="0.0001"
+							min="0"
+							placeholder="auto (0.1× input)"
+						/>
+					</div>
+					<div class="space-y-2">
+						<Label for="longCacheWritePerMtok">Cache write $ / 1M</Label>
+						<Input
+							id="longCacheWritePerMtok"
+							name="longCacheWritePerMtok"
+							type="number"
+							step="0.0001"
+							min="0"
+							placeholder="auto (1.25× input)"
+						/>
+					</div>
+				</div>
+			</div>
 			{#if message}
 				<p class="text-sm text-destructive">{message}</p>
 			{/if}

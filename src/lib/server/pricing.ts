@@ -46,7 +46,11 @@ export async function seedDefaultModelPrices(): Promise<void> {
 		inputPerMtok: String(p.in),
 		outputPerMtok: String(p.out),
 		cacheReadPerMtok: p.cacheRead != null ? String(p.cacheRead) : null,
-		cacheWritePerMtok: p.cacheWrite != null ? String(p.cacheWrite) : null
+		cacheWritePerMtok: p.cacheWrite != null ? String(p.cacheWrite) : null,
+		longInputPerMtok: p.longIn != null ? String(p.longIn) : null,
+		longOutputPerMtok: p.longOut != null ? String(p.longOut) : null,
+		longCacheReadPerMtok: p.longCacheRead != null ? String(p.longCacheRead) : null,
+		longCacheWritePerMtok: p.longCacheWrite != null ? String(p.longCacheWrite) : null
 	}));
 	if (rows.length === 0) return;
 	await db
@@ -61,6 +65,10 @@ export async function seedDefaultModelPrices(): Promise<void> {
 				outputPerMtok: sql`excluded.output_per_mtok`,
 				cacheReadPerMtok: sql`excluded.cache_read_per_mtok`,
 				cacheWritePerMtok: sql`excluded.cache_write_per_mtok`,
+				longInputPerMtok: sql`excluded.long_input_per_mtok`,
+				longOutputPerMtok: sql`excluded.long_output_per_mtok`,
+				longCacheReadPerMtok: sql`excluded.long_cache_read_per_mtok`,
+				longCacheWritePerMtok: sql`excluded.long_cache_write_per_mtok`,
 				updatedAt: new Date()
 			}
 		});
@@ -85,7 +93,11 @@ export async function getEffectivePriceMap(): Promise<PriceMap> {
 		in: Number(r.inputPerMtok),
 		out: Number(r.outputPerMtok),
 		...(r.cacheReadPerMtok != null ? { cacheRead: Number(r.cacheReadPerMtok) } : {}),
-		...(r.cacheWritePerMtok != null ? { cacheWrite: Number(r.cacheWritePerMtok) } : {})
+		...(r.cacheWritePerMtok != null ? { cacheWrite: Number(r.cacheWritePerMtok) } : {}),
+		...(r.longInputPerMtok != null ? { longIn: Number(r.longInputPerMtok) } : {}),
+		...(r.longOutputPerMtok != null ? { longOut: Number(r.longOutputPerMtok) } : {}),
+		...(r.longCacheReadPerMtok != null ? { longCacheRead: Number(r.longCacheReadPerMtok) } : {}),
+		...(r.longCacheWritePerMtok != null ? { longCacheWrite: Number(r.longCacheWritePerMtok) } : {})
 	});
 	const map: PriceMap = {};
 	// defaults first, then custom rows override any matching model
@@ -110,6 +122,14 @@ export interface EffectiveModelPrice {
 	/** provider prompt-cache rates; null when this row leaves them to the fallback */
 	cacheReadPerMtok: number | null;
 	cacheWritePerMtok: number | null;
+	/**
+	 * The long-context rate card, billed above LONG_CONTEXT_MIN_PROMPT_TOKENS. A
+	 * null `longInputPerMtok` means the model has a single rate card.
+	 */
+	longInputPerMtok: number | null;
+	longOutputPerMtok: number | null;
+	longCacheReadPerMtok: number | null;
+	longCacheWritePerMtok: number | null;
 	/** 'custom' when the instance has its own row, else 'default' */
 	source: 'default' | 'custom';
 	/** the platform default beneath an override, if one exists */
@@ -117,6 +137,10 @@ export interface EffectiveModelPrice {
 	defaultOutputPerMtok: number | null;
 	defaultCacheReadPerMtok: number | null;
 	defaultCacheWritePerMtok: number | null;
+	defaultLongInputPerMtok: number | null;
+	defaultLongOutputPerMtok: number | null;
+	defaultLongCacheReadPerMtok: number | null;
+	defaultLongCacheWritePerMtok: number | null;
 }
 
 /**
@@ -148,11 +172,19 @@ export async function listEffectiveModelPrices(): Promise<EffectiveModelPrice[]>
 			outputPerMtok: Number(eff.outputPerMtok),
 			cacheReadPerMtok: num(eff.cacheReadPerMtok),
 			cacheWritePerMtok: num(eff.cacheWritePerMtok),
+			longInputPerMtok: num(eff.longInputPerMtok),
+			longOutputPerMtok: num(eff.longOutputPerMtok),
+			longCacheReadPerMtok: num(eff.longCacheReadPerMtok),
+			longCacheWritePerMtok: num(eff.longCacheWritePerMtok),
 			source: o ? 'custom' : 'default',
 			defaultInputPerMtok: d ? Number(d.inputPerMtok) : null,
 			defaultOutputPerMtok: d ? Number(d.outputPerMtok) : null,
 			defaultCacheReadPerMtok: d ? num(d.cacheReadPerMtok) : null,
-			defaultCacheWritePerMtok: d ? num(d.cacheWritePerMtok) : null
+			defaultCacheWritePerMtok: d ? num(d.cacheWritePerMtok) : null,
+			defaultLongInputPerMtok: d ? num(d.longInputPerMtok) : null,
+			defaultLongOutputPerMtok: d ? num(d.longOutputPerMtok) : null,
+			defaultLongCacheReadPerMtok: d ? num(d.longCacheReadPerMtok) : null,
+			defaultLongCacheWritePerMtok: d ? num(d.longCacheWritePerMtok) : null
 		};
 	});
 }
@@ -165,6 +197,14 @@ export interface ModelPriceInput {
 	/** optional provider prompt-cache rates; omit/null to leave the fallback in charge */
 	cacheReadPerMtok?: number | null;
 	cacheWritePerMtok?: number | null;
+	/**
+	 * Optional long-context rate card. Omitting `longInputPerMtok` (or setting it
+	 * null) gives the model a single rate card — every request bills standard.
+	 */
+	longInputPerMtok?: number | null;
+	longOutputPerMtok?: number | null;
+	longCacheReadPerMtok?: number | null;
+	longCacheWritePerMtok?: number | null;
 }
 
 /** Serialize an optional numeric price to the DB's string|null column shape. */
@@ -187,7 +227,11 @@ export async function createOrgModelPrice(input: ModelPriceInput) {
 			inputPerMtok: String(input.inputPerMtok),
 			outputPerMtok: String(input.outputPerMtok),
 			cacheReadPerMtok: priceStr(input.cacheReadPerMtok),
-			cacheWritePerMtok: priceStr(input.cacheWritePerMtok)
+			cacheWritePerMtok: priceStr(input.cacheWritePerMtok),
+			longInputPerMtok: priceStr(input.longInputPerMtok),
+			longOutputPerMtok: priceStr(input.longOutputPerMtok),
+			longCacheReadPerMtok: priceStr(input.longCacheReadPerMtok),
+			longCacheWritePerMtok: priceStr(input.longCacheWritePerMtok)
 		})
 		.onConflictDoUpdate({
 			target: modelPrice.model,
@@ -199,6 +243,10 @@ export async function createOrgModelPrice(input: ModelPriceInput) {
 				outputPerMtok: String(input.outputPerMtok),
 				cacheReadPerMtok: priceStr(input.cacheReadPerMtok),
 				cacheWritePerMtok: priceStr(input.cacheWritePerMtok),
+				longInputPerMtok: priceStr(input.longInputPerMtok),
+				longOutputPerMtok: priceStr(input.longOutputPerMtok),
+				longCacheReadPerMtok: priceStr(input.longCacheReadPerMtok),
+				longCacheWritePerMtok: priceStr(input.longCacheWritePerMtok),
 				updatedAt: new Date()
 			}
 		})
@@ -223,6 +271,10 @@ export async function updateOrgModelPrice(
 		outputPerMtok?: number;
 		cacheReadPerMtok?: number | null;
 		cacheWritePerMtok?: number | null;
+		longInputPerMtok?: number | null;
+		longOutputPerMtok?: number | null;
+		longCacheReadPerMtok?: number | null;
+		longCacheWritePerMtok?: number | null;
 	}
 ) {
 	const [row] = await db
@@ -236,6 +288,18 @@ export async function updateOrgModelPrice(
 				: {}),
 			...(patch.cacheWritePerMtok !== undefined
 				? { cacheWritePerMtok: priceStr(patch.cacheWritePerMtok) }
+				: {}),
+			...(patch.longInputPerMtok !== undefined
+				? { longInputPerMtok: priceStr(patch.longInputPerMtok) }
+				: {}),
+			...(patch.longOutputPerMtok !== undefined
+				? { longOutputPerMtok: priceStr(patch.longOutputPerMtok) }
+				: {}),
+			...(patch.longCacheReadPerMtok !== undefined
+				? { longCacheReadPerMtok: priceStr(patch.longCacheReadPerMtok) }
+				: {}),
+			...(patch.longCacheWritePerMtok !== undefined
+				? { longCacheWritePerMtok: priceStr(patch.longCacheWritePerMtok) }
 				: {}),
 			updatedAt: new Date()
 		})
