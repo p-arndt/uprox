@@ -22,7 +22,6 @@
 		type = 'bars',
 		normalized = false,
 		cumulative = false,
-		budgetPerBucket = null,
 		highlighted = null,
 		hidden = []
 	}: {
@@ -38,8 +37,6 @@
 		normalized?: boolean;
 		/** plot the running total across the window */
 		cumulative?: boolean;
-		/** draws a dashed per-bucket budget reference line (spend metric only) */
-		budgetPerBucket?: number | null;
 		/** dims every other series — driven by legend hover */
 		highlighted?: string | null;
 		/** series keys toggled off from the legend; excluded from stack and scale */
@@ -129,16 +126,11 @@
 	const TICKS = 4;
 
 	// Normalized mode rescales each bucket to its own total, so the axis is a
-	// fixed 0-100%; otherwise round the tallest stack (and the budget line, when
-	// it sits above the data, so the line stays on-canvas) up to a nice step.
+	// fixed 0-100%; otherwise round the tallest stack up to a nice step.
 	const step = $derived.by(() => {
 		if (normalized) return 25;
 		const dataMax = Math.max(0, ...bucketTotals);
-		const withBudget =
-			budgetPerBucket && metric === 'cost' && !cumulative
-				? Math.max(dataMax, budgetPerBucket)
-				: dataMax;
-		return niceStep((withBudget > 0 ? withBudget : 1) / TICKS);
+		return niceStep((dataMax > 0 ? dataMax : 1) / TICKS);
 	});
 
 	// The axis top is a whole number of steps, so every gridline lands on a round
@@ -213,12 +205,6 @@
 	// Roughly one label per ~8 buckets, so a 90-day window doesn't overprint.
 	const tickEvery = $derived(Math.max(1, Math.ceil(buckets.length / 8)));
 
-	const budgetTopPct = $derived(
-		budgetPerBucket && metric === 'cost' && !normalized && !cumulative
-			? 100 - (budgetPerBucket / peak) * 100
-			: null
-	);
-
 	const empty = $derived(buckets.length === 0 || bucketTotals.every((v) => v <= 0));
 
 	// SVG geometry for the area variant. The 0-100 viewBox stretches to the
@@ -281,20 +267,6 @@
 					></div>
 				{/each}
 			</div>
-
-			<!-- Budget reference line. Dashed + labelled so it never reads as data. -->
-			{#if budgetTopPct !== null && budgetTopPct >= 0}
-				<div
-					class="pointer-events-none absolute right-0 left-0 border-t-2 border-dashed border-destructive/70"
-					style="top: {budgetTopPct}%"
-				>
-					<span
-						class="absolute -top-2 right-0 bg-card px-1 text-[10px] font-medium text-destructive"
-					>
-						budget {formatUsd(budgetPerBucket ?? 0)}/{unit}
-					</span>
-				</div>
-			{/if}
 
 			{#if type === 'bars'}
 				<!-- One column per bucket; segments stack bottom-up inside it. -->

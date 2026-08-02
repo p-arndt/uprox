@@ -19,16 +19,13 @@
 		groupBy,
 		rangeLabel,
 		bucket,
-		bucketHref,
-		budgetPerBucket = null
+		bucketHref
 	}: {
 		grouped: GroupedSeriesResult;
 		groupBy: UsageDimension;
 		rangeLabel: string;
 		bucket: string;
 		bucketHref: (key: string) => ResolvedPathname;
-		/** per-bucket spend ceiling, drawn as a dashed reference line */
-		budgetPerBucket?: number | null;
 	} = $props();
 
 	type Metric = 'cost' | 'requests' | 'tokens';
@@ -174,7 +171,6 @@
 			type={chartType}
 			{normalized}
 			{cumulative}
-			{budgetPerBucket}
 			{highlighted}
 			{hidden}
 		/>

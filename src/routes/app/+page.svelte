@@ -2,6 +2,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import BudgetAlert from '$lib/components/budget-alert.svelte';
+	import BudgetGauge from '$lib/components/budget-gauge.svelte';
 	import { resolve } from '$app/paths';
 	import type { Pathname, ResolvedPathname } from '$app/types';
 	import { relativeTime, formatDateTime, formatUsd, formatTokens, formatCount } from '$lib/format';
@@ -86,6 +87,20 @@
 		statuses={data.instanceBudget ? [data.instanceBudget, ...data.budgets] : data.budgets}
 		threshold={data.budgetThreshold}
 	/>
+
+	<!-- Always-on, even during onboarding and on a day with no traffic: the
+	     ceiling belongs to the billing period, not to anything on this page. The
+	     alert above only fires past the warn threshold; this keeps the headroom
+	     glanceable before it's a problem. Renders nothing without a ceiling. -->
+	{#if data.instanceBudget}
+		<BudgetGauge
+			statuses={[data.instanceBudget]}
+			threshold={data.budgetThreshold}
+			showServiceName={false}
+			title="Instance budget"
+			description="Spend across all services this period"
+		/>
+	{/if}
 
 	{#if showOnboarding}
 		<Card.Root>

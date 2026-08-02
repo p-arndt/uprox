@@ -68,22 +68,6 @@
 	// exactly the view on screen.
 	const exportHref = (shape: 'breakdown' | 'timeseries') =>
 		`${hrefWith({})}&shape=${shape}`.replace('/app/usage?', '/app/usage/export?');
-
-	// The dashed budget line on the chart. Only the instance-wide ceiling maps
-	// cleanly onto an org-wide chart — a per-service ceiling would be comparing a
-	// single service's limit against every service's spend. Divided across the
-	// window's buckets so the line sits at the per-bucket run rate the budget
-	// implies, matching what each column actually measures.
-	const budgetPerBucket = $derived.by(() => {
-		const monthly = data.instanceBudget?.monthly?.budgetUsd;
-		if (!monthly || monthly <= 0) return null;
-		const unit = data.grouped.unit;
-		if (unit === 'day') return monthly / 30;
-		if (unit === 'hour') return monthly / 30 / 24;
-		if (unit === 'week') return monthly / 4.345;
-		if (unit === 'month') return monthly;
-		return null;
-	});
 </script>
 
 {#snippet rowLabel(row: DimensionUsageRow, dim: UsageDimension)}
@@ -181,6 +165,5 @@
 		budgets={data.budgets}
 		instanceBudget={data.instanceBudget}
 		budgetThreshold={data.budgetThreshold}
-		{budgetPerBucket}
 	/>
 </div>

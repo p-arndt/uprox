@@ -34,8 +34,7 @@
 		trailing,
 		budgets = [],
 		instanceBudget = null,
-		budgetThreshold,
-		budgetPerBucket = null
+		budgetThreshold
 	}: {
 		analysis: UsageAnalysis;
 		rangeLabel: string;
@@ -51,7 +50,6 @@
 		budgets?: BudgetStatus[];
 		instanceBudget?: BudgetStatus | null;
 		budgetThreshold?: number;
-		budgetPerBucket?: number | null;
 	} = $props();
 
 	const hasTraffic = $derived(analysis.totals.requests > 0 || analysis.breakdown.length > 0);
@@ -79,6 +77,29 @@
 	{/if}
 </div>
 
+<!-- Budget headroom sits above everything, and outside the traffic check: a
+     ceiling belongs to the billing period, not to the window on screen, so it
+     stays true (and worth seeing) on a day with no requests at all. That same
+     mismatch is why it can't be a line on the chart — dividing a monthly ceiling
+     down to an hourly bucket produces a threshold any single request clears. -->
+{#if instanceBudget}
+	<BudgetGauge
+		statuses={[instanceBudget]}
+		threshold={budgetThreshold}
+		showServiceName={false}
+		title="Instance budget"
+		description="Spend across all services this period"
+	/>
+{/if}
+
+{#if budgets.length > 0}
+	<BudgetGauge
+		statuses={budgets}
+		threshold={budgetThreshold}
+		showServiceName={budgets.length > 1}
+	/>
+{/if}
+
 {#if !hasTraffic}
 	<Card.Root>
 		<Card.Content class="py-16 text-center text-sm text-muted-foreground">
@@ -103,7 +124,6 @@
 		{rangeLabel}
 		bucket={analysis.bucket}
 		{bucketHref}
-		{budgetPerBucket}
 	/>
 
 	{#if analysis.movers.length > 0}
@@ -138,22 +158,4 @@
 	<UsageTokenMeters breakdown={analysis.meters} />
 
 	<UsageReliability totals={analysis.totals} />
-
-	{#if instanceBudget}
-		<BudgetGauge
-			statuses={[instanceBudget]}
-			threshold={budgetThreshold}
-			showServiceName={false}
-			title="Instance budget"
-			description="Spend across all services this period"
-		/>
-	{/if}
-
-	{#if budgets.length > 0}
-		<BudgetGauge
-			statuses={budgets}
-			threshold={budgetThreshold}
-			showServiceName={budgets.length > 1}
-		/>
-	{/if}
 {/if}
