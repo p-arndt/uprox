@@ -437,7 +437,15 @@ export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	// OpenAI — embeddings (input-only; no output tokens and no prompt caching)
 	'text-embedding-3-small': { in: 0.02, out: 0 },
 	'text-embedding-3-large': { in: 0.13, out: 0 },
+	// Anthropic — Claude 5 series
+	'claude-fable-5': anthropic(10, 50),
+	'claude-mythos-5': anthropic(10, 50),
+	'claude-opus-5': anthropic(5, 25),
+	// Sonnet 5 carries introductory $2/$10 pricing through 2026-08-31; it reverts
+	// to $3/$15 (the 4.x Sonnet rate) on 2026-09-01, so this row needs updating then.
+	'claude-sonnet-5': anthropic(2, 10),
 	// Anthropic — current Claude 4.x series
+	'claude-opus-4-8': anthropic(5, 25),
 	'claude-opus-4-7': anthropic(5, 25),
 	'claude-opus-4-6': anthropic(5, 25),
 	'claude-opus-4-5': anthropic(5, 25),

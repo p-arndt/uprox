@@ -340,6 +340,55 @@ describe('cache default prices', () => {
 		});
 	});
 
+	it('seeds the Claude 5 series, cache rates included', () => {
+		// cacheWrite is Anthropic's 5-minute TTL rate (1.25× input). The 1-hour TTL
+		// write costs 2× input upstream, which a single cache_write column can't
+		// express — those writes are billed here at the 5m rate.
+		expect(DEFAULT_MODEL_PRICES['claude-fable-5']).toEqual({
+			in: 10,
+			out: 50,
+			cacheRead: 1,
+			cacheWrite: 12.5
+		});
+		expect(DEFAULT_MODEL_PRICES['claude-mythos-5']).toEqual({
+			in: 10,
+			out: 50,
+			cacheRead: 1,
+			cacheWrite: 12.5
+		});
+		expect(DEFAULT_MODEL_PRICES['claude-opus-5']).toEqual({
+			in: 5,
+			out: 25,
+			cacheRead: 0.5,
+			cacheWrite: 6.25
+		});
+		expect(DEFAULT_MODEL_PRICES['claude-opus-4-8']).toEqual({
+			in: 5,
+			out: 25,
+			cacheRead: 0.5,
+			cacheWrite: 6.25
+		});
+		// introductory pricing through 2026-08-31; reverts to $3/$15 on 2026-09-01
+		expect(DEFAULT_MODEL_PRICES['claude-sonnet-5']).toEqual({
+			in: 2,
+			out: 10,
+			cacheRead: 0.2,
+			cacheWrite: 2.5
+		});
+	});
+
+	it('resolves dated Claude 5 ids without colliding with the 4.x rows', () => {
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'claude-opus-5-20260115')).toBe(
+			DEFAULT_MODEL_PRICES['claude-opus-5']
+		);
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'claude-sonnet-5')).toBe(
+			DEFAULT_MODEL_PRICES['claude-sonnet-5']
+		);
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'claude-opus-4-8')).toBe(
+			DEFAULT_MODEL_PRICES['claude-opus-4-8']
+		);
+	});
+
 	it('seeds pre-5.6 OpenAI writes at the plain input rate (no surcharge)', () => {
 		// GPT-5 series reads at 0.1×, GPT-4o at 0.5×; neither surcharges writes, so
 		// cacheWrite == in. Leaving it unset would hand these models the 1.25×
