@@ -441,6 +441,21 @@ export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	// so it's intentionally absent and its requests carry a null cost.
 	'gpt-4o-transcribe': openai(2.5, 10, 0.5),
 	'gpt-4o-mini-transcribe': openai(1.25, 5, 0.5),
+	// OpenAI — image generation and editing (/images/generations, /images/edits).
+	// The gpt-image family is token-billed and reports usage, so it prices like a
+	// text model: `in` is the text-input rate and `out` the image-output rate.
+	// Image *input* tokens (the source images an edit uploads) are billed higher
+	// upstream — $10/Mtok for gpt-image-1, $8 for the 1.5/2 tiers — but the usage
+	// figure only splits them under input_tokens_details, which the cost calc
+	// folds into one input count; edits with large source images are therefore
+	// under-costed here. Cache reads run at 0.25× the input rate (0.1× on mini).
+	// dall-e-2/3 are billed per generated image, not per token, and report no
+	// usage at all — intentionally absent, so their requests carry a null cost.
+	'gpt-image-2': openai(5, 30, 0.25),
+	'gpt-image-1.5': openai(5, 32, 0.25),
+	'gpt-image-1-mini': openai(2, 8, 0.1),
+	'gpt-image-1': openai(5, 40, 0.25),
+	'chatgpt-image-latest': openai(5, 32, 0.25),
 	// OpenAI — embeddings (input-only; no output tokens and no prompt caching)
 	'text-embedding-3-small': { in: 0.02, out: 0 },
 	'text-embedding-3-large': { in: 0.13, out: 0 },

@@ -99,6 +99,8 @@ OpenAI-compatible gateway, authenticated with a `Bearer uprox_live_…` token (o
 | `POST /v1/chat/completions`                                         | streaming supported                                                                    |
 | `POST /v1/responses`                                                | OpenAI Responses API; streaming supported                                              |
 | `POST /v1/embeddings`                                               |                                                                                        |
+| `POST /v1/images/generations`                                       | image generation (JSON); `gpt-image-1`, `gpt-image-1-mini`, `dall-e-3`                 |
+| `POST /v1/images/edits`                                             | image editing (multipart: `image`/`image[]`, optional `mask`, `prompt`, `model`)       |
 | `POST /v1/audio/transcriptions`                                     | speech-to-text (multipart); `whisper-1`, `gpt-4o-transcribe`, `gpt-4o-mini-transcribe` |
 | `POST /v1/realtime/client_secrets`                                  | mint an ephemeral Realtime token; client connects to OpenAI directly (WebRTC/WS)       |
 | `POST /v1/realtime/sessions`, `/v1/realtime/transcription_sessions` | legacy Realtime ephemeral-token endpoints                                              |
@@ -118,17 +120,19 @@ The same gateway is reachable under URLs the Azure OpenAI SDK builds, so you can
 point an existing Azure-style client at uprox by swapping its `AZURE_OPENAI_ENDPOINT`
 for your uprox base URL and its `AZURE_OPENAI_API_KEY` for an `uprox_live_…` token.
 
-| Endpoint                                                     | Equivalent of                                         |
-| ------------------------------------------------------------ | ----------------------------------------------------- |
-| `POST /openai/deployments/{deployment}/chat/completions`     | legacy per-deployment Azure URL (model from URL)      |
-| `POST /openai/deployments/{deployment}/embeddings`           | legacy per-deployment Azure URL                       |
-| `POST /openai/deployments/{deployment}/responses`            | legacy per-deployment Azure URL                       |
-| `POST /openai/responses`                                     | Responses API on Azure (model from body)              |
-| `POST /openai/deployments/{deployment}/audio/transcriptions` | legacy per-deployment Azure URL                       |
-| `POST /openai/chat/completions`, `POST /openai/embeddings`   | Azure flat URLs (model from body)                     |
-| `POST /openai/audio/transcriptions`                          | Azure flat URL (model from multipart form)            |
-| `GET  /openai/models`                                        | Azure model listing                                   |
-| `POST /openai/v1/chat/completions` (and `/embeddings`, …)    | newer Azure OpenAI v1 surface (`api_version=preview`) |
+| Endpoint                                                                    | Equivalent of                                         |
+| --------------------------------------------------------------------------- | ----------------------------------------------------- |
+| `POST /openai/deployments/{deployment}/chat/completions`                    | legacy per-deployment Azure URL (model from URL)      |
+| `POST /openai/deployments/{deployment}/embeddings`                          | legacy per-deployment Azure URL                       |
+| `POST /openai/deployments/{deployment}/responses`                           | legacy per-deployment Azure URL                       |
+| `POST /openai/responses`                                                    | Responses API on Azure (model from body)              |
+| `POST /openai/deployments/{deployment}/audio/transcriptions`                | legacy per-deployment Azure URL                       |
+| `POST /openai/deployments/{deployment}/images/generations`, `/images/edits` | legacy per-deployment Azure URL                       |
+| `POST /openai/chat/completions`, `POST /openai/embeddings`                  | Azure flat URLs (model from body)                     |
+| `POST /openai/audio/transcriptions`                                         | Azure flat URL (model from multipart form)            |
+| `POST /openai/images/generations`, `POST /openai/images/edits`              | Azure flat URLs (model from body / multipart form)    |
+| `GET  /openai/models`                                                       | Azure model listing                                   |
+| `POST /openai/v1/chat/completions` (and `/embeddings`, …)                   | newer Azure OpenAI v1 surface (`api_version=preview`) |
 
 The `api-version` query string is accepted and ignored. Model routing is identical
 to `/v1/*` — the deployment name acts as the model id, and uprox proxies to Azure

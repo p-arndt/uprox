@@ -549,4 +549,27 @@ describe('resolvePrice', () => {
 		// so its requests record a null cost.
 		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'whisper-1')).toBeNull();
 	});
+
+	it('prices the token-billed gpt-image models but leaves dall-e unpriced', () => {
+		// dated snapshots resolve to their family key, and the longer mini/1.5 keys
+		// win over the plain gpt-image-1 entry.
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'gpt-image-1-2026-04-23')).toBe(
+			DEFAULT_MODEL_PRICES['gpt-image-1']
+		);
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'gpt-image-1-mini')).toBe(
+			DEFAULT_MODEL_PRICES['gpt-image-1-mini']
+		);
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'gpt-image-1.5')).toBe(
+			DEFAULT_MODEL_PRICES['gpt-image-1.5']
+		);
+		// dall-e is billed per generated image and reports no usage: no default
+		// price, so its requests record a null cost.
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'dall-e-3')).toBeNull();
+	});
+
+	it('costs a gpt-image-1 edit from its reported token usage', () => {
+		const price = DEFAULT_MODEL_PRICES['gpt-image-1'];
+		// $5/Mtok input, $40/Mtok image output
+		expect(costFromPrice(price, 1_000_000, 1_000_000)).toBe(45);
+	});
 });
