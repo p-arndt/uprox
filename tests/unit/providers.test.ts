@@ -498,6 +498,15 @@ describe('cache default prices', () => {
 		// embedding model: input-only, no output cost and no cache rate
 		expect(DEFAULT_MODEL_PRICES['gemini-embedding-001']).toEqual({ in: 0.15, out: 0 });
 	});
+
+	it('prices 3.7 and 3.6 Flash at the shared introductory rate', () => {
+		// Introductory pricing, valid through 2026-12-31. On 2027-01-01 all three
+		// rates double ($1.50 / $7.50 / $0.15) — this assertion is what should fail
+		// and prompt the update.
+		const intro = { in: 0.75, out: 3.75, cacheRead: 0.075, cacheWrite: 0.75 };
+		expect(DEFAULT_MODEL_PRICES['gemini-3.7-flash']).toEqual(intro);
+		expect(DEFAULT_MODEL_PRICES['gemini-3.6-flash']).toEqual(intro);
+	});
 });
 
 describe('gemini price lookup by longest prefix', () => {

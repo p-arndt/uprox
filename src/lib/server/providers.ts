@@ -480,6 +480,11 @@ export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	'claude-3-5-haiku': anthropic(0.8, 4),
 	'claude-sonnet-4': anthropic(3, 15),
 	// Google Gemini — current Gemini 3 series (cache reads at the docs' explicit rate)
+	// 3.7 and 3.6 Flash share one rate card and are on INTRODUCTORY pricing through
+	// 2026-12-31; on 2027-01-01 every rate doubles to $1.50 / $7.50 / $0.15, so both
+	// rows need updating then.
+	'gemini-3.7-flash': gemini(0.75, 3.75, 0.075),
+	'gemini-3.6-flash': gemini(0.75, 3.75, 0.075),
 	'gemini-3.5-flash': gemini(1.5, 9, 0.15),
 	'gemini-3.1-pro': gemini(2, 12, 0.2),
 	'gemini-3.1-flash-lite': gemini(0.25, 1.5, 0.025),
