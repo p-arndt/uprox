@@ -144,9 +144,16 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 		// plain http (Ollama commonly runs on a private network) and auth is optional:
 		// when set, the secret holds `username:password` for HTTP basic auth, typically
 		// added by a reverse proxy in front of Ollama. Serves arbitrary model names.
+		//
+		// Ollama's OpenAI surface covers chat completions, embeddings, model listing
+		// and the Responses API (https://docs.ollama.com/api/openai-compatibility).
+		// Responses is supported in its non-stateful flavour only: `store`,
+		// `previous_response_id` and `conversation` are not implemented upstream, and
+		// there is no `GET /responses/{id}` — those requests are proxied through and
+		// rejected by Ollama itself.
 		baseUrl: '',
 		modelPrefixes: [],
-		capabilities: ['chat', 'embeddings', 'models'],
+		capabilities: ['chat', 'responses', 'embeddings', 'models'],
 		authScheme: 'basic',
 		requiresEndpoint: true,
 		acceptsAnyModel: true,

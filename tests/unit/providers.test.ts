@@ -49,6 +49,15 @@ describe('providerSupports', () => {
 		expect(providerSupports(PROVIDERS.custom, 'realtime')).toBe(true);
 		expect(providerSupports(PROVIDERS.anthropic, 'realtime')).toBe(false);
 		expect(providerSupports(PROVIDERS.gemini, 'realtime')).toBe(false);
+		// Ollama's OpenAI surface covers chat, embeddings, models and Responses
+		// (non-stateful only); it has no images/transcriptions/realtime surface.
+		expect(providerSupports(PROVIDERS.ollama, 'chat')).toBe(true);
+		expect(providerSupports(PROVIDERS.ollama, 'embeddings')).toBe(true);
+		expect(providerSupports(PROVIDERS.ollama, 'models')).toBe(true);
+		expect(providerSupports(PROVIDERS.ollama, 'responses')).toBe(true);
+		expect(providerSupports(PROVIDERS.ollama, 'images')).toBe(false);
+		expect(providerSupports(PROVIDERS.ollama, 'transcriptions')).toBe(false);
+		expect(providerSupports(PROVIDERS.ollama, 'realtime')).toBe(false);
 	});
 });
 
