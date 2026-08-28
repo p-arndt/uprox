@@ -73,8 +73,18 @@ export function colorForSeries(dim: string, key: string, rank: number): string {
 	// Meters are a fixed vocabulary, so they keep fixed colours — the band in the
 	// over-time chart must match the swatch in the composition bar above it.
 	if (dim === 'meter') return METER_COLOR[key] ?? OTHERS_COLOR;
+	// Context tiers are a two-value vocabulary and the long one is the expensive
+	// one, so it keeps a fixed colour instead of inheriting whatever rank it
+	// happens to hold this window.
+	if (dim === 'tier') return TIER_COLOR[key] ?? OTHERS_COLOR;
 	return seriesColor(rank);
 }
+
+/** Fixed colours for the context-tier dimension; same reasoning as METER_COLOR. */
+export const TIER_COLOR: Record<string, string> = {
+	standard: 'var(--series-1)',
+	long: 'var(--series-4)'
+};
 
 /**
  * Token meters get FIXED colours, not rank-assigned ones. A meter is a stable

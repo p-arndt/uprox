@@ -505,6 +505,23 @@ const FALLBACK_CACHE_READ_MULT = 0.1;
 const FALLBACK_CACHE_WRITE_MULT = 1.25;
 
 /**
+ * Which rate card a request billed against. Recorded on the audit row so the
+ * cost analysis can slice spend by tier: a long-context request costs 2×/1.5×
+ * its standard self, and without this the jump is invisible in the totals.
+ */
+export type ContextTier = 'standard' | 'long';
+
+/**
+ * The tier a prompt of this size falls into — the single definition of the
+ * rule, used both to pick the rates and to label the request.
+ */
+export function contextTierForPromptTokens(price: ModelPrice, promptTokens: number): ContextTier {
+	return price.longIn != null && promptTokens >= LONG_CONTEXT_MIN_PROMPT_TOKENS
+		? 'long'
+		: 'standard';
+}
+
+/**
  * The rate card a request of this prompt size bills against: the long-context
  * one once the prompt reaches {@link LONG_CONTEXT_MIN_PROMPT_TOKENS}, else the
  * standard one. Models without a long-context rate (`longIn` unset) always bill
@@ -515,9 +532,11 @@ export function tierForPromptTokens(
 	price: ModelPrice,
 	promptTokens: number
 ): Pick<ModelPrice, 'in' | 'out' | 'cacheRead' | 'cacheWrite'> {
-	if (price.longIn == null || promptTokens < LONG_CONTEXT_MIN_PROMPT_TOKENS) return price;
+	const longIn = price.longIn;
+	if (longIn == null || contextTierForPromptTokens(price, promptTokens) === 'standard')
+		return price;
 	return {
-		in: price.longIn,
+		in: longIn,
 		out: price.longOut ?? price.out,
 		cacheRead: price.longCacheRead,
 		cacheWrite: price.longCacheWrite
@@ -569,14 +588,50 @@ export function resolvePrice(prices: Record<string, ModelPrice>, model: string):
 	return key ? prices[key] : null;
 }
 
+/** What a request cost, and which rate card it was billed against. */
+export interface CostEstimate {
+	costUsd: number | null;
+	/** null exactly when `costUsd` is: nothing was priced, so no card applied */
+	tier: ContextTier | null;
+}
+
 /**
  * Estimate a request's USD cost. Reads the instance's effective price map
  * (custom overrides layered over platform defaults) from the database via a
  * short-lived in-memory cache, then matches the model by longest prefix.
  * `promptTokens` is the total input volume; `cacheReadTokens`/`cacheWriteTokens`
- * are the cache subsets within it, priced separately. Returns null when the
- * model has no price or no prompt tokens were reported.
+ * are the cache subsets within it, priced separately. Returns a null cost when
+ * the model has no price or no prompt tokens were reported.
+ *
+ * The tier comes back alongside the cost because it's decided here, from the
+ * resolved price — the caller has the model name but not the rate card, so it
+ * can't tell a long-context request from a standard one on its own.
  */
+export async function estimateCost(
+	model: string | undefined,
+	promptTokens: number | undefined,
+	completionTokens: number | undefined,
+	cacheReadTokens = 0,
+	cacheWriteTokens = 0
+): Promise<CostEstimate> {
+	if (!model || promptTokens == null) return { costUsd: null, tier: null };
+	const { getEffectivePriceMap } = await import('$lib/server/pricing');
+	const prices = await getEffectivePriceMap();
+	const price = resolvePrice(prices, model);
+	if (!price) return { costUsd: null, tier: null };
+	return {
+		costUsd: costFromPrice(
+			price,
+			promptTokens,
+			completionTokens ?? 0,
+			cacheReadTokens,
+			cacheWriteTokens
+		),
+		tier: contextTierForPromptTokens(price, promptTokens)
+	};
+}
+
+/** {@link estimateCost} for callers that only need the money. */
 export async function estimateCostUsd(
 	model: string | undefined,
 	promptTokens: number | undefined,
@@ -584,16 +639,12 @@ export async function estimateCostUsd(
 	cacheReadTokens = 0,
 	cacheWriteTokens = 0
 ): Promise<number | null> {
-	if (!model || promptTokens == null) return null;
-	const { getEffectivePriceMap } = await import('$lib/server/pricing');
-	const prices = await getEffectivePriceMap();
-	const price = resolvePrice(prices, model);
-	if (!price) return null;
-	return costFromPrice(
-		price,
+	const { costUsd } = await estimateCost(
+		model,
 		promptTokens,
-		completionTokens ?? 0,
+		completionTokens,
 		cacheReadTokens,
 		cacheWriteTokens
 	);
+	return costUsd;
 }

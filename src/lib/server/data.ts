@@ -31,6 +31,7 @@ import {
 	type UsageFilterOption,
 	type UsageFilterOptions
 } from '$lib/usage-group';
+import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/pricing';
 
 /**
  * Inline limit & access overrides settable directly on a service or token —
@@ -1306,6 +1307,17 @@ const DIMENSION_SQL: Record<
 	status: {
 		value: sql`coalesce(${auditLog.status}, ${NULL_VALUE})`,
 		label: sql`max(${auditLog.status})`
+	},
+	// The stored values are the bare keys ('standard' | 'long'); the label is
+	// spelled out here rather than in the client so the CSV export and the table
+	// read the same, and so the threshold that defines the tier is on screen.
+	tier: {
+		value: sql`coalesce(${auditLog.contextTier}, ${NULL_VALUE})`,
+		// No ELSE on purpose: a NULL tier must stay NULL so the row falls through to
+		// fallbackLabel's "Unpriced" instead of being called Standard, which would
+		// quietly park denials and errors in a real rate card.
+		label: sql`max(case ${auditLog.contextTier} when 'long' then 'Long context' when 'standard' then 'Standard' end)`,
+		hint: sql`max(case ${auditLog.contextTier} when 'long' then ${`from ${LONG_CONTEXT_MIN_PROMPT_TOKENS / 1000}K prompt tokens`}::text end)`
 	}
 };
 
@@ -1319,7 +1331,8 @@ const DIMENSION_JOIN: Record<SqlDimension, ReturnType<typeof sql>> = {
 	token: sql`left join ${machineToken} on ${machineToken.id} = ${auditLog.tokenId}`,
 	model: sql``,
 	provider: sql``,
-	status: sql``
+	status: sql``,
+	tier: sql``
 };
 
 /** One filter clause: OR within the dimension's values, AND across dimensions. */
@@ -1681,6 +1694,8 @@ function fallbackLabel(dim: UsageDimension, key: string): string {
 	if (dim === 'token') return 'Revoked token';
 	if (dim === 'model') return 'No model';
 	if (dim === 'provider') return 'Unrouted';
+	// a denial, an error or an unpriced model never reached a rate card at all
+	if (dim === 'tier') return 'Unpriced';
 	return 'Unknown';
 }
 

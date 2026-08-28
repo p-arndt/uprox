@@ -13,6 +13,7 @@ import {
 	authHeaders,
 	selectProviderSecret,
 	PROVIDERS,
+	type ContextTier,
 	type Capability,
 	type ProviderDef
 } from '$lib/server/providers';
@@ -642,16 +643,16 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		void (async () => {
 			try {
 				const { usage, raw, complete } = await drainSse(costBranch, openAiUsageExtractor);
-				const { estimateCostUsd } = await import('$lib/server/providers');
-				const cost = usage
-					? await estimateCostUsd(
+				const { estimateCost } = await import('$lib/server/providers');
+				const { costUsd: cost, tier } = usage
+					? await estimateCost(
 							sendModel,
 							usage.input ?? undefined,
 							usage.output ?? undefined,
 							usage.cacheRead ?? 0,
 							usage.cacheWrite ?? 0
 						)
-					: null;
+					: { costUsd: null, tier: null };
 				await auditTrace(
 					{
 						action: `gateway.${scope}`,
@@ -666,6 +667,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 						outputTokens: usage?.output ?? null,
 						providerCachedTokens: usage?.cacheRead ?? null,
 						cacheWriteTokens: usage?.cacheWrite ?? null,
+						contextTier: tier,
 						latencyMs: Date.now() - started,
 						ip,
 						detail: 'stream'
@@ -709,6 +711,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		? adapter.translateResponse({ scope, model: sendModel, text: rawText, ok: upstream.ok })
 		: rawText;
 	let cost: number | null = null;
+	let tier: ContextTier | null = null;
 	let cachedTokens: number | null = null;
 	let cacheWriteTokens: number | null = null;
 	let inputTokens: number | null = null;
@@ -716,18 +719,18 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	try {
 		const parsed = JSON.parse(text) as { usage?: unknown };
 		const usage = normalizeUsage(parsed.usage);
-		const { estimateCostUsd } = await import('$lib/server/providers');
+		const { estimateCost } = await import('$lib/server/providers');
 		inputTokens = usage?.input ?? null;
 		outputTokens = usage?.output ?? null;
 		cachedTokens = usage?.cacheRead ?? null;
 		cacheWriteTokens = usage?.cacheWrite ?? null;
-		cost = await estimateCostUsd(
+		({ costUsd: cost, tier } = await estimateCost(
 			sendModel,
 			inputTokens ?? undefined,
 			outputTokens ?? undefined,
 			cachedTokens ?? 0,
 			cacheWriteTokens ?? 0
-		);
+		));
 	} catch {
 		// non-JSON or no usage; leave cost null
 	}
@@ -746,6 +749,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 			outputTokens,
 			providerCachedTokens: cachedTokens,
 			cacheWriteTokens,
+			contextTier: tier,
 			latencyMs: Date.now() - started,
 			ip
 		},
@@ -1009,6 +1013,7 @@ export async function proxyMultipartToProvider(
 	// the JSON.parse fails harmlessly on the latter, leaving cost null.
 	const text = await upstream.text();
 	let cost: number | null = null;
+	let tier: ContextTier | null = null;
 	let inputTokens: number | null = null;
 	let outputTokens: number | null = null;
 	try {
@@ -1017,8 +1022,12 @@ export async function proxyMultipartToProvider(
 		if (usage) {
 			inputTokens = usage.input;
 			outputTokens = usage.output;
-			const { estimateCostUsd } = await import('$lib/server/providers');
-			cost = await estimateCostUsd(model, usage.input ?? undefined, usage.output ?? undefined);
+			const { estimateCost } = await import('$lib/server/providers');
+			({ costUsd: cost, tier } = await estimateCost(
+				model,
+				usage.input ?? undefined,
+				usage.output ?? undefined
+			));
 		}
 	} catch {
 		// non-JSON (text/srt/vtt) or no usage; leave cost null
@@ -1036,6 +1045,7 @@ export async function proxyMultipartToProvider(
 			costUsd: cost,
 			inputTokens,
 			outputTokens,
+			contextTier: tier,
 			latencyMs: Date.now() - started,
 			ip
 		},
@@ -1298,16 +1308,16 @@ export async function proxyGeminiNative(
 		void (async () => {
 			try {
 				const { usage, raw, complete } = await drainSse(costBranch, geminiUsageExtractor);
-				const { estimateCostUsd } = await import('$lib/server/providers');
-				const cost = usage
-					? await estimateCostUsd(
+				const { estimateCost } = await import('$lib/server/providers');
+				const { costUsd: cost, tier } = usage
+					? await estimateCost(
 							model,
 							usage.input ?? undefined,
 							usage.output ?? undefined,
 							usage.cacheRead ?? 0,
 							usage.cacheWrite ?? 0
 						)
-					: null;
+					: { costUsd: null, tier: null };
 				await auditTrace(
 					{
 						action: `gateway.${scope}`,
@@ -1322,6 +1332,7 @@ export async function proxyGeminiNative(
 						outputTokens: usage?.output ?? null,
 						providerCachedTokens: usage?.cacheRead ?? null,
 						cacheWriteTokens: usage?.cacheWrite ?? null,
+						contextTier: tier,
 						latencyMs: Date.now() - started,
 						ip,
 						detail: 'native stream'
@@ -1358,24 +1369,25 @@ export async function proxyGeminiNative(
 	// buffered passthrough: read native usageMetadata for cost, return body as-is.
 	const text = await upstream.text();
 	let cost: number | null = null;
+	let tier: ContextTier | null = null;
 	let cachedTokens: number | null = null;
 	let cacheWriteTokens: number | null = null;
 	let inputTokens: number | null = null;
 	let outputTokens: number | null = null;
 	try {
 		const usage = geminiNativeUsage(JSON.parse(text));
-		const { estimateCostUsd } = await import('$lib/server/providers');
+		const { estimateCost } = await import('$lib/server/providers');
 		inputTokens = usage?.input ?? null;
 		outputTokens = usage?.output ?? null;
 		cachedTokens = usage?.cacheRead ?? null;
 		cacheWriteTokens = usage?.cacheWrite ?? null;
-		cost = await estimateCostUsd(
+		({ costUsd: cost, tier } = await estimateCost(
 			model,
 			inputTokens ?? undefined,
 			outputTokens ?? undefined,
 			cachedTokens ?? 0,
 			cacheWriteTokens ?? 0
-		);
+		));
 	} catch {
 		// non-JSON or no usage; leave cost null
 	}
@@ -1394,6 +1406,7 @@ export async function proxyGeminiNative(
 			outputTokens,
 			providerCachedTokens: cachedTokens,
 			cacheWriteTokens,
+			contextTier: tier,
 			latencyMs: Date.now() - started,
 			ip,
 			detail: 'native'

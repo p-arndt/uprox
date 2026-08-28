@@ -8,6 +8,7 @@ import {
 	resolveProvider,
 	selectProviderSecret,
 	costFromPrice,
+	contextTierForPromptTokens,
 	resolvePrice,
 	DEFAULT_MODEL_PRICES,
 	LONG_CONTEXT_MIN_PROMPT_TOKENS
@@ -328,6 +329,15 @@ describe('long-context pricing', () => {
 		const nano = DEFAULT_MODEL_PRICES['gpt-5.4-nano'];
 		expect(nano.longIn).toBeUndefined();
 		expect(costFromPrice(nano, 1_000_000, 0)).toBe(0.2);
+	});
+
+	it('labels the tier the request billed against', () => {
+		const nano = DEFAULT_MODEL_PRICES['gpt-5.4-nano'];
+		expect(contextTierForPromptTokens(sol, LONG_CONTEXT_MIN_PROMPT_TOKENS - 1)).toBe('standard');
+		expect(contextTierForPromptTokens(sol, LONG_CONTEXT_MIN_PROMPT_TOKENS)).toBe('long');
+		// a single-rate-card model never leaves the standard tier, however long the
+		// prompt — labelling it 'long' would claim an uplift it was never charged
+		expect(contextTierForPromptTokens(nano, 1_000_000)).toBe('standard');
 	});
 
 	it('falls back to the long input rate for an unset long cache rate', () => {

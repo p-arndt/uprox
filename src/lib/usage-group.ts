@@ -16,6 +16,7 @@ export const USAGE_DIMENSIONS = [
 	{ key: 'provider', label: 'Provider', plural: 'Providers' },
 	{ key: 'token', label: 'Machine token', plural: 'Machine tokens' },
 	{ key: 'status', label: 'Status', plural: 'Statuses' },
+	{ key: 'tier', label: 'Context tier', plural: 'Context tiers' },
 	{ key: 'meter', label: 'Token meter', plural: 'Token meters' }
 ] as const;
 

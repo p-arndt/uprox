@@ -1,5 +1,6 @@
 import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
+import type { ContextTier } from '$lib/server/providers';
 
 export interface AuditEntry {
 	action: string;
@@ -21,6 +22,8 @@ export interface AuditEntry {
 	providerCachedTokens?: number | null;
 	/** input tokens written to the provider's prompt cache (Anthropic cache creation) */
 	cacheWriteTokens?: number | null;
+	/** the rate card the request billed against; null when nothing was priced */
+	contextTier?: ContextTier | null;
 	latencyMs?: number | null;
 	ip?: string | null;
 	detail?: string | null;
@@ -51,6 +54,7 @@ export async function audit(entry: AuditEntry): Promise<string | null> {
 				savedOutputTokens: entry.savedOutputTokens ?? null,
 				providerCachedTokens: entry.providerCachedTokens ?? null,
 				cacheWriteTokens: entry.cacheWriteTokens ?? null,
+				contextTier: entry.contextTier ?? null,
 				latencyMs: entry.latencyMs ?? null,
 				ip: entry.ip ?? null,
 				detail: entry.detail ?? null

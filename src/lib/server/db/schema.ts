@@ -415,10 +415,17 @@ export const auditLog = pgTable(
 		// reported no cache usage.
 		providerCachedTokens: integer('provider_cached_tokens'),
 		// input tokens written to the upstream provider's prompt cache this request
-		// (Anthropic `cache_creation_input_tokens`). Billed at a premium over normal
-		// input. NULL when the response reported no cache-write usage; always NULL
-		// for OpenAI/Azure, which don't charge for cache writes.
+		// (Anthropic `cache_creation_input_tokens`, OpenAI GPT-5.6+
+		// `prompt_tokens_details.cache_write_tokens`). Billed at a premium over
+		// normal input. NULL when the response reported no cache-write usage —
+		// which is every OpenAI model below GPT-5.6, none of which surcharge writes.
 		cacheWriteTokens: integer('cache_write_tokens'),
+		// which rate card this request billed against: "standard" | "long". A model
+		// with a long-context card (model_price.long_input_per_mtok) bills its whole
+		// request at 2×/1.5× once the prompt reaches LONG_CONTEXT_MIN_PROMPT_TOKENS,
+		// so the same token count can cost twice as much depending on this. NULL
+		// when nothing was priced (a denial, an error, an unpriced model).
+		contextTier: text('context_tier'),
 		latencyMs: integer('latency_ms'),
 		ip: text('ip'),
 		detail: text('detail'),
