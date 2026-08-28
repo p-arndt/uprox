@@ -23,6 +23,7 @@ import {
 	type UsageDimension
 } from '$lib/usage-group';
 import { MAX_SERIES } from '$lib/usage-colors';
+import { readUsageWindow, writeUsageWindow } from '$lib/server/usage-window-pref';
 
 const DAY_MS = 86_400_000;
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
@@ -53,15 +54,31 @@ export async function loadUsageAnalysis(
 	} = {}
 ) {
 	const params = event.url.searchParams;
-	const range = resolveUsageRange(params.get('range'), {
-		from: params.get('from'),
-		to: params.get('to')
+	// Every window control navigates with an explicit ?range=, so a URL without
+	// one is a fresh entry to the page (sidebar, bookmark, new tab) rather than a
+	// deliberate choice — that is where the remembered window is restored. An
+	// explicit param always wins, so shared links still open what they name.
+	const stored = readUsageWindow(event.cookies);
+	const fromUrl = params.has('range');
+	const range = resolveUsageRange(fromUrl ? params.get('range') : (stored?.range ?? null), {
+		from: fromUrl ? params.get('from') : stored?.from,
+		to: fromUrl ? params.get('to') : stored?.to
 	});
 	// Resolve the effective bucket once so the current and previous-period series
 	// share an identical granularity (and therefore align bucket-for-bucket).
-	const bucket = normalizeBucket(params.get('bucket'));
+	const bucket = fromUrl ? normalizeBucket(params.get('bucket')) : (stored?.bucket ?? 'auto');
 	const unit = resolveSeriesBucket(range, bucket);
 	const prevRange = shiftRangeBack(range);
+
+	// the applied custom window, echoed back (inclusive end) so the picker pre-fills
+	const customFrom = range.key === 'custom' ? ymd(range.start) : null;
+	const customTo =
+		range.key === 'custom' && range.end ? ymd(new Date(range.end.getTime() - DAY_MS)) : null;
+	writeUsageWindow(
+		event.cookies,
+		{ range: range.key, from: customFrom, to: customTo, bucket },
+		stored
+	);
 
 	const dimensions = opts.dimensions ?? USAGE_DIMENSIONS.map((d) => d.key);
 	const donutDims = opts.donutDims ?? dimensions.slice(0, 3);
@@ -121,10 +138,8 @@ export async function loadUsageAnalysis(
 		dimensions,
 		breakdownLimit: BREAKDOWN_LIMIT,
 		breakdownTruncated: breakdown.length >= BREAKDOWN_LIMIT,
-		// the applied custom window echoed back (inclusive end) so the picker pre-fills
-		customFrom: range.key === 'custom' ? ymd(range.start) : null,
-		customTo:
-			range.key === 'custom' && range.end ? ymd(new Date(range.end.getTime() - DAY_MS)) : null,
+		customFrom,
+		customTo,
 		totals,
 		prevTotals,
 		grouped,
