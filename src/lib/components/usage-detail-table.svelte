@@ -2,6 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import type { DimensionUsageRow } from '$lib/server/data';
 	import { colorForSeries } from '$lib/usage-colors';
+	import { isDerivedDimension, type UsageDimension } from '$lib/usage-group';
 	import { formatUsd, formatTokens, formatCount } from '$lib/format';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
@@ -20,7 +21,7 @@
 		limit
 	}: {
 		rows: DimensionUsageRow[];
-		dim: string;
+		dim: UsageDimension;
 		/** window spend across ALL traffic, so the share column is honest past top-N */
 		total: number;
 		/** renders a row's name cell, so each page owns its own drill-down links */
@@ -29,17 +30,26 @@
 		limit?: number;
 	} = $props();
 
-	type SortKey = 'cost' | 'requests' | 'tokens' | 'denied' | 'label';
+	type SortKey = 'cost' | 'requests' | 'tokens' | 'rate' | 'denied' | 'label';
 	let sortBy = $state<SortKey>('cost');
 	let desc = $state(true);
 
-	const COLUMNS: { key: SortKey; label: string; numeric: boolean }[] = [
+	// A meter or a billing line decomposes a request rather than describing one,
+	// so one request feeds several rows at once and the per-request columns would
+	// print a zero that can't be right at any value. They're dropped instead.
+	const perRequest = $derived(!isDerivedDimension(dim));
+	// The unit price is only offered where a row really is one rate — a billing
+	// line. Elsewhere every row carries a null and the column stays away.
+	const hasRate = $derived(rows.some((r) => r.ratePerMtok != null));
+
+	const COLUMNS = $derived([
 		{ key: 'label', label: 'Name', numeric: false },
 		{ key: 'cost', label: 'Spend', numeric: true },
-		{ key: 'requests', label: 'Requests', numeric: true },
+		...(perRequest ? [{ key: 'requests', label: 'Requests', numeric: true }] : []),
 		{ key: 'tokens', label: 'Tokens', numeric: true },
-		{ key: 'denied', label: 'Denied', numeric: true }
-	];
+		...(hasRate ? [{ key: 'rate', label: '$/Mtok', numeric: true }] : []),
+		...(perRequest ? [{ key: 'denied', label: 'Denied', numeric: true }] : [])
+	] as { key: SortKey; label: string; numeric: boolean }[]);
 
 	const tokensOf = (r: DimensionUsageRow) => r.inputTokens + r.outputTokens;
 
@@ -47,8 +57,21 @@
 		if (key === 'cost') return r.costUsd;
 		if (key === 'requests') return r.requests;
 		if (key === 'tokens') return tokensOf(r);
+		if (key === 'rate') return r.ratePerMtok ?? 0;
 		if (key === 'denied') return r.denied;
 		return r.label.toLowerCase();
+	}
+
+	/**
+	 * Unit prices span five orders of magnitude — an embedding line is cents per
+	 * million tokens where a frontier model's output is tens of dollars — so the
+	 * precision follows the value rather than a fixed 2dp that would round every
+	 * embedding rate to $0.00.
+	 */
+	function formatRate(rate: number | null | undefined): string {
+		if (rate == null) return '—';
+		if (rate === 0) return '$0';
+		return rate < 1 ? `$${rate.toFixed(3)}` : `$${rate.toFixed(2)}`;
 	}
 
 	// Rank is captured BEFORE sorting: the swatch has to keep matching the chart,
@@ -132,11 +155,20 @@
 						</span>
 					</td>
 					<td class="py-2 text-right font-medium tabular-nums">{formatUsd(row.costUsd)}</td>
-					<td class="py-2 text-right tabular-nums">{formatCount(row.requests)}</td>
+					{#if perRequest}
+						<td class="py-2 text-right tabular-nums">{formatCount(row.requests)}</td>
+					{/if}
 					<td class="py-2 text-right tabular-nums">{formatTokens(tokensOf(row))}</td>
-					<td class="py-2 text-right tabular-nums {row.denied > 0 ? 'text-destructive' : ''}">
-						{formatCount(row.denied)}
-					</td>
+					{#if hasRate}
+						<td class="py-2 text-right text-muted-foreground tabular-nums">
+							{formatRate(row.ratePerMtok)}
+						</td>
+					{/if}
+					{#if perRequest}
+						<td class="py-2 text-right tabular-nums {row.denied > 0 ? 'text-destructive' : ''}">
+							{formatCount(row.denied)}
+						</td>
+					{/if}
 					<td class="py-2 pl-3">
 						<span class="flex items-center justify-end gap-2">
 							<span class="h-1.5 w-14 overflow-hidden rounded-full bg-muted">

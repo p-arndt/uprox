@@ -14,7 +14,7 @@ export const load: PageServerLoad = async (event) => {
 	// and is itself the scope, so both would collapse to a single row.
 	const analysis = await loadUsageAnalysis(event, {
 		tokenId: token.id,
-		dimensions: ['model', 'provider', 'status'],
+		dimensions: ['model', 'provider', 'status', 'line'],
 		donutDims: ['model', 'provider', 'status']
 	});
 

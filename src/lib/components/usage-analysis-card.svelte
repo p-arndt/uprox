@@ -6,7 +6,7 @@
 	import UsageStackedChart from '$lib/components/usage-stacked-chart.svelte';
 	import UsageLegend from '$lib/components/usage-legend.svelte';
 	import { BUCKET_OPTIONS } from '$lib/usage-range';
-	import { dimensionLabel, type UsageDimension } from '$lib/usage-group';
+	import { dimensionLabel, isDerivedDimension, type UsageDimension } from '$lib/usage-group';
 	import type { GroupedSeriesResult } from '$lib/server/data';
 	import type { ResolvedPathname } from '$app/types';
 	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
@@ -35,13 +35,13 @@
 		{ key: 'requests', label: 'Requests' },
 		{ key: 'tokens', label: 'Tokens' }
 	];
-	// A request contributes to several meters at once, so it can't be attributed
-	// to one — the requests metric is dropped rather than shown as zero.
-	const METRICS = $derived(
-		groupBy === 'meter' ? ALL_METRICS.filter((m) => m.key !== 'requests') : ALL_METRICS
-	);
+	// A request contributes to several meters — and so to several billing lines —
+	// at once, so it can't be attributed to one. On those groupings the requests
+	// metric is dropped rather than shown as a flat zero.
+	const derived = $derived(isDerivedDimension(groupBy));
+	const METRICS = $derived(derived ? ALL_METRICS.filter((m) => m.key !== 'requests') : ALL_METRICS);
 	$effect(() => {
-		if (groupBy === 'meter' && metric === 'requests') metric = 'cost';
+		if (derived && metric === 'requests') metric = 'cost';
 	});
 
 	type ChartType = 'bars' | 'area';

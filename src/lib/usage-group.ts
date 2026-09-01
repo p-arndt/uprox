@@ -17,7 +17,8 @@ export const USAGE_DIMENSIONS = [
 	{ key: 'token', label: 'Machine token', plural: 'Machine tokens' },
 	{ key: 'status', label: 'Status', plural: 'Statuses' },
 	{ key: 'tier', label: 'Context tier', plural: 'Context tiers' },
-	{ key: 'meter', label: 'Token meter', plural: 'Token meters' }
+	{ key: 'meter', label: 'Token meter', plural: 'Token meters' },
+	{ key: 'line', label: 'Billing line', plural: 'Billing lines' }
 ] as const;
 
 export type UsageDimension = (typeof USAGE_DIMENSIONS)[number]['key'];
@@ -32,13 +33,28 @@ export const DEFAULT_GROUP_BY: UsageDimension = 'model';
 
 /**
  * Dimensions that can be *filtered* on, which is a strict subset of those that
- * can be grouped by. `meter` is groupable but not filterable: a meter is a slice
- * of a request's token counts, not a property of the request, so one row feeds
- * several meters at once and "where meter = output" has no meaning in SQL.
+ * can be grouped by. `meter` and `line` are groupable but not filterable: a
+ * meter is a slice of a request's token counts, not a property of the request,
+ * so one row feeds several meters at once and "where meter = output" has no
+ * meaning in SQL. Filtering to one model or tier is still available through the
+ * `model` / `tier` dimensions, which is the half of a billing line that IS a
+ * column.
  */
-export const FILTERABLE_DIMENSIONS = USAGE_DIMENSIONS.filter((d) => d.key !== 'meter').map(
-	(d) => d.key
-) as readonly UsageDimension[];
+const DERIVED_DIMENSIONS: readonly UsageDimension[] = ['meter', 'line'];
+
+/**
+ * True for a dimension that decomposes a request rather than describing one.
+ * Beyond filtering, this is what tells a view that per-request columns are
+ * meaningless for the grouping: one request feeds several meters, so "requests
+ * per meter" would print a number that cannot be right at any value.
+ */
+export function isDerivedDimension(dim: UsageDimension): boolean {
+	return DERIVED_DIMENSIONS.includes(dim);
+}
+
+export const FILTERABLE_DIMENSIONS = USAGE_DIMENSIONS.filter(
+	(d) => !DERIVED_DIMENSIONS.includes(d.key)
+).map((d) => d.key) as readonly UsageDimension[];
 
 export function isFilterableDimension(value: unknown): value is UsageDimension {
 	return isUsageDimension(value) && FILTERABLE_DIMENSIONS.includes(value);
@@ -95,7 +111,7 @@ export function parseFilters(raw: string[]): UsageFilter[] {
 		if (sep <= 0) continue;
 		const dim = entry.slice(0, sep);
 		const value = entry.slice(sep + 1);
-		// non-filterable dimensions (meter) can't produce a SQL predicate
+		// derived dimensions (meter, line) can't produce a SQL predicate
 		if (!isFilterableDimension(dim) || value === '') continue;
 		const list = byDim.get(dim) ?? [];
 		// de-dupe so a hand-edited URL can't inflate the IN-list
@@ -157,3 +173,45 @@ export interface UsageFilterOption {
 }
 
 export type UsageFilterOptions = Record<UsageDimension, UsageFilterOption[]>;
+
+/* ------------------------------ billing lines -------------------------------- */
+
+/**
+ * A billing line is the cross product of the three things that actually decide a
+ * rate: which model served the traffic, which rate card it billed against
+ * (standard or long context), and which meter the tokens landed in. It is the
+ * uprox equivalent of the "Meter" column in a cloud bill - the level at which a
+ * figure can be checked against a published price rather than merely admired.
+ *
+ * Because it is not a column, its identity has to be carried in the series key.
+ * The parts are joined with a unit separator: U+001F cannot occur in a model
+ * name (they are ASCII identifiers), cannot be typed into a URL by accident,
+ * and - the reason it beats a `|` or `:` - cannot collide with the separators
+ * that already appear inside provider-qualified model names such as
+ * `us.anthropic.claude-x:1`.
+ */
+export const LINE_KEY_SEP = '\u001f';
+
+export interface BillingLineKey {
+	/** the model as recorded, or {@link NULL_VALUE} when no model was ever resolved */
+	model: string;
+	/** 'standard' | 'long', or {@link NULL_VALUE} for traffic that never reached a rate card */
+	tier: string;
+	/** the meter key - see `usage-meters.ts` for the vocabulary */
+	meter: string;
+}
+
+export function encodeBillingLineKey(k: BillingLineKey): string {
+	return [k.model, k.tier, k.meter].join(LINE_KEY_SEP);
+}
+
+/**
+ * The inverse. Returns null for anything that is not a well-formed line key -
+ * notably {@link OTHERS_KEY}, which the top-N fold introduces and which has no
+ * model, tier or meter of its own.
+ */
+export function parseBillingLineKey(key: string): BillingLineKey | null {
+	const parts = key.split(LINE_KEY_SEP);
+	if (parts.length !== 3) return null;
+	return { model: parts[0], tier: parts[1], meter: parts[2] };
+}

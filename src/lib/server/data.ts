@@ -26,11 +26,29 @@ import {
 import {
 	NULL_VALUE,
 	OTHERS_KEY,
+	FILTERABLE_DIMENSIONS,
+	encodeBillingLineKey,
 	type UsageDimension,
 	type UsageFilter,
 	type UsageFilterOption,
 	type UsageFilterOptions
 } from '$lib/usage-group';
+import {
+	METER_ORDER,
+	splitMeters,
+	meterListCosts,
+	providerCacheSaving,
+	allocateCost,
+	addMeterValues,
+	emptyMeterValues,
+	sumMeterValues,
+	effectiveRatePerMtok,
+	type MeterKey,
+	type MeterRates,
+	type MeterTokenSums,
+	type MeterValues
+} from '$lib/usage-meters';
+import { METER_META } from '$lib/usage-colors';
 import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/pricing';
 
 /**
@@ -1275,12 +1293,13 @@ function usageConds(
  * one addressable `NULL_VALUE` bucket instead of vanishing from the grouping.
  */
 /**
- * The dimensions that really are a column on `audit_log`. `meter` is excluded by
- * construction: it's a decomposition of a row's token counts, not a property of
- * the row, so typing these maps over this narrower set makes "a meter reached
- * the SQL layer" a compile error rather than a runtime surprise.
+ * The dimensions that really are a column on `audit_log`. `meter` and `line` are
+ * excluded by construction: both are decompositions of a row's token counts, not
+ * properties of the row, so typing these maps over this narrower set makes "a
+ * derived dimension reached the SQL layer" a compile error rather than a runtime
+ * surprise.
  */
-type SqlDimension = Exclude<UsageDimension, 'meter'>;
+type SqlDimension = Exclude<UsageDimension, 'meter' | 'line'>;
 
 const DIMENSION_SQL: Record<
 	SqlDimension,
@@ -1587,6 +1606,14 @@ export interface DimensionUsageRow {
 	denied: number;
 	inputTokens: number;
 	outputTokens: number;
+	/**
+	 * Effective unit price in USD per million tokens, for the dimensions where one
+	 * row really is one rate (`line`). Absent elsewhere: a row that mixes input and
+	 * output, or several models, has an average rather than a price, and printing
+	 * an average in a column headed "$/Mtok" invites it to be checked against a
+	 * rate card it was never taken from.
+	 */
+	ratePerMtok?: number | null;
 }
 
 /**
@@ -1605,8 +1632,11 @@ export async function orgUsageByDimension(
 	dim: UsageDimension,
 	opts: { filters?: UsageFilter[]; limit?: number; serviceId?: string; tokenId?: string } = {}
 ): Promise<DimensionUsageRow[]> {
-	// `meter` isn't a column — it's a decomposition of each row's token counts —
-	// so it's served by the meter aggregate rather than a group-by.
+	// Neither `meter` nor `line` is a column — both decompose each row's token
+	// counts — so they're served by the meter aggregates rather than a group-by.
+	if (dim === 'line') {
+		return orgBillingLines(range, opts);
+	}
 	if (dim === 'meter') {
 		const b = await orgTokenMeters(range, {
 			filters: opts.filters,
@@ -1617,7 +1647,7 @@ export async function orgUsageByDimension(
 			.filter((m) => m.tokens > 0)
 			.map((m) => ({
 				key: m.key,
-				label: METER_ORDER.find((x) => x.key === m.key)?.label ?? m.key,
+				label: meterLabel(m.key),
 				hint: null,
 				costUsd: m.costUsd,
 				// A request contributes to several meters at once, so "requests per
@@ -1696,6 +1726,8 @@ function fallbackLabel(dim: UsageDimension, key: string): string {
 	if (dim === 'provider') return 'Unrouted';
 	// a denial, an error or an unpriced model never reached a rate card at all
 	if (dim === 'tier') return 'Unpriced';
+	// a line always builds its own label, so a bare sentinel can only be Others
+	if (dim === 'line') return 'Others';
 	return 'Unknown';
 }
 
@@ -1748,6 +1780,9 @@ export async function orgUsageSeriesGrouped(
 		tokenId?: string;
 	} = {}
 ): Promise<GroupedSeriesResult> {
+	if (dim === 'line') {
+		return orgBillingLineSeries(range, opts);
+	}
 	if (dim === 'meter') {
 		return orgTokenMetersSeries(range, {
 			unit: opts.unit,
@@ -1898,6 +1933,10 @@ export async function orgUsageFilterOptions(
 	const limit = opts.limit ?? 100;
 	const entries = await Promise.all(
 		dims.map(async (dim) => {
+			// A derived dimension has no SQL predicate behind it, so it can never be
+			// filtered on — and running its (expensive) aggregate just to populate a
+			// picker nobody can open would be pure waste.
+			if (!FILTERABLE_DIMENSIONS.includes(dim)) return [dim, []] as const;
 			const rows = await orgUsageByDimension(range, dim, {
 				limit,
 				serviceId: opts.serviceId,
@@ -2076,18 +2115,15 @@ export async function orgModelEfficiency(
 
 /**
  * One consumption meter — uprox's answer to an Azure "meter", the sub-line a
- * resource's cost decomposes into. A gateway request doesn't bill as one
- * undifferentiated blob of tokens: fresh input, cache reads, cache writes,
- * output and embeddings are each metered at a different rate (see the
- * `*_per_mtok` columns on model_price), which is exactly why they deserve to be
- * separate rows rather than the two "exclude this" toggles they used to be.
+ * resource's cost decomposes into. The vocabulary and the arithmetic live in
+ * `$lib/usage-meters`; this layer only supplies the sums.
  */
 export interface TokenMeter {
-	key: 'input' | 'cacheRead' | 'cacheWrite' | 'output' | 'embedding';
+	key: MeterKey;
 	tokens: number;
 	/**
 	 * Actual spend attributed to this meter. Derived by pricing each meter at its
-	 * own list rate and then scaling the five so they sum to the spend actually
+	 * own list rate and then scaling so the meters sum to the spend actually
 	 * recorded — an allocation, not an independent measurement, because the
 	 * provider bills one number per request and never itemises it. Scaling is what
 	 * keeps the meters reconciling with the headline instead of drifting whenever
@@ -2117,37 +2153,81 @@ export interface TokenMeterBreakdown {
 }
 
 /**
+ * Embedding traffic, matched on the model name. Embeddings are metered as their
+ * own line — a provider never prompt-caches them and they bill at a fraction of
+ * a chat rate — so every meter query carves them out of input/output first.
+ */
+const EMBEDDING_MODEL = sql`${auditLog.model} ilike '%embedding%'`;
+
+/**
+ * The six sums every meter view needs, in the shape `$lib/usage-meters` expects.
+ * Selected identically by each query so the three views can never partition the
+ * same window differently.
+ */
+const METER_SUM_SELECT = {
+	inputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}) filter (where not (${EMBEDDING_MODEL})), 0)::bigint`,
+	outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}) filter (where not (${EMBEDDING_MODEL})), 0)::bigint`,
+	cacheReadTokens: sql<number>`coalesce(sum(${auditLog.providerCachedTokens}) filter (where not (${EMBEDDING_MODEL})), 0)::bigint`,
+	cacheWriteTokens: sql<number>`coalesce(sum(${auditLog.cacheWriteTokens}) filter (where not (${EMBEDDING_MODEL})), 0)::bigint`,
+	embeddingInputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}) filter (where ${EMBEDDING_MODEL}), 0)::bigint`,
+	embeddingOutputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}) filter (where ${EMBEDDING_MODEL}), 0)::bigint`
+};
+
+/** The same six sums for the raw-SQL queries, which alias in snake_case. */
+const METER_SUM_SQL = sql`
+	coalesce(sum(${auditLog.inputTokens}) filter (where not (${EMBEDDING_MODEL})), 0)::bigint as input_tokens,
+	coalesce(sum(${auditLog.outputTokens}) filter (where not (${EMBEDDING_MODEL})), 0)::bigint as output_tokens,
+	coalesce(sum(${auditLog.providerCachedTokens}) filter (where not (${EMBEDDING_MODEL})), 0)::bigint as cache_read_tokens,
+	coalesce(sum(${auditLog.cacheWriteTokens}) filter (where not (${EMBEDDING_MODEL})), 0)::bigint as cache_write_tokens,
+	coalesce(sum(${auditLog.inputTokens}) filter (where ${EMBEDDING_MODEL}), 0)::bigint as embedding_input_tokens,
+	coalesce(sum(${auditLog.outputTokens}) filter (where ${EMBEDDING_MODEL}), 0)::bigint as embedding_output_tokens
+`;
+
+/**
+ * A type alias rather than an interface on purpose: `db.execute` constrains its
+ * row type to `Record<string, unknown>`, which an interface can't satisfy
+ * without an index signature but an anonymous object type satisfies implicitly.
+ */
+type RawMeterSums = {
+	input_tokens: number;
+	output_tokens: number;
+	cache_read_tokens: number;
+	cache_write_tokens: number;
+	embedding_input_tokens: number;
+	embedding_output_tokens: number;
+};
+
+function meterSumsFromRow(r: RawMeterSums): MeterTokenSums {
+	return {
+		inputTokens: Number(r.input_tokens ?? 0),
+		outputTokens: Number(r.output_tokens ?? 0),
+		cacheReadTokens: Number(r.cache_read_tokens ?? 0),
+		cacheWriteTokens: Number(r.cache_write_tokens ?? 0),
+		embeddingInputTokens: Number(r.embedding_input_tokens ?? 0),
+		embeddingOutputTokens: Number(r.embedding_output_tokens ?? 0)
+	};
+}
+
+/**
  * Decompose the window's token volume into its billing meters, with the cost
  * each caching layer avoided.
  *
- * The meters partition the total exactly — every token lands in exactly one row
- * and they sum to `totalTokens` — because a breakdown whose parts don't add up
- * to the whole is worse than no breakdown. Specifically: embeddings are carved
- * out of input/output first (a provider never prompt-caches them), then cache
- * reads are carved out of what's left of input.
+ * Grouped per (model, tier) rather than over the window as a whole: each group
+ * is priced at its own rate card, and its list split is reconciled against its
+ * own recorded spend, so one mispriced model can't shift the attribution of
+ * every other. The meters still partition the window exactly.
  */
 export async function orgTokenMeters(
 	range: ResolvedRange,
 	opts: { filters?: UsageFilter[]; serviceId?: string; tokenId?: string } = {}
 ): Promise<TokenMeterBreakdown> {
-	const embedding = sql`${auditLog.model} ilike '%embedding%'`;
 	const conds = usageConds(range, opts.serviceId, opts.tokenId, opts.filters);
 
-	// Per-model so the provider-cache saving can be priced at that model's own
-	// rate; the meters themselves are just sums and get folded together after.
 	const rows = await db
 		.select({
 			model: auditLog.model,
-			inputTokens: sql<number>`coalesce(sum(${auditLog.inputTokens}), 0)::bigint`,
-			outputTokens: sql<number>`coalesce(sum(${auditLog.outputTokens}), 0)::bigint`,
-			// Cache reads split by whether the row is an embedding call. Only the
-			// non-embedding portion becomes its own meter: an embedding row's cache
-			// reads are already inside that row's input, which the embedding meter
-			// claims whole, so counting them again would inflate the total.
-			cacheRead: sql<number>`coalesce(sum(${auditLog.providerCachedTokens}) filter (where not (${embedding})), 0)::bigint`,
-			cacheWrite: sql<number>`coalesce(sum(${auditLog.cacheWriteTokens}) filter (where not (${embedding})), 0)::bigint`,
-			embeddingInput: sql<number>`coalesce(sum(${auditLog.inputTokens}) filter (where ${embedding}), 0)::bigint`,
-			embeddingOutput: sql<number>`coalesce(sum(${auditLog.outputTokens}) filter (where ${embedding}), 0)::bigint`,
+			tier: auditLog.contextTier,
+			...METER_SUM_SELECT,
 			cost: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)::text`,
 			saved: sql<string>`coalesce(sum(${auditLog.savedUsd}), 0)::text`,
 			savedInput: sql<number>`coalesce(sum(${auditLog.savedInputTokens}), 0)::bigint`,
@@ -2155,86 +2235,49 @@ export async function orgTokenMeters(
 		})
 		.from(auditLog)
 		.where(and(...conds))
-		.groupBy(auditLog.model);
+		.groupBy(auditLog.model, auditLog.contextTier);
 
 	const prices = await listModelPrices();
 
-	let input = 0;
-	let cacheRead = 0;
-	let cacheWrite = 0;
-	let output = 0;
-	let embeddingTokens = 0;
+	const tokens = emptyMeterValues();
+	const costs = emptyMeterValues();
 	let costUsd = 0;
 	let savedUsd = 0;
 	let savedInputTokens = 0;
 	let savedOutputTokens = 0;
 	let providerCacheSavedUsd = 0;
-	// list-price cost per meter, pre-scaling
-	const listCost: Record<TokenMeter['key'], number> = {
-		input: 0,
-		cacheRead: 0,
-		cacheWrite: 0,
-		output: 0,
-		embedding: 0
-	};
 
 	for (const r of rows) {
-		const embIn = Number(r.embeddingInput ?? 0);
-		const embOut = Number(r.embeddingOutput ?? 0);
-		const read = Number(r.cacheRead ?? 0);
-		const write = Number(r.cacheWrite ?? 0);
-		// Fresh input is what's left of the prompt after the embedding, cache-read
-		// and cache-write portions are carved out — the exact same subtraction the
-		// gateway's own cost formula performs (`promptTokens - cacheRead -
-		// cacheWrite`), so the meters partition the total the way the bill does.
-		// Clamped at zero: the counts come from upstream independently, so a
-		// malformed usage block could otherwise drive a meter negative.
-		const freshInput = Math.max(0, Number(r.inputTokens ?? 0) - embIn - read - write);
+		const sums: MeterTokenSums = {
+			inputTokens: Number(r.inputTokens ?? 0),
+			outputTokens: Number(r.outputTokens ?? 0),
+			cacheReadTokens: Number(r.cacheReadTokens ?? 0),
+			cacheWriteTokens: Number(r.cacheWriteTokens ?? 0),
+			embeddingInputTokens: Number(r.embeddingInputTokens ?? 0),
+			embeddingOutputTokens: Number(r.embeddingOutputTokens ?? 0)
+		};
+		const rowCost = Number(r.cost ?? 0);
+		const rates = ratesFor(prices, r.model, r.tier);
 
-		input += freshInput;
-		cacheRead += read;
-		cacheWrite += write;
-		output += Math.max(0, Number(r.outputTokens ?? 0) - embOut);
-		embeddingTokens += embIn + embOut;
-		costUsd += Number(r.cost ?? 0);
+		addMeterValues(tokens, splitMeters(sums));
+		addMeterValues(costs, allocateCost(meterListCosts(sums, rates), splitMeters(sums), rowCost));
+
+		costUsd += rowCost;
 		savedUsd += Number(r.saved ?? 0);
 		savedInputTokens += Number(r.savedInput ?? 0);
 		savedOutputTokens += Number(r.savedOutput ?? 0);
-
-		const p = r.model ? resolveModelPrice(prices, r.model) : null;
-		if (p) {
-			// Default multipliers match the gateway's own fallbacks when a price row
-			// leaves the cache rates NULL: 0.1x input to read, 1.25x to write.
-			const readRate = p.cacheReadPerMtok ?? p.inputPerMtok * 0.1;
-			const writeRate = p.cacheWritePerMtok ?? p.inputPerMtok * 1.25;
-			const M = 1_000_000;
-			listCost.input += (freshInput * p.inputPerMtok) / M;
-			listCost.cacheRead += (read * readRate) / M;
-			listCost.cacheWrite += (write * writeRate) / M;
-			listCost.output += (Math.max(0, Number(r.outputTokens ?? 0) - embOut) * p.outputPerMtok) / M;
-			listCost.embedding += (embIn * p.inputPerMtok + embOut * p.outputPerMtok) / M;
-			if (read > 0) {
-				providerCacheSavedUsd += (read * Math.max(0, p.inputPerMtok - readRate)) / M;
-			}
-		}
+		providerCacheSavedUsd += providerCacheSaving(sums, rates);
 	}
 
-	// Scale the list-price split onto the spend actually recorded, so the meter
-	// costs sum to `costUsd` exactly. Falls back to the raw list figures when
-	// there's nothing to scale against (no priced traffic, or a zero-cost window).
-	const listTotal = Object.values(listCost).reduce((a, c) => a + c, 0);
-	const scale = listTotal > 0 && costUsd > 0 ? costUsd / listTotal : listTotal > 0 ? 0 : 1;
-	const meters: TokenMeter[] = [
-		{ key: 'input', tokens: input, costUsd: listCost.input * scale },
-		{ key: 'cacheRead', tokens: cacheRead, costUsd: listCost.cacheRead * scale },
-		{ key: 'cacheWrite', tokens: cacheWrite, costUsd: listCost.cacheWrite * scale },
-		{ key: 'output', tokens: output, costUsd: listCost.output * scale },
-		{ key: 'embedding', tokens: embeddingTokens, costUsd: listCost.embedding * scale }
-	];
+	const meters: TokenMeter[] = METER_ORDER.map((key) => ({
+		key,
+		tokens: tokens[key],
+		costUsd: costs[key]
+	}));
 
 	return {
 		meters,
-		totalTokens: meters.reduce((s, m) => s + m.tokens, 0),
+		totalTokens: sumMeterValues(tokens),
 		costUsd,
 		savedUsd,
 		savedInputTokens,
@@ -2243,14 +2286,10 @@ export async function orgTokenMeters(
 	};
 }
 
-/** The meters in display order — the same order the composition bar stacks in. */
-const METER_ORDER: { key: TokenMeter['key']; label: string }[] = [
-	{ key: 'input', label: 'Input (fresh)' },
-	{ key: 'cacheRead', label: 'Input (cache read)' },
-	{ key: 'cacheWrite', label: 'Input (cache write)' },
-	{ key: 'output', label: 'Output' },
-	{ key: 'embedding', label: 'Embeddings' }
-];
+/** A meter's display name, shared with the composition bar's legend. */
+function meterLabel(key: MeterKey): string {
+	return METER_META[key]?.label ?? key;
+}
 
 /**
  * The token meters bucketed over time, shaped as a {@link GroupedSeriesResult}
@@ -2260,10 +2299,6 @@ const METER_ORDER: { key: TokenMeter['key']; label: string }[] = [
  * Answers the question the single composition bar can't: whether the mix is
  * *moving*. A cache-read share climbing week over week is the thing an operator
  * is trying to engineer for, and a flat total can hide it entirely.
- *
- * Meters partition each bucket exactly, by the same subtraction
- * `orgTokenMeters` uses (and the gateway's own cost formula before it), so the
- * bars sum to that bucket's real token volume.
  */
 export async function orgTokenMetersSeries(
 	range: ResolvedRange,
@@ -2274,120 +2309,21 @@ export async function orgTokenMetersSeries(
 		tokenId?: string;
 	} = {}
 ): Promise<GroupedSeriesResult> {
-	const unit = resolveSeriesBucket(range, opts.unit ?? 'auto');
-	const step = BUCKET_STEP[unit];
-	const startIso = range.start.toISOString();
-	const upperIso = (range.end ?? new Date()).toISOString();
-	const emb = sql`${auditLog.model} ilike '%embedding%'`;
-	const scope = sql.join(
-		[
-			...(opts.serviceId ? [sql`${auditLog.serviceId} = ${opts.serviceId}::uuid`] : []),
-			...(opts.tokenId ? [sql`${auditLog.tokenId} = ${opts.tokenId}::uuid`] : [])
-		].map((c) => sql` and ${c}`),
-		sql``
-	);
+	const { unit, buckets, cells } = await bucketedMeterCells(range, opts);
 
-	// Grouped by (bucket, model): the model is needed to price each meter at its
-	// own rate, exactly as orgTokenMeters does for the window as a whole. The
-	// generate_series left join still pads empty buckets — they come back as a
-	// single row with a null model and zero sums.
-	const rows = await db.execute<{
-		bucket: string;
-		model: string | null;
-		input: number;
-		output: number;
-		cache_read: number;
-		cache_write: number;
-		emb_in: number;
-		emb_out: number;
-		cost: string;
-	}>(sql`
-		select
-			to_char(g.bucket, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as bucket,
-			${auditLog.model} as model,
-			coalesce(sum(${auditLog.inputTokens}) filter (where not (${emb})), 0)::bigint as input,
-			coalesce(sum(${auditLog.outputTokens}) filter (where not (${emb})), 0)::bigint as output,
-			coalesce(sum(${auditLog.providerCachedTokens}) filter (where not (${emb})), 0)::bigint as cache_read,
-			coalesce(sum(${auditLog.cacheWriteTokens}) filter (where not (${emb})), 0)::bigint as cache_write,
-			coalesce(sum(${auditLog.inputTokens}) filter (where ${emb}), 0)::bigint as emb_in,
-			coalesce(sum(${auditLog.outputTokens}) filter (where ${emb}), 0)::bigint as emb_out,
-			coalesce(sum(${auditLog.costUsd}), 0)::text as cost
-		from generate_series(
-			date_trunc(${unit}, ${startIso}::timestamp),
-			date_trunc(${unit}, ${upperIso}::timestamp),
-			${step}::interval
-		) as g(bucket)
-		left join ${auditLog}
-			on date_trunc(${unit}, ${auditLog.createdAt}) = g.bucket
-			and ${usageCondsSql(range, opts.filters)}${scope}
-		group by g.bucket, ${auditLog.model}
-		order by g.bucket asc
-	`);
-
-	const prices = await listModelPrices();
-	const buckets: string[] = [];
-	const idx = new Map<string, number>();
-	type Cell = { tokens: number; list: number };
-	const blank = (): Record<TokenMeter['key'], Cell> => ({
-		input: { tokens: 0, list: 0 },
-		cacheRead: { tokens: 0, list: 0 },
-		cacheWrite: { tokens: 0, list: 0 },
-		output: { tokens: 0, list: 0 },
-		embedding: { tokens: 0, list: 0 }
-	});
-	const perBucket: Record<TokenMeter['key'], Cell>[] = [];
-	const actualCost: number[] = [];
-
-	for (const r of rows) {
-		if (!idx.has(r.bucket)) {
-			idx.set(r.bucket, buckets.length);
-			buckets.push(r.bucket);
-			perBucket.push(blank());
-			actualCost.push(0);
-		}
-		const b = idx.get(r.bucket)!;
-		const cell = perBucket[b];
-		actualCost[b] += Number(r.cost ?? 0);
-
-		const read = Number(r.cache_read ?? 0);
-		const write = Number(r.cache_write ?? 0);
-		const embIn = Number(r.emb_in ?? 0);
-		const embOut = Number(r.emb_out ?? 0);
-		// same partition as orgTokenMeters: cache read/write are subsets of prompt
-		const fresh = Math.max(0, Number(r.input ?? 0) - read - write);
-		const out = Number(r.output ?? 0);
-
-		cell.input.tokens += fresh;
-		cell.cacheRead.tokens += read;
-		cell.cacheWrite.tokens += write;
-		cell.output.tokens += out;
-		cell.embedding.tokens += embIn + embOut;
-
-		const p = r.model ? resolveModelPrice(prices, r.model) : null;
-		if (p) {
-			const M = 1_000_000;
-			const readRate = p.cacheReadPerMtok ?? p.inputPerMtok * 0.1;
-			const writeRate = p.cacheWritePerMtok ?? p.inputPerMtok * 1.25;
-			cell.input.list += (fresh * p.inputPerMtok) / M;
-			cell.cacheRead.list += (read * readRate) / M;
-			cell.cacheWrite.list += (write * writeRate) / M;
-			cell.output.list += (out * p.outputPerMtok) / M;
-			cell.embedding.list += (embIn * p.inputPerMtok + embOut * p.outputPerMtok) / M;
-		}
-	}
-
-	const series: GroupedSeries[] = METER_ORDER.map((m) => {
+	const series: GroupedSeries[] = METER_ORDER.map((key) => {
 		const points = buckets.map((_, b) => {
-			const cell = perBucket[b][m.key];
-			// Scale the bucket's list-price split onto the spend actually recorded
-			// there, so the stacked bars sum to that bucket's real cost.
-			const listTotal = Object.values(perBucket[b]).reduce((a, c) => a + c.list, 0);
-			const scale = listTotal > 0 && actualCost[b] > 0 ? actualCost[b] / listTotal : 0;
-			return { requests: 0, denied: 0, costUsd: cell.list * scale, tokens: cell.tokens };
+			const cell = cells[b].get(ALL_LINES);
+			return {
+				requests: 0,
+				denied: 0,
+				costUsd: cell?.costs[key] ?? 0,
+				tokens: cell?.tokens[key] ?? 0
+			};
 		});
 		return {
-			key: m.key,
-			label: m.label,
+			key,
+			label: meterLabel(key),
 			hint: null,
 			points,
 			costUsd: points.reduce((a, c) => a + c.costUsd, 0),
@@ -2399,21 +2335,289 @@ export async function orgTokenMetersSeries(
 	return { unit, buckets, series, hasOthers: false };
 }
 
+/* ------------------------------ billing lines -------------------------------- */
+
 /**
- * Price row shape the meter costing needs.
+ * The window's spend as a list of rate-card lines: one row per
+ * (model × context tier × meter), the level a cloud bill calls a "meter" and
+ * the level at which a figure is checkable against a published price.
  *
- * Standard-tier rates only: these queries aggregate tokens across many requests,
- * so there's no prompt size left to decide which rate card each one billed
- * against. That only skews the *split* between meters — the totals still come
- * from the per-request `cost_usd` the gateway recorded at the correct tier, and
- * the split is rescaled onto it (see the `scale` factor in the meter query).
+ * This is what "group by model" can't tell you. Two models with the same monthly
+ * total are a different problem depending on whether the money went to fresh
+ * input (send less context), to output (ask for shorter answers), to cache
+ * writes (the TTL is wrong) or to a long-context rate card (the prompt crossed a
+ * threshold and every token got more expensive). Each of those is a separate
+ * line here, with the unit price beside it.
+ */
+export async function orgBillingLines(
+	range: ResolvedRange,
+	opts: { filters?: UsageFilter[]; limit?: number; serviceId?: string; tokenId?: string } = {}
+): Promise<DimensionUsageRow[]> {
+	const conds = usageConds(range, opts.serviceId, opts.tokenId, opts.filters);
+
+	const rows = await db
+		.select({
+			model: auditLog.model,
+			tier: auditLog.contextTier,
+			// a model is served by a single provider; max() picks a stable non-null id
+			provider: sql<string | null>`max(${auditLog.provider})`,
+			...METER_SUM_SELECT,
+			cost: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)::text`
+		})
+		.from(auditLog)
+		.where(and(...conds))
+		.groupBy(auditLog.model, auditLog.contextTier);
+
+	const prices = await listModelPrices();
+	const lines: DimensionUsageRow[] = [];
+
+	for (const r of rows) {
+		const sums: MeterTokenSums = {
+			inputTokens: Number(r.inputTokens ?? 0),
+			outputTokens: Number(r.outputTokens ?? 0),
+			cacheReadTokens: Number(r.cacheReadTokens ?? 0),
+			cacheWriteTokens: Number(r.cacheWriteTokens ?? 0),
+			embeddingInputTokens: Number(r.embeddingInputTokens ?? 0),
+			embeddingOutputTokens: Number(r.embeddingOutputTokens ?? 0)
+		};
+		const tokens = splitMeters(sums);
+		const costs = allocateCost(
+			meterListCosts(sums, ratesFor(prices, r.model, r.tier)),
+			tokens,
+			Number(r.cost ?? 0)
+		);
+		const model = r.model ?? NULL_VALUE;
+		const tier = r.tier ?? NULL_VALUE;
+
+		for (const meter of METER_ORDER) {
+			// A meter with no volume isn't a line on the bill, so it isn't a row.
+			if (tokens[meter] <= 0) continue;
+			lines.push({
+				key: encodeBillingLineKey({ model, tier, meter }),
+				label: billingLineLabel(model, tier, meter),
+				hint: r.provider,
+				costUsd: costs[meter],
+				// A request feeds several meters at once, so "requests per line" has no
+				// meaning; left at zero rather than invented. Same for denials, which
+				// never produced a token in the first place.
+				requests: 0,
+				denied: 0,
+				// The embedding line carries both halves, so it reports them honestly
+				// rather than parking its completion tokens under "input".
+				inputTokens: meter === 'embedding' ? sums.embeddingInputTokens : tokens[meter],
+				outputTokens:
+					meter === 'embedding'
+						? sums.embeddingOutputTokens
+						: meter === 'output'
+							? tokens[meter]
+							: 0,
+				ratePerMtok: effectiveRatePerMtok(costs[meter], tokens[meter])
+			});
+		}
+	}
+
+	lines.sort((a, b) => b.costUsd - a.costUsd || b.inputTokens - a.inputTokens);
+	return opts.limit ? lines.slice(0, opts.limit) : lines;
+}
+
+/**
+ * A line's display name: model, the rate card it billed against when that isn't
+ * the ordinary one, then the meter. Long context earns a segment of its own
+ * because it *is* a different price for the same model — the single most
+ * surprising line on a bill, and invisible under any other grouping.
+ */
+function billingLineLabel(model: string, tier: string, meter: MeterKey): string {
+	const name = model === NULL_VALUE ? 'No model' : model;
+	const card = tier === 'long' ? ' - Long context' : '';
+	return `${name}${card} - ${meterLabel(meter)}`;
+}
+
+/**
+ * The billing lines bucketed over time, with everything past the top-N folded
+ * into `Others` exactly as the column-backed dimensions do.
+ *
+ * Folding matters more here than anywhere else: the line dimension is the cross
+ * product of three vocabularies, so a busy window carries hundreds of them and
+ * an unfolded stack would be unreadable long before it was slow.
+ */
+export async function orgBillingLineSeries(
+	range: ResolvedRange,
+	opts: {
+		unit?: BucketChoice;
+		filters?: UsageFilter[];
+		limit?: number;
+		serviceId?: string;
+		tokenId?: string;
+	} = {}
+): Promise<GroupedSeriesResult> {
+	const ranked = await orgBillingLines(range, {
+		filters: opts.filters,
+		serviceId: opts.serviceId,
+		tokenId: opts.tokenId
+	});
+	const top = ranked.slice(0, opts.limit ?? 8);
+	const topKeys = new Set(top.map((r) => r.key));
+	const hasOthers = ranked.length > top.length;
+
+	// Nothing to stack. Returns empty arrays rather than a padded axis — and skips
+	// the bucketed read entirely, since there is nothing left for it to fill.
+	if (top.length === 0) {
+		return {
+			unit: resolveSeriesBucket(range, opts.unit ?? 'auto'),
+			buckets: [],
+			series: [],
+			hasOthers: false
+		};
+	}
+
+	const { unit, buckets, cells } = await bucketedMeterCells(range, opts, { perLine: true });
+
+	const axis = hasOthers ? [...top.map((r) => r.key), OTHERS_KEY] : top.map((r) => r.key);
+	const labels = new Map(top.map((r) => [r.key, r.label] as const));
+
+	const series: GroupedSeries[] = axis.map((key) => {
+		const points = buckets.map((_, b) => {
+			let costUsd = 0;
+			let tokens = 0;
+			for (const [lineKey, cell] of cells[b]) {
+				const folded = topKeys.has(lineKey) ? lineKey : OTHERS_KEY;
+				if (folded !== key) continue;
+				costUsd += sumMeterValues(cell.costs);
+				tokens += sumMeterValues(cell.tokens);
+			}
+			return { requests: 0, denied: 0, costUsd, tokens };
+		});
+		return {
+			key,
+			label: key === OTHERS_KEY ? 'Others' : (labels.get(key) ?? key),
+			hint: null,
+			points,
+			costUsd: points.reduce((a, c) => a + c.costUsd, 0),
+			requests: 0,
+			tokens: points.reduce((a, c) => a + c.tokens, 0)
+		};
+	});
+
+	return { unit, buckets, series, hasOthers };
+}
+
+/**
+ * The key the meter series aggregates under when it isn't splitting per line —
+ * a single bucket-wide cell. Not a valid billing-line key, and never rendered.
+ */
+const ALL_LINES = '*';
+
+interface MeterCell {
+	tokens: MeterValues;
+	costs: MeterValues;
+}
+
+/**
+ * The shared read behind both meter-flavoured time series: tokens and allocated
+ * cost per (bucket, model, tier), reduced into per-bucket cells.
+ *
+ * Cost is allocated per (model, tier) group against that group's own recorded
+ * spend before it's summed into a bucket, so a bucket's bands always add up to
+ * the spend that bucket actually recorded — no second reconciliation pass, and
+ * no cross-subsidy between a priced model and an unpriced one.
+ *
+ * The `generate_series` left join pads empty buckets, which come back as one row
+ * with a null model and zero sums.
+ */
+async function bucketedMeterCells(
+	range: ResolvedRange,
+	opts: { unit?: BucketChoice; filters?: UsageFilter[]; serviceId?: string; tokenId?: string },
+	shape: { perLine?: boolean } = {}
+): Promise<{ unit: SeriesBucket; buckets: string[]; cells: Map<string, MeterCell>[] }> {
+	const unit = resolveSeriesBucket(range, opts.unit ?? 'auto');
+	const step = BUCKET_STEP[unit];
+	const startIso = range.start.toISOString();
+	const upperIso = (range.end ?? new Date()).toISOString();
+	const scope = sql.join(
+		[
+			...(opts.serviceId ? [sql`${auditLog.serviceId} = ${opts.serviceId}::uuid`] : []),
+			...(opts.tokenId ? [sql`${auditLog.tokenId} = ${opts.tokenId}::uuid`] : [])
+		].map((c) => sql` and ${c}`),
+		sql``
+	);
+
+	const rows = await db.execute<
+		RawMeterSums & { bucket: string; model: string | null; tier: string | null; cost: string }
+	>(sql`
+		select
+			to_char(g.bucket, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as bucket,
+			${auditLog.model} as model,
+			${auditLog.contextTier} as tier,
+			${METER_SUM_SQL},
+			coalesce(sum(${auditLog.costUsd}), 0)::text as cost
+		from generate_series(
+			date_trunc(${unit}, ${startIso}::timestamp),
+			date_trunc(${unit}, ${upperIso}::timestamp),
+			${step}::interval
+		) as g(bucket)
+		left join ${auditLog}
+			on date_trunc(${unit}, ${auditLog.createdAt}) = g.bucket
+			and ${usageCondsSql(range, opts.filters)}${scope}
+		group by g.bucket, ${auditLog.model}, ${auditLog.contextTier}
+		order by g.bucket asc
+	`);
+
+	const prices = await listModelPrices();
+	const buckets: string[] = [];
+	const idx = new Map<string, number>();
+	const cells: Map<string, MeterCell>[] = [];
+
+	for (const r of rows) {
+		if (!idx.has(r.bucket)) {
+			idx.set(r.bucket, buckets.length);
+			buckets.push(r.bucket);
+			cells.push(new Map());
+		}
+		const bucket = cells[idx.get(r.bucket)!];
+		const sums = meterSumsFromRow(r);
+		const tokens = splitMeters(sums);
+		const costs = allocateCost(
+			meterListCosts(sums, ratesFor(prices, r.model, r.tier)),
+			tokens,
+			Number(r.cost ?? 0)
+		);
+		const model = r.model ?? NULL_VALUE;
+		const tier = r.tier ?? NULL_VALUE;
+
+		// One cell per line when the caller splits by line, one shared cell when it
+		// only wants the meters — the same reduction either way.
+		for (const meter of METER_ORDER) {
+			if (tokens[meter] <= 0 && costs[meter] === 0) continue;
+			const key = shape.perLine ? encodeBillingLineKey({ model, tier, meter }) : ALL_LINES;
+			let cell = bucket.get(key);
+			if (!cell) {
+				cell = { tokens: emptyMeterValues(), costs: emptyMeterValues() };
+				bucket.set(key, cell);
+			}
+			cell.tokens[meter] += tokens[meter];
+			cell.costs[meter] += costs[meter];
+		}
+	}
+
+	return { unit, buckets, cells };
+}
+
+/* --------------------------------- rate cards -------------------------------- */
+
+/**
+ * A model's rate card: the standard rates, plus the long-context card when the
+ * model publishes one.
+ *
+ * Both are carried because a billing line names the tier it billed against, and
+ * pricing a long-context line at the standard rate would make the one thing the
+ * grouping exists to expose — that crossing the threshold reprices every token —
+ * disappear from the numbers.
  */
 interface ResolvedPrice {
 	model: string;
-	inputPerMtok: number;
-	outputPerMtok: number;
-	cacheReadPerMtok: number | null;
-	cacheWritePerMtok: number | null;
+	standard: MeterRates;
+	/** null when the model has a single rate card for every prompt size */
+	long: MeterRates | null;
 }
 
 /**
@@ -2429,19 +2633,40 @@ async function listModelPrices(): Promise<ResolvedPrice[]> {
 			inputPerMtok: modelPrice.inputPerMtok,
 			outputPerMtok: modelPrice.outputPerMtok,
 			cacheReadPerMtok: modelPrice.cacheReadPerMtok,
-			cacheWritePerMtok: modelPrice.cacheWritePerMtok
+			cacheWritePerMtok: modelPrice.cacheWritePerMtok,
+			longInputPerMtok: modelPrice.longInputPerMtok,
+			longOutputPerMtok: modelPrice.longOutputPerMtok,
+			longCacheReadPerMtok: modelPrice.longCacheReadPerMtok,
+			longCacheWritePerMtok: modelPrice.longCacheWritePerMtok
 		})
 		.from(modelPrice);
 
+	const num = (v: string | null) => (v == null ? null : Number(v));
 	const byModel = new Map<string, ResolvedPrice>();
 	// custom rows win, so apply defaults first and let overrides replace them
 	for (const r of [...rows].sort((a, b) => Number(b.isDefault) - Number(a.isDefault))) {
-		byModel.set(r.model.toLowerCase(), {
-			model: r.model.toLowerCase(),
+		const standard: MeterRates = {
 			inputPerMtok: Number(r.inputPerMtok ?? 0),
 			outputPerMtok: Number(r.outputPerMtok ?? 0),
-			cacheReadPerMtok: r.cacheReadPerMtok == null ? null : Number(r.cacheReadPerMtok),
-			cacheWritePerMtok: r.cacheWritePerMtok == null ? null : Number(r.cacheWritePerMtok)
+			cacheReadPerMtok: num(r.cacheReadPerMtok),
+			cacheWritePerMtok: num(r.cacheWritePerMtok)
+		};
+		// A NULL long input rate means the model has one rate card for every prompt
+		// size (see the schema note); the remaining long columns then fall back to
+		// their standard counterparts rather than to zero.
+		const longInput = num(r.longInputPerMtok);
+		byModel.set(r.model.toLowerCase(), {
+			model: r.model.toLowerCase(),
+			standard,
+			long:
+				longInput == null
+					? null
+					: {
+							inputPerMtok: longInput,
+							outputPerMtok: num(r.longOutputPerMtok) ?? standard.outputPerMtok,
+							cacheReadPerMtok: num(r.longCacheReadPerMtok),
+							cacheWritePerMtok: num(r.longCacheWritePerMtok)
+						}
 		});
 	}
 	return [...byModel.values()];
@@ -2456,6 +2681,25 @@ function resolveModelPrice(prices: ResolvedPrice[], model: string): ResolvedPric
 		if (key.startsWith(p.model) && (!best || p.model.length > best.model.length)) best = p;
 	}
 	return best;
+}
+
+/**
+ * The rates a group billed at: the long-context card when the request recorded
+ * that tier and the model publishes one, else the standard card.
+ *
+ * A model with no price row at all returns null, which prices its meters at
+ * nothing — the caller then falls back to a token-share allocation rather than
+ * letting an unpriced model claim a share of a priced one's spend.
+ */
+function ratesFor(
+	prices: ResolvedPrice[],
+	model: string | null,
+	tier: string | null
+): MeterRates | null {
+	if (!model) return null;
+	const p = resolveModelPrice(prices, model);
+	if (!p) return null;
+	return tier === 'long' ? (p.long ?? p.standard) : p.standard;
 }
 
 export interface UsageTotals {

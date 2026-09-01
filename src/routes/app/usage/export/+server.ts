@@ -53,7 +53,18 @@ export const GET: RequestHandler = async (event) => {
 	} else {
 		const breakdown = await orgUsageByDimension(range, groupBy, { filters });
 		const rows: string[][] = [
-			[dimHeader, 'Detail', 'Spend (USD)', 'Requests', 'Denied', 'Input tokens', 'Output tokens']
+			[
+				dimHeader,
+				'Detail',
+				'Spend (USD)',
+				'Requests',
+				'Denied',
+				'Input tokens',
+				'Output tokens',
+				// Empty for every grouping but `line`, where one row is one rate card
+				// entry and the unit price is the whole point of exporting it.
+				'USD per Mtok'
+			]
 		];
 		for (const r of breakdown) {
 			rows.push([
@@ -63,7 +74,8 @@ export const GET: RequestHandler = async (event) => {
 				String(r.requests),
 				String(r.denied),
 				String(r.inputTokens),
-				String(r.outputTokens)
+				String(r.outputTokens),
+				r.ratePerMtok == null ? '' : r.ratePerMtok.toFixed(6)
 			]);
 		}
 		csv = rows.map(toCsvRow).join('\r\n');

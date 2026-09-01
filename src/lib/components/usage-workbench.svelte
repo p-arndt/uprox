@@ -138,7 +138,13 @@
 		<Card.Header>
 			<Card.Title>Detail by {dimensionLabel(analysis.groupBy).toLowerCase()}</Card.Title>
 			<Card.Description>
-				Every series in the window, ranked by spend. Share is of total spend in scope.
+				{#if analysis.groupBy === 'line'}
+					Every rate-card line in the window — model, the card it billed against, and the meter —
+					ranked by spend. The unit price is derived from the line's own spend and volume, so it can
+					be checked against the pricing page.
+				{:else}
+					Every series in the window, ranked by spend. Share is of total spend in scope.
+				{/if}
 			</Card.Description>
 		</Card.Header>
 		<Card.Content>

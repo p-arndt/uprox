@@ -15,7 +15,7 @@ export const load: PageServerLoad = async (event) => {
 	const [analysis, policies, budgets, settings] = await Promise.all([
 		loadUsageAnalysis(event, {
 			serviceId,
-			dimensions: ['model', 'provider', 'token', 'status'],
+			dimensions: ['model', 'provider', 'token', 'status', 'line'],
 			donutDims: ['model', 'provider', 'token']
 		}),
 		listPolicies(),

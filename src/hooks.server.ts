@@ -49,7 +49,11 @@ const GATEWAY_PREFIXES = ['/v1/', '/openai/'];
  * keep exactly the CSRF protection SvelteKit gave them. Mirrors the built-in
  * behaviour: production-only, form content-types, unsafe methods.
  */
-const FORM_CONTENT_TYPES = ['application/x-www-form-urlencoded', 'multipart/form-data', 'text/plain'];
+const FORM_CONTENT_TYPES = [
+	'application/x-www-form-urlencoded',
+	'multipart/form-data',
+	'text/plain'
+];
 const CSRF_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 function isFormPost(request: Request): boolean {

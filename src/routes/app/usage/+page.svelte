@@ -144,7 +144,8 @@
 	<div>
 		<h1 class="text-xl font-semibold tracking-tight">Cost analysis</h1>
 		<p class="text-sm text-muted-foreground">
-			Spend, requests and token volume — sliced by service, model, provider or machine token.
+			Spend, requests and token volume — sliced by service, model, provider, machine token, or down
+			to the individual rate-card line.
 		</p>
 	</div>
 
