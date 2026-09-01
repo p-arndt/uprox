@@ -34,9 +34,9 @@ for (const raw of process.argv.slice(2)) {
 	args.set(key, value);
 }
 
-const DAYS = Number(args.get('days') ?? 30);
-/** extra randomized requests on top of the exhaustive per-model matrix */
-const EXTRA_REQUESTS = Number(args.get('requests') ?? 1500);
+const DAYS = Number(args.get('days') ?? 365);
+/** total randomized requests spread over the window, on top of the coverage matrix */
+const TOTAL_REQUESTS = Number(args.get('requests') ?? 25_000);
 const USER_EMAIL = args.get('email') ?? 'admin@admin.local';
 const USER_PASSWORD = args.get('password') ?? 'admin';
 const USER_NAME = 'Demo Admin';
@@ -95,42 +95,121 @@ const randInt = (min: number, max: number) => min + Math.floor(Math.random() * (
 const logRand = (min: number, max: number) =>
 	Math.round(Math.exp(Math.log(min) + Math.random() * (Math.log(max) - Math.log(min))));
 
-/**
- * A timestamp within the last {@link DAYS} days, weighted towards European
- * business hours and recent days so the usage charts have a readable shape.
- */
-function randomTimestamp(): Date {
-	const dayBack = Math.floor(Math.pow(Math.random(), 1.6) * DAYS);
+/** Midnight UTC of the day `dayIndex` days into the window (0 = oldest). */
+function dayStart(dayIndex: number): Date {
 	const date = new Date();
-	date.setUTCDate(date.getUTCDate() - dayBack);
-	const weekday = date.getUTCDay();
-	const hour =
-		weekday === 0 || weekday === 6
-			? randInt(0, 23)
-			: pick([7, 8, 9, 9, 10, 10, 11, 12, 13, 14, 14, 15, 16, 17, 18, 20]);
+	date.setUTCHours(0, 0, 0, 0);
+	date.setUTCDate(date.getUTCDate() - (DAYS - 1 - dayIndex));
+	return date;
+}
+
+/** A wall-clock time on that day, weighted towards European office hours. */
+function timeOnDay(dayIndex: number): Date {
+	const date = dayStart(dayIndex);
+	const weekend = date.getUTCDay() === 0 || date.getUTCDay() === 6;
+	const hour = weekend
+		? randInt(0, 23)
+		: pick([6, 7, 8, 9, 9, 10, 10, 11, 11, 12, 13, 14, 14, 15, 15, 16, 17, 18, 20, 22]);
 	date.setUTCHours(hour, randInt(0, 59), randInt(0, 59), 0);
-	return date > new Date() ? new Date(Date.now() - randInt(60, 3600) * 1000) : date;
+	// never in the future: the last day of the window is only partly over
+	return date > new Date() ? new Date(Date.now() - randInt(60, 7200) * 1000) : date;
+}
+
+/** A day picked in proportion to how busy it is — see {@link dailyWeights}. */
+function randomDayIndex(weights: number[], total: number): number {
+	let roll = Math.random() * total;
+	for (let i = 0; i < weights.length; i++) {
+		roll -= weights[i];
+		if (roll <= 0) return i;
+	}
+	return weights.length - 1;
+}
+
+/**
+ * Relative traffic per day: a platform that grows through the year, quiet at
+ * weekends, noisy day to day, with the odd spike day (a backfill, a launch).
+ * Flat traffic is the one thing a real usage chart never looks like.
+ */
+function dailyWeights(): { weights: number[]; total: number } {
+	const weights: number[] = [];
+	for (let d = 0; d < DAYS; d++) {
+		const p = DAYS === 1 ? 1 : d / (DAYS - 1);
+		// ~6x growth from the start of the window to now
+		const growth = 0.35 + 1.9 * Math.pow(p, 1.4);
+		const weekday = dayStart(d).getUTCDay();
+		const weekend = weekday === 0 || weekday === 6 ? 0.28 : 1;
+		const jitter = 0.65 + Math.random() * 0.7;
+		const spike = Math.random() < 0.02 ? 2.5 + Math.random() * 2 : 1;
+		weights.push(growth * weekend * jitter * spike);
+	}
+	return { weights, total: weights.reduce((sum, w) => sum + w, 0) };
 }
 
 // ---------------------------------------------------------------- models
 
 /**
- * The GPT-5.5 and GPT-5.6 families — nothing from other providers, and none of
- * the older OpenAI models. Both families carry a long-context rate card, so
- * every seeded model can produce standard *and* long-context traffic.
+ * The workhorses: one previous-generation model and the whole GPT-5.6 family.
+ * These carry essentially all of the traffic, which is what a real instance
+ * looks like — a fleet settles on two or three models, it does not spread
+ * itself evenly over a price list.
  */
-const OPENAI_MODELS = Object.keys(DEFAULT_MODEL_PRICES).filter(
-	(model) => providerForModel(model)?.id === 'openai' && /^gpt-5\.(5|6)/.test(model)
+const CORE_MODELS = ['gpt-5.5', 'gpt-5.6-luna', 'gpt-5.6-terra', 'gpt-5.6-sol'];
+
+/**
+ * The long tail: a pro tier someone reaches for occasionally, a cheap legacy
+ * model still wired into an old job, and an embedding model. A few percent of
+ * requests between them — enough to be visible in a breakdown, not enough to
+ * matter in the spend.
+ */
+const RARE_MODELS = ['gpt-5.5-pro', 'gpt-4o-mini', 'text-embedding-3-small'];
+
+const OPENAI_MODELS = [...CORE_MODELS, ...RARE_MODELS].filter(
+	(model) => providerForModel(model)?.id === 'openai' && DEFAULT_MODEL_PRICES[model]
 );
 
-type Scope = 'chat' | 'responses';
+/** The day the 5.6 family becomes available, as a fraction of the window. */
+const V56_LAUNCH = 0.45;
+
+/**
+ * The model mix at a point in the window. Before the 5.6 launch everything runs
+ * on 5.5; afterwards the fleet migrates over a couple of months, cheapest tier
+ * first. Static shares would make every month of the year look the same.
+ */
+function modelWeights(progress: number): Array<[string, number]> {
+	const adopted =
+		progress <= V56_LAUNCH ? 0 : Math.min(1, (progress - V56_LAUNCH) / (0.35 * (1 - V56_LAUNCH)));
+	return [
+		['gpt-5.5', 0.05 + 0.9 * (1 - adopted)],
+		['gpt-5.6-luna', 0.58 * adopted],
+		['gpt-5.6-terra', 0.24 * adopted],
+		['gpt-5.6-sol', 0.07 * adopted],
+		['gpt-5.5-pro', 0.012],
+		['gpt-4o-mini', 0.018],
+		['text-embedding-3-small', 0.02]
+	];
+}
+
+/** Draw a model for a request landing `progress` of the way through the window. */
+function modelForProgress(progress: number): string {
+	const weights = modelWeights(progress);
+	const total = weights.reduce((sum, [, w]) => sum + w, 0);
+	let roll = Math.random() * total;
+	for (const [model, w] of weights) {
+		roll -= w;
+		if (roll <= 0) return model;
+	}
+	return CORE_MODELS[0];
+}
+
+type Scope = 'chat' | 'responses' | 'embeddings';
 
 /** Which gateway endpoint a model is realistically called through. */
-function scopeForModel(_model: string): Scope {
+function scopeForModel(model: string): Scope {
+	if (model.startsWith('text-embedding')) return 'embeddings';
 	return Math.random() < 0.15 ? 'responses' : 'chat';
 }
 
-const supportsCache = (_scope: Scope) => true;
+const supportsCache = (scope: Scope) => scope !== 'embeddings';
 const hasLongContextCard = (price: ModelPrice) => price.longIn != null;
 /**
  * Only the models that actually surcharge cache writes report a write count
@@ -302,7 +381,7 @@ async function seedServicesAndTokens(userId: string): Promise<SeededToken[]> {
 				values (${service.id}, ${`${s.name}-${suffix}`},
 					${`uprox_live_${secret.slice(0, 6)}…${secret.slice(-4)}`},
 					${sha256(plaintext)},
-					${sql.array(['chat', 'responses', 'models'])},
+					${sql.array(['chat', 'responses', 'embeddings', 'models'])},
 					${sql.array([])}, ${userId}, now() - ${`${DAYS + 5} days`}::interval)
 				returning id
 			`;
@@ -350,13 +429,19 @@ function buildRequest(
 	model: string,
 	scope: Scope,
 	cacheMode: CacheMode,
-	long: boolean
+	long: boolean,
+	dayIndex: number
 ): AuditRow {
 	const price = resolvePrice(DEFAULT_MODEL_PRICES, model)!;
+	// Real prompts are short: a chat turn with a system prompt and a little
+	// context, a few thousand tokens. Long-context requests are the exception and
+	// cluster just past the threshold rather than spreading to the context limit.
 	const promptTokens = long
-		? randInt(LONG_CONTEXT_MIN_PROMPT_TOKENS, 900_000)
-		: logRand(200, 60_000);
-	const outputTokens = logRand(20, 6000);
+		? randInt(LONG_CONTEXT_MIN_PROMPT_TOKENS, 420_000)
+		: scope === 'embeddings'
+			? logRand(120, 8_000)
+			: logRand(250, 24_000);
+	const outputTokens = scope === 'embeddings' ? 0 : logRand(15, 2_500);
 
 	let cacheRead = 0;
 	let cacheWrite = 0;
@@ -380,7 +465,7 @@ function buildRequest(
 		provider: 'openai',
 		model,
 		ip: pick(IPS),
-		created_at: randomTimestamp()
+		created_at: timeOnDay(dayIndex)
 	};
 
 	if (cacheMode === 'uprox-hit') {
@@ -425,7 +510,7 @@ function buildRequest(
 }
 
 /** A denial or upstream failure — the non-happy paths the dashboards filter on. */
-function buildFailure(token: SeededToken, model: string): AuditRow {
+function buildFailure(token: SeededToken, model: string, dayIndex: number): AuditRow {
 	const kind = pick(['deny-model', 'deny-budget', 'deny-rate', 'error-upstream', 'error-timeout']);
 	const scope = scopeForModel(model);
 	const shared = {
@@ -443,7 +528,7 @@ function buildFailure(token: SeededToken, model: string): AuditRow {
 		provider_cached_tokens: null,
 		cache_write_tokens: null,
 		context_tier: null,
-		created_at: randomTimestamp()
+		created_at: timeOnDay(dayIndex)
 	};
 	switch (kind) {
 		case 'deny-model':
@@ -495,11 +580,13 @@ function buildFailure(token: SeededToken, model: string): AuditRow {
 }
 
 /**
- * The exhaustive matrix: every OpenAI model × every billing shape it can
- * actually produce. This is what guarantees the dashboards show long-context
- * rows, cache reads, cache writes and cache hits for the whole model list.
+ * One row per (model × billing shape) it can actually produce, so a dashboard
+ * always has a long-context row, a cache read, a cache write and a cache hit to
+ * show for every model — even for a rare model the random traffic below might
+ * skip. Deliberately thin: the mix a reader judges the instance by has to come
+ * from the realistic traffic, not from this.
  */
-function buildMatrix(tokens: SeededToken[]): AuditRow[] {
+function buildMatrix(tokens: SeededToken[], weights: number[], weightTotal: number): AuditRow[] {
 	const rows: AuditRow[] = [];
 	for (const model of OPENAI_MODELS) {
 		const price = DEFAULT_MODEL_PRICES[model];
@@ -510,49 +597,66 @@ function buildMatrix(tokens: SeededToken[]): AuditRow[] {
 				: ['none', 'provider-read', 'uprox-hit']
 			: ['none', 'uprox-hit'];
 		for (const mode of modes) {
-			// both rate cards get the same weight, so neither tier is a rounding
-			// error in the dashboards
-			for (let i = 0; i < 3; i++) rows.push(buildRequest(pick(tokens), model, scope, mode, false));
+			const day = randomDayIndex(weights, weightTotal);
+			rows.push(buildRequest(pick(tokens), model, scope, mode, false, day));
 			if (hasLongContextCard(price) && mode !== 'uprox-hit') {
-				for (let i = 0; i < 3; i++) rows.push(buildRequest(pick(tokens), model, scope, mode, true));
+				rows.push(
+					buildRequest(pick(tokens), model, scope, mode, true, randomDayIndex(weights, weightTotal))
+				);
 			}
 		}
-		rows.push(buildFailure(pick(tokens), model));
+		rows.push(buildFailure(pick(tokens), model, randomDayIndex(weights, weightTotal)));
 	}
 	return rows;
 }
 
-/** Randomized background traffic, weighted towards the models people actually use. */
-function buildNoise(tokens: SeededToken[], count: number): AuditRow[] {
-	// the workhorse tiers carry most of the traffic; the pro tiers are rarer
-	const popular = OPENAI_MODELS.filter((m) => !m.endsWith('-pro'));
+/**
+ * How a request caches. Chat traffic reuses a system prompt and a running
+ * conversation, so a cache read on part of the prompt is the common case, not
+ * the exception; a write only happens when the prefix is new.
+ */
+function cacheModeFor(scope: Scope, price: ModelPrice): CacheMode {
+	if (!supportsCache(scope)) return Math.random() < 0.05 ? 'uprox-hit' : 'none';
+	const roll = Math.random();
+	if (roll < 0.05) return 'uprox-hit';
+	if (roll < 0.5) return 'provider-read';
+	if (roll < 0.62) return reportsCacheWrites(price) ? 'provider-mixed' : 'provider-read';
+	if (roll < 0.7) return reportsCacheWrites(price) ? 'provider-write' : 'none';
+	return 'none';
+}
+
+/**
+ * The bulk of the data: `count` requests spread over the window in proportion to
+ * how busy each day is, with the model mix drifting as the fleet migrates.
+ */
+function buildTraffic(
+	tokens: SeededToken[],
+	count: number,
+	weights: number[],
+	weightTotal: number
+): AuditRow[] {
 	const rows: AuditRow[] = [];
-	for (let i = 0; i < count; i++) {
-		const model = Math.random() < 0.75 ? pick(popular) : pick(OPENAI_MODELS);
-		const roll = Math.random();
-		if (roll < 0.06) {
-			rows.push(buildFailure(pick(tokens), model));
-			continue;
+	for (let d = 0; d < DAYS; d++) {
+		const perDay = Math.round((count * weights[d]) / weightTotal);
+		const progress = DAYS === 1 ? 1 : d / (DAYS - 1);
+		for (let i = 0; i < perDay; i++) {
+			const model = modelForProgress(progress);
+			if (Math.random() < 0.04) {
+				rows.push(buildFailure(pick(tokens), model, d));
+				continue;
+			}
+			const scope = scopeForModel(model);
+			const price = DEFAULT_MODEL_PRICES[model];
+			const mode = cacheModeFor(scope, price);
+			// Long context is rare in practice — a whole-repo or whole-corpus prompt,
+			// not a chat turn — but it dominates spend wherever it does happen, which
+			// is exactly the thing the rate-card breakdown exists to surface. Under a
+			// percent of requests already buys it about a third of the bill; at the
+			// few percent that looks harmless here, it drowns out every short-context
+			// line in the chart.
+			const long = hasLongContextCard(price) && mode !== 'uprox-hit' && Math.random() < 0.006;
+			rows.push(buildRequest(pick(tokens), model, scope, mode, long, d));
 		}
-		const scope = scopeForModel(model);
-		const mode: CacheMode = !supportsCache(scope)
-			? Math.random() < 0.12
-				? 'uprox-hit'
-				: 'none'
-			: pick<CacheMode>([
-					'none',
-					'none',
-					'none',
-					'provider-read',
-					'provider-read',
-					'provider-write',
-					'provider-mixed',
-					'uprox-hit'
-				]);
-		const price = DEFAULT_MODEL_PRICES[model];
-		// roughly a third of the background traffic bills against the long card
-		const long = hasLongContextCard(price) && mode !== 'uprox-hit' && Math.random() < 0.35;
-		rows.push(buildRequest(pick(tokens), model, scope, mode, long));
 	}
 	return rows;
 }
@@ -578,7 +682,8 @@ async function seedTraces(rows: AuditRow[], ids: string[]): Promise<void> {
 	const traceable = ids
 		.map((id, i) => ({ id, row: rows[i] }))
 		.filter(({ row }) => row.status === 'ok' && row.action.startsWith('gateway.'))
-		.slice(0, 200);
+		// the newest ones: the trace viewer's own window defaults to recent activity
+		.slice(-200);
 
 	let group = randomBytes(16).toString('hex');
 	const values = traceable.map(({ id, row }, i) => {
@@ -639,9 +744,11 @@ async function main(): Promise<void> {
 	await seedProviderSecret(userId);
 	const tokens = await seedServicesAndTokens(userId);
 
-	const rows = [...buildMatrix(tokens), ...buildNoise(tokens, EXTRA_REQUESTS)].sort(
-		(a, b) => a.created_at.getTime() - b.created_at.getTime()
-	);
+	const { weights, total } = dailyWeights();
+	const rows = [
+		...buildMatrix(tokens, weights, total),
+		...buildTraffic(tokens, TOTAL_REQUESTS, weights, total)
+	].sort((a, b) => a.created_at.getTime() - b.created_at.getTime());
 	const ids = await insertAuditRows(rows);
 	console.log(`audit log: ${ids.length} rows over ${DAYS} days, ${OPENAI_MODELS.length} models`);
 	await seedTraces(rows, ids);
