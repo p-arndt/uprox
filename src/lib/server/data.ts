@@ -2291,6 +2291,11 @@ function meterLabel(key: MeterKey): string {
 	return METER_META[key]?.label ?? key;
 }
 
+/** The same meter, abbreviated for composite labels — see {@link billingLineLabel}. */
+function meterShortLabel(key: MeterKey): string {
+	return METER_META[key]?.short ?? key;
+}
+
 /**
  * The token meters bucketed over time, shaped as a {@link GroupedSeriesResult}
  * so the cost-analysis stacked chart can render it unchanged — same tooltip,
@@ -2428,8 +2433,11 @@ export async function orgBillingLines(
  */
 function billingLineLabel(model: string, tier: string, meter: MeterKey): string {
 	const name = model === NULL_VALUE ? 'No model' : model;
-	const card = tier === 'long' ? ' - Long context' : '';
-	return `${name}${card} - ${meterLabel(meter)}`;
+	// Kept deliberately terse: three parts have to fit one legend entry, and the
+	// model is the part a reader scans for, so it must not be the part that gets
+	// truncated. Hence "Long" over "Long context" and the short meter names.
+	const card = tier === 'long' ? ' · Long' : '';
+	return `${name}${card} · ${meterShortLabel(meter)}`;
 }
 
 /**

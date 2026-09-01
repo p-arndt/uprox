@@ -365,7 +365,7 @@
 	{#if hovered !== null && hoverRows.length > 0}
 		<div class="pointer-events-none relative">
 			<div
-				class="absolute z-20 w-60 rounded-lg border bg-popover p-2.5 shadow-lg"
+				class="absolute z-20 w-72 rounded-lg border bg-popover p-2.5 shadow-lg"
 				style="{hovered < buckets.length / 2 ? 'left' : 'right'}: {(() => {
 					const pct = ((hovered + 0.5) / buckets.length) * 100;
 					return hovered < buckets.length / 2

@@ -101,26 +101,39 @@ export const METER_COLOR: Record<string, string> = {
 	embedding: 'var(--series-7)'
 };
 
-/** Display copy for each meter — the label and why it's billed differently. */
-export const METER_META: Record<string, { label: string; hint: string }> = {
+/**
+ * Display copy for each meter — the label and why it's billed differently.
+ *
+ * `short` is for the places where the meter is only one part of a composite
+ * name: a billing line is model + rate card + meter, and "Input (cache read)"
+ * spent so much of the width that the model in front of it got truncated away
+ * in the legend and tooltip. The long form stays on the token-meters card,
+ * which has a whole row per meter to spend.
+ */
+export const METER_META: Record<string, { label: string; short: string; hint: string }> = {
 	input: {
 		label: 'Input (fresh)',
+		short: 'Input',
 		hint: 'sent upstream and billed at the full input rate'
 	},
 	cacheRead: {
 		label: 'Input (cache read)',
+		short: 'Cache read',
 		hint: "served from the provider's prompt cache, typically ~10% of input"
 	},
 	cacheWrite: {
 		label: 'Input (cache write)',
+		short: 'Cache write',
 		hint: 'written to the prompt cache; some providers surcharge ~25%'
 	},
 	output: {
 		label: 'Output',
+		short: 'Output',
 		hint: 'generated tokens, the most expensive meter'
 	},
 	embedding: {
 		label: 'Embeddings',
+		short: 'Embed',
 		hint: 'high volume, very low rate, never prompt-cached'
 	}
 };

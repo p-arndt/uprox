@@ -68,7 +68,7 @@
 						style="background-color: {off ? 'transparent' : color}; border-color: {color}"
 						aria-hidden="true"
 					></span>
-					<span class="max-w-48 truncate {off ? 'line-through' : ''}">{s.label}</span>
+					<span class="max-w-56 truncate {off ? 'line-through' : ''}">{s.label}</span>
 					<span class="text-muted-foreground tabular-nums">{valueOf(s)}</span>
 				</button>
 			</li>
