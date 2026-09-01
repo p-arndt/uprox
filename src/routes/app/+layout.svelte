@@ -54,9 +54,12 @@
 			label: 'Gateway',
 			items: [
 				{ href: '/app/services', label: 'Services', icon: Boxes },
-				{ href: '/app/providers', label: 'Providers', icon: Plug },
 				{ href: '/app/tokens', label: 'Machine Tokens', icon: KeyRound }
 			]
+		},
+		{
+			label: 'Providers',
+			items: [{ href: '/app/providers', label: 'Providers', icon: Plug }]
 		},
 		{
 			label: 'Governance',
