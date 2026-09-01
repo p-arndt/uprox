@@ -142,8 +142,8 @@
 		/>
 	{:else}
 		<div class="flex flex-wrap items-center justify-between gap-3">
-			<Tabs.Root bind:value={providerFilter}>
-				<Tabs.List>
+			<Tabs.Root bind:value={providerFilter} class="min-w-0">
+				<Tabs.List class="max-w-full overflow-x-auto">
 					<Tabs.Trigger value="all">
 						All
 						<span class="ml-1.5 text-xs text-muted-foreground">{rows.length}</span>
@@ -158,8 +158,8 @@
 			</Tabs.Root>
 
 			<div class="flex flex-wrap items-center gap-3">
-				<Tabs.Root bind:value={tier}>
-					<Tabs.List>
+				<Tabs.Root bind:value={tier} class="min-w-0">
+					<Tabs.List class="max-w-full overflow-x-auto">
 						<Tabs.Trigger value="standard">Short context</Tabs.Trigger>
 						<Tabs.Trigger value="long">
 							Long context

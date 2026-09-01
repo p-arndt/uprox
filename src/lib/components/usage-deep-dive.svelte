@@ -53,10 +53,10 @@
 	});
 </script>
 
-<Tabs.Root bind:value={active} class="gap-4">
-	<Tabs.List>
+<Tabs.Root bind:value={active} class="min-w-0 gap-4">
+	<Tabs.List class="max-w-full overflow-x-auto">
 		{#each tabs as t (t.key)}
-			<Tabs.Trigger value={t.key}>{t.label}</Tabs.Trigger>
+			<Tabs.Trigger value={t.key} class="whitespace-nowrap">{t.label}</Tabs.Trigger>
 		{/each}
 	</Tabs.List>
 

@@ -198,7 +198,12 @@
 		</Sidebar.Footer>
 	</Sidebar.Root>
 
-	<Sidebar.Inset>
+	<!-- min-w-0: the inset is a flex item, and a flex item's default
+	     `min-width: auto` refuses to shrink below its content. Without this a
+	     table wider than the viewport widened the inset instead of scrolling
+	     inside its own container, so the whole page scrolled sideways and the
+	     sidebar rode over the content. -->
+	<Sidebar.Inset class="min-w-0">
 		<header
 			class="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur"
 		>
