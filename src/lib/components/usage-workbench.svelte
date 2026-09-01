@@ -4,14 +4,9 @@
 	import UsageHeadline from '$lib/components/usage-headline.svelte';
 	import UsageAnalysisToolbar from '$lib/components/usage-analysis-toolbar.svelte';
 	import UsageAnalysisCard from '$lib/components/usage-analysis-card.svelte';
-	import UsageDonutRow from '$lib/components/usage-donut-row.svelte';
-	import UsageDetailTable from '$lib/components/usage-detail-table.svelte';
-	import UsageTokenMeters from '$lib/components/usage-token-meters.svelte';
-	import UsageMovers from '$lib/components/usage-movers.svelte';
-	import UsageModelEfficiency from '$lib/components/usage-model-efficiency.svelte';
-	import UsageReliability from '$lib/components/usage-reliability.svelte';
+	import UsageDeepDive from '$lib/components/usage-deep-dive.svelte';
 	import BudgetGauge from '$lib/components/budget-gauge.svelte';
-	import { dimensionLabel, type UsageDimension, type UsageFilter } from '$lib/usage-group';
+	import type { UsageDimension, UsageFilter } from '$lib/usage-group';
 	import type { UsageAnalysis } from '$lib/server/usage-analysis';
 	import type { DimensionUsageRow } from '$lib/server/data';
 	import type { BudgetStatus } from '$lib/budget';
@@ -123,12 +118,6 @@
 		{rangeLabel}
 	/>
 
-	<!-- Health sits with the headline, not at the foot of the page. Error rate,
-	     denials and latency answer "is the gateway alright?", which is the
-	     question asked before any question about cost — it read as an epilogue
-	     when it was the last card below four charts. -->
-	<UsageReliability totals={analysis.totals} />
-
 	<UsageAnalysisCard
 		grouped={analysis.grouped}
 		groupBy={analysis.groupBy}
@@ -137,48 +126,11 @@
 		{bucketHref}
 	/>
 
-	<!-- Two narrow ranked lists share a row. Both are short and neither has a
-	     wide table inside, so stacking them full-width spent a screen of height
-	     on two half-empty cards. -->
-	{#if analysis.movers.length > 0}
-		<div class="grid items-start gap-4 lg:grid-cols-2">
-			{@render budgetHeadroom()}
-			<UsageMovers movers={analysis.movers} dim={analysis.groupBy} {rangeLabel} />
-		</div>
-	{:else}
-		{@render budgetHeadroom()}
-	{/if}
+	<UsageDeepDive {analysis} {rangeLabel} {rowLabel} />
 
-	{#if analysis.donuts.length > 0}
-		<UsageDonutRow panels={analysis.donuts} scopeTotal={analysis.totals.costUsd} />
-	{/if}
-
-	<Card.Root>
-		<Card.Header>
-			<Card.Title>Detail by {dimensionLabel(analysis.groupBy).toLowerCase()}</Card.Title>
-			<Card.Description>
-				{#if analysis.groupBy === 'line'}
-					Every rate-card line in the window — model, the card it billed against, and the meter —
-					ranked by spend. The unit price is derived from the line's own spend and volume, so it can
-					be checked against the pricing page.
-				{:else}
-					Every series in the window, ranked by spend. Share is of total spend in scope.
-				{/if}
-			</Card.Description>
-		</Card.Header>
-		<Card.Content>
-			<UsageDetailTable
-				rows={analysis.breakdown}
-				dim={analysis.groupBy}
-				total={analysis.totals.costUsd}
-				{rowLabel}
-				truncated={analysis.breakdownTruncated}
-				limit={analysis.breakdownLimit}
-			/>
-		</Card.Content>
-	</Card.Root>
-
-	<UsageModelEfficiency rows={analysis.efficiency} />
-
-	<UsageTokenMeters breakdown={analysis.meters} />
+	<!-- Last, and deliberately: a ceiling belongs to the billing period, not to
+	     the window on screen, so it answers a different question than everything
+	     above it. budget-alert.svelte already interrupts at the top of the page
+	     when one is actually being breached. -->
+	{@render budgetHeadroom()}
 {/if}
