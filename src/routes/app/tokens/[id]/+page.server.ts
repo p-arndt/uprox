@@ -34,6 +34,7 @@ export const load: PageServerLoad = async (event) => {
 			expiresAt: token.expiresAt,
 			revokedAt: token.revokedAt
 		},
+		crumb: token.name,
 		...analysis
 	};
 };

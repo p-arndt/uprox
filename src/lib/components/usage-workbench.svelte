@@ -57,24 +57,33 @@
 
 <!-- One command bar: window, grouping and filters on the left, page actions on
      the right. Every control here is the same height and shape, so the row reads
-     as a single band of chrome instead of assorted buttons. -->
-<div
-	class="flex flex-col gap-2 rounded-xl border bg-card px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
->
-	<div class="flex flex-wrap items-center gap-2">
-		{@render leading?.()}
-		<UsageAnalysisToolbar
-			groupBy={analysis.groupBy}
-			filters={analysis.filters}
-			dimensions={analysis.dimensions}
-			options={analysis.filterOptions}
-			{onGroupBy}
-			{onFilters}
-		/>
+     as a single band of chrome instead of assorted buttons.
+
+     It sticks below the app header (h-14) because every panel underneath is a
+     rendering of the choices made here — the page is a loop of "change the
+     window, read the result", and that loop breaks the moment the controls
+     scroll away and you have to travel back up to adjust them. The negative
+     margins let the opaque band bleed to the padding edge of the page so
+     content passing underneath is covered rather than peeking out the side. -->
+<div class="sticky top-14 z-10 -mx-4 bg-background/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6">
+	<div
+		class="flex flex-col gap-2 rounded-xl border bg-card px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+	>
+		<div class="flex flex-wrap items-center gap-2">
+			{@render leading?.()}
+			<UsageAnalysisToolbar
+				groupBy={analysis.groupBy}
+				filters={analysis.filters}
+				dimensions={analysis.dimensions}
+				options={analysis.filterOptions}
+				{onGroupBy}
+				{onFilters}
+			/>
+		</div>
+		{#if trailing}
+			<div class="flex shrink-0 items-center gap-2">{@render trailing()}</div>
+		{/if}
 	</div>
-	{#if trailing}
-		<div class="flex shrink-0 items-center gap-2">{@render trailing()}</div>
-	{/if}
 </div>
 
 <!-- Budget headroom: instance ceiling and policy ceilings in ONE card, one row
@@ -114,6 +123,12 @@
 		{rangeLabel}
 	/>
 
+	<!-- Health sits with the headline, not at the foot of the page. Error rate,
+	     denials and latency answer "is the gateway alright?", which is the
+	     question asked before any question about cost — it read as an epilogue
+	     when it was the last card below four charts. -->
+	<UsageReliability totals={analysis.totals} />
+
 	<UsageAnalysisCard
 		grouped={analysis.grouped}
 		groupBy={analysis.groupBy}
@@ -122,10 +137,16 @@
 		{bucketHref}
 	/>
 
-	{@render budgetHeadroom()}
-
+	<!-- Two narrow ranked lists share a row. Both are short and neither has a
+	     wide table inside, so stacking them full-width spent a screen of height
+	     on two half-empty cards. -->
 	{#if analysis.movers.length > 0}
-		<UsageMovers movers={analysis.movers} dim={analysis.groupBy} {rangeLabel} />
+		<div class="grid items-start gap-4 lg:grid-cols-2">
+			{@render budgetHeadroom()}
+			<UsageMovers movers={analysis.movers} dim={analysis.groupBy} {rangeLabel} />
+		</div>
+	{:else}
+		{@render budgetHeadroom()}
 	{/if}
 
 	{#if analysis.donuts.length > 0}
@@ -160,6 +181,4 @@
 	<UsageModelEfficiency rows={analysis.efficiency} />
 
 	<UsageTokenMeters breakdown={analysis.meters} />
-
-	<UsageReliability totals={analysis.totals} />
 {/if}

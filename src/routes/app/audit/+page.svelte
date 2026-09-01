@@ -10,6 +10,7 @@
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
 	import Search from '@lucide/svelte/icons/search';
 	import X from '@lucide/svelte/icons/x';
+	import PageShell from '$lib/components/page-shell.svelte';
 
 	let { data } = $props();
 
@@ -60,7 +61,7 @@
 	}
 </script>
 
-<div class="mx-auto max-w-6xl space-y-6">
+<PageShell width="default">
 	<PageHeader
 		title="Audit Log"
 		description="Append-only record of gateway requests and administrative actions."
@@ -179,4 +180,4 @@
 			{/if}
 		</div>
 	{/if}
-</div>
+</PageShell>

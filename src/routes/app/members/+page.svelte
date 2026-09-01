@@ -20,6 +20,7 @@
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Ban from '@lucide/svelte/icons/ban';
 	import Mail from '@lucide/svelte/icons/mail';
+	import PageShell from '$lib/components/page-shell.svelte';
 
 	let { data, form } = $props();
 	let inviteOpen = $state(false);
@@ -69,7 +70,7 @@
 	}
 </script>
 
-<div class="mx-auto max-w-5xl space-y-6">
+<PageShell width="default">
 	<PageHeader title="Members" description="People with access to this workspace and their roles.">
 		{#snippet action()}
 			{#if canManage}
@@ -287,4 +288,4 @@
 	{#if data.members.length === 0}
 		<EmptyState icon={Users} title="No members yet" />
 	{/if}
-</div>
+</PageShell>

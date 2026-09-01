@@ -4,6 +4,8 @@
 	import type { Pathname } from '$app/types';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import Check from '@lucide/svelte/icons/check';
+	import PageShell from '$lib/components/page-shell.svelte';
+	import PageHeader from '$lib/components/page-header.svelte';
 
 	let { data } = $props();
 
@@ -35,14 +37,11 @@
 	const firstIncomplete = $derived(steps.findIndex((s) => !s.done));
 </script>
 
-<div class="mx-auto max-w-3xl space-y-6">
-	<div>
-		<h1 class="text-xl font-semibold tracking-tight">Welcome to uprox</h1>
-		<p class="text-sm text-muted-foreground">
-			Three steps to your first proxied request. Once one lands, this page hands over to the cost
-			analysis.
-		</p>
-	</div>
+<PageShell width="narrow">
+	<PageHeader
+		title="Welcome to uprox"
+		description="Three steps to your first proxied request. Once one lands, this page hands over to the cost analysis."
+	/>
 
 	<Card.Root>
 		<Card.Header>
@@ -96,4 +95,4 @@
 			{/each}
 		</Card.Content>
 	</Card.Root>
-</div>
+</PageShell>

@@ -11,8 +11,9 @@
 	import type { DimensionUsageRow } from '$lib/server/data';
 	import { relativeTime } from '$lib/format';
 	import Boxes from '@lucide/svelte/icons/boxes';
-	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import DetailHeader from '$lib/components/detail-header.svelte';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import PageShell from '$lib/components/page-shell.svelte';
 
 	let { data } = $props();
 
@@ -106,38 +107,22 @@
 	</Button>
 {/snippet}
 
-<div class="mx-auto max-w-7xl space-y-6">
-	<a
-		href={resolve('/app/services')}
-		class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-	>
-		<ChevronLeft class="size-4" /> Services
-	</a>
-
-	<div class="flex flex-wrap items-start justify-between gap-3">
-		<div class="flex items-start gap-3">
-			<span
-				class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground"
-			>
-				<Boxes class="size-5" />
-			</span>
-			<div class="space-y-1">
-				<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">Service</p>
-				<div class="flex items-center gap-2">
-					<h2 class="text-lg font-semibold">{data.service.name}</h2>
-					<Badge variant="outline">{data.service.type}</Badge>
-				</div>
-				{#if data.service.description}
-					<p class="text-sm text-muted-foreground">{data.service.description}</p>
-				{/if}
-				<p class="text-xs text-muted-foreground">
-					Policy: {data.service.policyName ?? 'No policy (allow all)'} · created {relativeTime(
-						data.service.createdAt
-					)}
-				</p>
-			</div>
-		</div>
-	</div>
+<PageShell width="wide">
+	<DetailHeader icon={Boxes} eyebrow="Service" title={data.service.name}>
+		{#snippet badges()}
+			<Badge variant="outline">{data.service.type}</Badge>
+		{/snippet}
+		{#snippet lede()}
+			{#if data.service.description}
+				<p class="text-sm text-muted-foreground">{data.service.description}</p>
+			{/if}
+		{/snippet}
+		{#snippet meta()}
+			Policy: {data.service.policyName ?? 'No policy (allow all)'} · created {relativeTime(
+				data.service.createdAt
+			)}
+		{/snippet}
+	</DetailHeader>
 
 	<UsageWorkbench
 		analysis={data}
@@ -151,4 +136,4 @@
 		budgets={data.budget}
 		budgetThreshold={data.budgetThreshold}
 	/>
-</div>
+</PageShell>

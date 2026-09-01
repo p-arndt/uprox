@@ -8,10 +8,10 @@
 	import { formatUsd, formatTokens, formatDateTime } from '$lib/format';
 	import { eventTone, toneDot, toneText } from '$lib/events';
 	import { prettyJson } from '$lib/trace';
-	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
 	import Copy from '@lucide/svelte/icons/copy';
 	import Check from '@lucide/svelte/icons/check';
+	import PageShell from '$lib/components/page-shell.svelte';
 
 	let { data } = $props();
 	const calls = $derived(data.calls);
@@ -59,19 +59,12 @@
 	}
 </script>
 
-<div class="mx-auto max-w-6xl space-y-5">
-	<a
-		href={resolve('/app/traces')}
-		class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-	>
-		<ArrowLeft class="size-4" /> Back to traces
-	</a>
-
+<PageShell width="default">
 	<!-- Header -->
 	<div class="space-y-3">
 		<div class="flex flex-wrap items-center gap-3">
 			<Waypoints class="size-5 text-muted-foreground" />
-			<h2 class="text-lg font-semibold tracking-tight">Session</h2>
+			<h1 class="text-2xl font-semibold tracking-tight">Session</h1>
 			<Badge variant="secondary">{calls.length} calls</Badge>
 			<span class="font-mono text-xs text-muted-foreground">{data.groupId}</span>
 		</div>
@@ -272,4 +265,4 @@
 			{/if}
 		</div>
 	{/if}
-</div>
+</PageShell>

@@ -17,6 +17,7 @@
 	import Wallet from '@lucide/svelte/icons/wallet';
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
+	import PageShell from '$lib/components/page-shell.svelte';
 
 	const fmtBudget = (daily: string | number, monthly: string | number) => {
 		const d = Number(daily);
@@ -54,7 +55,7 @@
 	});
 </script>
 
-<div class="mx-auto max-w-4xl space-y-6">
+<PageShell width="default">
 	<PageHeader title="Presets">
 		{#snippet description()}
 			Reusable limit & access baselines. Attach one to a service or token, then override individual
@@ -209,7 +210,7 @@
 			{/each}
 		</div>
 	{/if}
-</div>
+</PageShell>
 
 <Dialog.Root
 	open={editing !== null}

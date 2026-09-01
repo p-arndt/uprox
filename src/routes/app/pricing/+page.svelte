@@ -21,6 +21,7 @@
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
 	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
+	import PageShell from '$lib/components/page-shell.svelte';
 
 	let { data, form } = $props();
 
@@ -117,7 +118,7 @@
 	</button>
 {/snippet}
 
-<div class="mx-auto max-w-5xl space-y-5">
+<PageShell width="default">
 	<PageHeader title="Model Prices">
 		{#snippet description()}
 			Token prices in USD per 1M tokens, used to estimate request cost for spend tracking and
@@ -231,7 +232,7 @@
 				: ''}.
 		</p>
 	{/if}
-</div>
+</PageShell>
 
 <AddModelDialog
 	bind:open={addOpen}

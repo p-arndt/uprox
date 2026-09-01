@@ -15,6 +15,7 @@
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import KeyRound from '@lucide/svelte/icons/key-round';
+	import PageShell from '$lib/components/page-shell.svelte';
 
 	let { data, form } = $props();
 	let createOpen = $state(false);
@@ -81,7 +82,7 @@
 	}
 </script>
 
-<div class="mx-auto max-w-5xl space-y-6">
+<PageShell width="default">
 	<PageHeader
 		title="Machine Tokens"
 		description="Opaque, hashed-at-rest tokens your services use to authenticate to the gateway."
@@ -165,7 +166,7 @@
 			</Table.Root>
 		</div>
 	{/if}
-</div>
+</PageShell>
 
 <!-- one-time secret reveal -->
 <SecretDialog

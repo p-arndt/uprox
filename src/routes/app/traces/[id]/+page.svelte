@@ -7,8 +7,8 @@
 	import { prettyJson } from '$lib/trace';
 	import TraceConversation from '$lib/components/trace-conversation.svelte';
 	import TraceMetadata from '$lib/components/trace-metadata.svelte';
-	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
+	import PageShell from '$lib/components/page-shell.svelte';
 
 	let { data } = $props();
 	const t = $derived(data.trace);
@@ -40,19 +40,12 @@
 	const spanLabel = (s: Span) => s.model || s.action?.replace(/^gateway\./, '') || 'request';
 </script>
 
-<div class="mx-auto max-w-4xl space-y-6">
-	<a
-		href={resolve('/app/traces')}
-		class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-	>
-		<ArrowLeft class="size-4" /> Back to traces
-	</a>
-
+<PageShell width="default">
 	<!-- Header / metadata -->
 	<div class="space-y-3">
 		<div class="flex flex-wrap items-center gap-3">
 			<Waypoints class="size-5 text-muted-foreground" />
-			<h2 class="font-mono text-lg font-semibold tracking-tight">{t.model ?? 'request'}</h2>
+			<h1 class="font-mono text-xl font-semibold tracking-tight">{t.model ?? 'request'}</h1>
 			<span class="flex items-center gap-1.5">
 				<span class="size-1.5 rounded-full {toneDot[tone]}" aria-hidden="true"></span>
 				<span class="text-xs font-medium {toneText[tone]}">
@@ -191,4 +184,4 @@
 			</Tabs.Content>
 		</Tabs.Root>
 	</div>
-</div>
+</PageShell>

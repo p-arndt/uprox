@@ -16,6 +16,7 @@
 	import Waypoints from '@lucide/svelte/icons/waypoints';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import DollarSign from '@lucide/svelte/icons/dollar-sign';
+	import PageShell from '$lib/components/page-shell.svelte';
 
 	let { data, form } = $props();
 
@@ -45,7 +46,7 @@
 	});
 </script>
 
-<div class="mx-auto max-w-2xl space-y-6">
+<PageShell width="narrow">
 	<PageHeader title="Settings" description="Org-wide gateway defaults." />
 
 	<Card.Root>
@@ -352,4 +353,4 @@
 			</Card.Content>
 		</Card.Root>
 	{/if}
-</div>
+</PageShell>

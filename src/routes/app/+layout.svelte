@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Breadcrumb from '$lib/components/ui/breadcrumb/index.js';
 	import * as Command from '$lib/components/ui/command/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
@@ -84,7 +85,14 @@
 		return exact ? page.url.pathname === href : page.url.pathname.startsWith(href);
 	}
 
-	const current = $derived(nav.find((n) => isActive(n.href, n.exact))?.label ?? 'Overview');
+	// The nav entry the current URL sits under. On a detail page this is the
+	// *list* it belongs to, which is what the breadcrumb should link back up to.
+	const section = $derived(nav.find((n) => isActive(n.href, n.exact)));
+	const current = $derived(section?.label ?? 'Overview');
+	// Detail pages return a `crumb` from their load (the entity's own name). Its
+	// presence is what distinguishes "on the list" from "one level below it", so
+	// the header stops claiming you are on Services while you read one service.
+	const crumb = $derived(page.data.crumb as string | undefined);
 	const initials = $derived(
 		data.user.name
 			.split(' ')
@@ -192,11 +200,27 @@
 
 	<Sidebar.Inset>
 		<header
-			class="sticky top-0 z-10 flex h-14 shrink-0 items-center gap-2 border-b bg-background/80 px-4 backdrop-blur"
+			class="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur"
 		>
 			<Sidebar.Trigger class="-ml-1" />
 			<Separator orientation="vertical" class="mr-2 h-4" />
-			<h1 class="text-sm font-medium">{current}</h1>
+			<Breadcrumb.Root>
+				<Breadcrumb.List class="text-sm">
+					{#if crumb && section}
+						<Breadcrumb.Item class="hidden sm:block">
+							<Breadcrumb.Link href={section.href}>{section.label}</Breadcrumb.Link>
+						</Breadcrumb.Item>
+						<Breadcrumb.Separator class="hidden sm:block" />
+						<Breadcrumb.Item>
+							<Breadcrumb.Page class="max-w-[40vw] truncate">{crumb}</Breadcrumb.Page>
+						</Breadcrumb.Item>
+					{:else}
+						<Breadcrumb.Item>
+							<Breadcrumb.Page>{current}</Breadcrumb.Page>
+						</Breadcrumb.Item>
+					{/if}
+				</Breadcrumb.List>
+			</Breadcrumb.Root>
 			<button
 				type="button"
 				onclick={() => (cmdOpen = true)}

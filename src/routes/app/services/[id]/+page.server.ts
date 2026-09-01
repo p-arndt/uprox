@@ -26,6 +26,7 @@ export const load: PageServerLoad = async (event) => {
 	]);
 
 	return {
+		crumb: service.name,
 		service: {
 			id: service.id,
 			name: service.name,

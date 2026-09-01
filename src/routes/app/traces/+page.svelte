@@ -19,6 +19,7 @@
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import Layers from '@lucide/svelte/icons/layers';
 	import Network from '@lucide/svelte/icons/network';
+	import PageShell from '$lib/components/page-shell.svelte';
 
 	let { data } = $props();
 
@@ -102,7 +103,7 @@
 	}
 </script>
 
-<div class="mx-auto max-w-6xl space-y-6">
+<PageShell width="default">
 	<PageHeader title="Traces">
 		{#snippet description()}
 			Captured request &amp; response payloads for gateway calls. Open a trace to inspect the
@@ -380,4 +381,4 @@
 			{/if}
 		</div>
 	{/if}
-</div>
+</PageShell>

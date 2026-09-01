@@ -10,5 +10,5 @@ export const load: PageServerLoad = async (event) => {
 	// when the call belongs to a caller-supplied session, load its siblings so the
 	// detail view can render the whole run as a tree/waterfall.
 	const group = trace.groupId ? await listTraceGroup(trace.groupId) : [];
-	return { trace, group };
+	return { trace, group, crumb: trace.model ?? 'Request' };
 };

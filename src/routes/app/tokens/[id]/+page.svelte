@@ -15,11 +15,12 @@
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import KeyRound from '@lucide/svelte/icons/key-round';
-	import ChevronLeft from '@lucide/svelte/icons/chevron-left';
+	import DetailHeader from '$lib/components/detail-header.svelte';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import Eye from '@lucide/svelte/icons/eye';
 	import Copy from '@lucide/svelte/icons/copy';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+	import PageShell from '$lib/components/page-shell.svelte';
 
 	let { data, form } = $props();
 
@@ -126,75 +127,56 @@
 	</Button>
 {/snippet}
 
-<div class="mx-auto max-w-7xl space-y-6">
-	<a
-		href={resolve('/app/tokens')}
-		class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-	>
-		<ChevronLeft class="size-4" /> Tokens
-	</a>
-
-	<div class="flex flex-wrap items-start justify-between gap-3">
-		<div class="flex items-start gap-3">
-			<span
-				class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent text-accent-foreground"
-			>
-				<KeyRound class="size-5" />
+<PageShell width="wide">
+	<DetailHeader icon={KeyRound} eyebrow="Machine token" title={data.token.name}>
+		{#snippet badges()}
+			<span class="inline-flex items-center gap-1.5 text-sm text-muted-foreground capitalize">
+				<span class="size-1.5 rounded-full {tokenStatus.dot} {tokenStatus.pulse ? 'dot-pulse' : ''}"
+				></span>
+				{tokenStatus.label}
 			</span>
-			<div class="space-y-1">
-				<p class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-					Machine token
-				</p>
-				<div class="flex flex-wrap items-center gap-2">
-					<h2 class="text-lg font-semibold">{data.token.name}</h2>
-					<span class="inline-flex items-center gap-1.5 text-sm text-muted-foreground capitalize">
-						<span
-							class="size-1.5 rounded-full {tokenStatus.dot} {tokenStatus.pulse ? 'dot-pulse' : ''}"
-						></span>
-						{tokenStatus.label}
-					</span>
-					<span
-						title="Token prefix (the full token is shown only once at creation)"
-						class="inline-flex items-center rounded-md bg-muted/60 px-2 py-0.5 font-mono text-xs text-muted-foreground"
-					>
-						{data.token.display}
-					</span>
-					{#if data.token.recopyable && canManage}
-						<form
-							method="post"
-							action="?/reveal"
-							use:enhance={() =>
-								async ({ update }) =>
-									update({ reset: false })}
-						>
-							<Button type="submit" variant="outline" size="sm" class="h-7 gap-1.5 text-xs">
-								<Eye class="size-3.5" /> Reveal
-							</Button>
-						</form>
-					{/if}
+			<span
+				title="Token prefix (the full token is shown only once at creation)"
+				class="inline-flex items-center rounded-md bg-muted/60 px-2 py-0.5 font-mono text-xs text-muted-foreground"
+			>
+				{data.token.display}
+			</span>
+			{#if data.token.recopyable && canManage}
+				<form
+					method="post"
+					action="?/reveal"
+					use:enhance={() =>
+						async ({ update }) =>
+							update({ reset: false })}
+				>
+					<Button type="submit" variant="outline" size="sm" class="h-7 gap-1.5 text-xs">
+						<Eye class="size-3.5" /> Reveal
+					</Button>
+				</form>
+			{/if}
+		{/snippet}
+		{#snippet meta()}
+			Service:
+			<a
+				href={resolve('/app/services/[id]', { id: data.token.serviceId })}
+				class="font-medium hover:underline"
+			>
+				{data.token.serviceName}
+			</a>
+			· Policy: {data.token.policyId
+				? (data.token.policyName ?? 'No policy')
+				: 'inherits service policy'} · created {relativeTime(data.token.createdAt)} · last used {relativeTime(
+				data.token.lastUsedAt
+			)}
+		{/snippet}
+		{#snippet extra()}
+			{#if data.token.scopes.length > 0}
+				<div class="flex flex-wrap gap-1 pt-0.5">
+					{#each data.token.scopes as s (s)}<Badge variant="outline">{s}</Badge>{/each}
 				</div>
-				<p class="text-xs text-muted-foreground">
-					Service:
-					<a
-						href={resolve('/app/services/[id]', { id: data.token.serviceId })}
-						class="font-medium hover:underline"
-					>
-						{data.token.serviceName}
-					</a>
-					· Policy: {data.token.policyId
-						? (data.token.policyName ?? 'No policy')
-						: 'inherits service policy'} · created {relativeTime(data.token.createdAt)} · last used {relativeTime(
-						data.token.lastUsedAt
-					)}
-				</p>
-				{#if data.token.scopes.length > 0}
-					<div class="flex flex-wrap gap-1 pt-0.5">
-						{#each data.token.scopes as s (s)}<Badge variant="outline">{s}</Badge>{/each}
-					</div>
-				{/if}
-			</div>
-		</div>
-	</div>
+			{/if}
+		{/snippet}
+	</DetailHeader>
 
 	<UsageWorkbench
 		analysis={data}
@@ -206,7 +188,7 @@
 		{leading}
 		{trailing}
 	/>
-</div>
+</PageShell>
 
 <!-- re-copy reveal: shows the stored secret again for a re-copyable token -->
 <Dialog.Root

@@ -11,6 +11,7 @@
 	import { can } from '$lib/permissions';
 	import Plug from '@lucide/svelte/icons/plug';
 	import Plus from '@lucide/svelte/icons/plus';
+	import PageShell from '$lib/components/page-shell.svelte';
 
 	let { data, form } = $props();
 
@@ -59,7 +60,7 @@
 	});
 </script>
 
-<div class="mx-auto max-w-4xl space-y-6">
+<PageShell width="default">
 	<PageHeader title="Providers">
 		{#snippet description()}
 			Upstream API keys, encrypted at rest with AES-256-GCM. The gateway decrypts them only to proxy
@@ -138,7 +139,7 @@
 			</Card.Root>
 		{/each}
 	</div>
-</div>
+</PageShell>
 
 <ProviderKeyDialog {adding} message={form?.message} onClose={() => (adding = null)} />
 <RotateKeyDialog {rotating} message={form?.message} onClose={() => (rotating = null)} />

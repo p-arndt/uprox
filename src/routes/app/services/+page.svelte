@@ -16,6 +16,7 @@
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Pencil from '@lucide/svelte/icons/pencil';
+	import PageShell from '$lib/components/page-shell.svelte';
 
 	let { data, form } = $props();
 	let open = $state(false);
@@ -67,7 +68,7 @@
 	}
 </script>
 
-<div class="mx-auto max-w-5xl space-y-6">
+<PageShell width="default">
 	<PageHeader
 		title="Services"
 		description="Machine identities — apps, workloads and agents that call the gateway."
@@ -180,7 +181,7 @@
 			</Table.Root>
 		</div>
 	{/if}
-</div>
+</PageShell>
 
 <Dialog.Root
 	open={editing !== null}

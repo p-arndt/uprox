@@ -16,7 +16,7 @@
 
 <div class="flex items-start justify-between gap-4">
 	<div>
-		<h2 class="text-xl font-semibold tracking-tight">{title}</h2>
+		<h1 class="text-2xl font-semibold tracking-tight">{title}</h1>
 		{#if description}
 			<p class="text-sm text-muted-foreground">
 				{#if typeof description === 'string'}{description}{:else}{@render description()}{/if}

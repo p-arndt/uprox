@@ -1,12 +1,11 @@
 <script lang="ts">
-	import { resolve } from '$app/paths';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { prettyJson } from '$lib/trace';
 	import { buildSpanTree, flattenTree, traceWindow, spanKind, spanDetail } from '$lib/otel';
 	import { formatTokens } from '$lib/format';
 	import { toneDot } from '$lib/events';
-	import ArrowLeft from '@lucide/svelte/icons/arrow-left';
 	import Network from '@lucide/svelte/icons/network';
+	import PageShell from '$lib/components/page-shell.svelte';
 
 	let { data } = $props();
 
@@ -41,17 +40,10 @@
 	};
 </script>
 
-<div class="mx-auto max-w-6xl space-y-6">
-	<a
-		href={resolve('/app/traces')}
-		class="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-	>
-		<ArrowLeft class="size-4" /> Back to traces
-	</a>
-
+<PageShell width="default">
 	<div class="flex flex-wrap items-center gap-3">
 		<Network class="size-5 text-muted-foreground" />
-		<h2 class="text-lg font-semibold tracking-tight">{flat[0]?.name ?? 'Trace'}</h2>
+		<h1 class="text-2xl font-semibold tracking-tight">{flat[0]?.name ?? 'Trace'}</h1>
 		<Badge variant="secondary">{data.spans.length} spans</Badge>
 		<span class="font-mono text-xs text-muted-foreground">{data.traceId}</span>
 	</div>
@@ -146,4 +138,4 @@
 			</div>
 		{/if}
 	</div>
-</div>
+</PageShell>

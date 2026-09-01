@@ -7,5 +7,5 @@ export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
 	const calls = await getTraceGroupDetail(event.params.groupId);
 	if (calls.length === 0) error(404, 'Session not found');
-	return { groupId: event.params.groupId, calls };
+	return { groupId: event.params.groupId, calls, crumb: 'Session' };
 };

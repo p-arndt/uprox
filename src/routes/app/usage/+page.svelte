@@ -13,6 +13,8 @@
 	import type { DimensionUsageRow } from '$lib/server/data';
 	import Download from '@lucide/svelte/icons/download';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import PageShell from '$lib/components/page-shell.svelte';
+	import PageHeader from '$lib/components/page-header.svelte';
 
 	let { data } = $props();
 
@@ -141,14 +143,11 @@
 	</DropdownMenu.Root>
 {/snippet}
 
-<div class="mx-auto max-w-7xl space-y-5">
-	<div>
-		<h1 class="text-xl font-semibold tracking-tight">Cost analysis</h1>
-		<p class="text-sm text-muted-foreground">
-			Spend, requests and token volume — sliced by service, model, provider, machine token, or down
-			to the individual rate-card line.
-		</p>
-	</div>
+<PageShell width="wide">
+	<PageHeader
+		title="Cost analysis"
+		description="Spend, requests and token volume — sliced by service, model, provider, machine token, or down to the individual rate-card line."
+	/>
 
 	<BudgetAlert
 		statuses={data.instanceBudget ? [data.instanceBudget, ...data.budgets] : data.budgets}
@@ -181,4 +180,4 @@
 		instanceBudget={data.instanceBudget}
 		budgetThreshold={data.budgetThreshold}
 	/>
-</div>
+</PageShell>
