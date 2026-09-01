@@ -11,7 +11,6 @@
 	import ChartColumn from '@lucide/svelte/icons/chart-column';
 	import Coins from '@lucide/svelte/icons/coins';
 	import KeyRound from '@lucide/svelte/icons/key-round';
-	import LayoutDashboard from '@lucide/svelte/icons/layout-dashboard';
 	import LogOut from '@lucide/svelte/icons/log-out';
 	import Plug from '@lucide/svelte/icons/plug';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
@@ -47,7 +46,6 @@
 		{
 			label: 'Monitor',
 			items: [
-				{ href: '/app', label: 'Overview', icon: LayoutDashboard, exact: true },
 				{ href: '/app/usage', label: 'Cost analysis', icon: ChartColumn },
 				{ href: '/app/traces', label: 'Traces', icon: Waypoints }
 			]

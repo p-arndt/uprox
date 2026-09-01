@@ -77,30 +77,26 @@
 	{/if}
 </div>
 
-<!-- Budget headroom sits above everything, and outside the traffic check: a
-     ceiling belongs to the billing period, not to the window on screen, so it
-     stays true (and worth seeing) on a day with no requests at all. That same
+<!-- Budget headroom: instance ceiling and policy ceilings in ONE card, one row
+     each. Two separate cards pushed the chart most of a screen below the command
+     bar that drives it, which broke the loop the page exists for — change the
+     grouping, see the chart move. It stays outside the traffic check because a
+     ceiling belongs to the billing period, not to the window on screen, so it is
+     still true (and worth seeing) on a day with no requests at all. That same
      mismatch is why it can't be a line on the chart — dividing a monthly ceiling
      down to an hourly bucket produces a threshold any single request clears. -->
-{#if instanceBudget}
+{#snippet budgetHeadroom()}
 	<BudgetGauge
-		statuses={[instanceBudget]}
+		statuses={instanceBudget ? [instanceBudget, ...budgets] : budgets}
 		threshold={budgetThreshold}
-		showServiceName={false}
-		title="Instance budget"
-		description="Spend across all services this period"
+		showServiceName={true}
+		title="Budget headroom"
+		description="Spend against the instance and policy ceilings this period"
 	/>
-{/if}
-
-{#if budgets.length > 0}
-	<BudgetGauge
-		statuses={budgets}
-		threshold={budgetThreshold}
-		showServiceName={budgets.length > 1}
-	/>
-{/if}
+{/snippet}
 
 {#if !hasTraffic}
+	{@render budgetHeadroom()}
 	<Card.Root>
 		<Card.Content class="py-16 text-center text-sm text-muted-foreground">
 			{#if analysis.filters.length > 0}
@@ -125,6 +121,8 @@
 		bucket={analysis.bucket}
 		{bucketHref}
 	/>
+
+	{@render budgetHeadroom()}
 
 	{#if analysis.movers.length > 0}
 		<UsageMovers movers={analysis.movers} dim={analysis.groupBy} {rangeLabel} />

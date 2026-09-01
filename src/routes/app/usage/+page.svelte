@@ -2,6 +2,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import BudgetAlert from '$lib/components/budget-alert.svelte';
+	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import UsageRangePicker from '$lib/components/usage-range-picker.svelte';
 	import UsageWorkbench from '$lib/components/usage-workbench.svelte';
 	import { resolve } from '$app/paths';
@@ -153,6 +154,19 @@
 		statuses={data.instanceBudget ? [data.instanceBudget, ...data.budgets] : data.budgets}
 		threshold={data.budgetThreshold}
 	/>
+
+	<!-- The setup checklist lives on /app and has no nav entry of its own, so an
+	     unfiltered empty window is the one place that still has to point back at
+	     it: on a fresh instance this page is where a new operator lands. -->
+	{#if data.totals.requests === 0 && data.filters.length === 0}
+		<a
+			href={resolve('/app')}
+			class="inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+		>
+			Nothing proxied yet — finish setting up the gateway
+			<ArrowRight class="size-4" />
+		</a>
+	{/if}
 
 	<UsageWorkbench
 		analysis={data}

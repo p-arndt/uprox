@@ -1,30 +1,18 @@
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { requireOrg } from '$lib/server/org';
-import {
-	orgStats,
-	listAudit,
-	orgDailyStats,
-	orgBudgetStatus,
-	instanceBudgetStatus,
-	getSettings
-} from '$lib/server/data';
+import { orgStats } from '$lib/server/data';
 
+/**
+ * The instance's front door is the cost analysis — that is what an operator opens
+ * uprox to look at. This route only exists for the state where that page has
+ * nothing to show: a fresh instance with no proxied request yet, which gets the
+ * setup checklist instead. The moment one request has landed, the checklist is
+ * finished by definition and we hand over.
+ */
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
-	const [stats, recent, daily, budgets, instanceBudget, settings] = await Promise.all([
-		orgStats(),
-		listAudit(8),
-		orgDailyStats(14),
-		orgBudgetStatus(),
-		instanceBudgetStatus(),
-		getSettings()
-	]);
-	return {
-		stats,
-		recent,
-		daily,
-		budgets,
-		instanceBudget,
-		budgetThreshold: settings.budgetAlertThresholdPct / 100
-	};
+	const stats = await orgStats();
+	if (stats.requests > 0) redirect(307, '/app/usage');
+	return { stats };
 };
