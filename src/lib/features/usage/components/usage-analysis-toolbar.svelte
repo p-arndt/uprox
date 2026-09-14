@@ -51,7 +51,7 @@
 		{filters}
 		{options}
 		dims={filterDims}
-		defaultDim={filterDims[0]?.key ?? dimensions[0]}
+		defaultDim={filterDims[0]?.key ?? dimensions[0] ?? groupBy}
 		{onFilters}
 	/>
 	<UsageFilterPills {filters} {options} {optionsPending} {onFilters} />

@@ -47,9 +47,9 @@ export const auth = betterAuth({
 				// nothing to do here for them.
 				after: async (createdUser) => {
 					if (!createdUser?.id) return;
-					const [{ count }] = await db.select({ count: sql<number>`count(*)::int` }).from(authUser);
+					const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(authUser);
 					// This newly-created user is the only one → make them the owner.
-					if (Number(count) === 1) {
+					if (Number(row?.count) === 1) {
 						await db.update(authUser).set({ role: 'owner' }).where(eq(authUser.id, createdUser.id));
 					}
 				}

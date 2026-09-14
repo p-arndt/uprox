@@ -85,7 +85,7 @@ function resolveUsageRequest(event: RequestEvent, dimensions: readonly UsageDime
 	// falls back to the first dimension that IS allowed, rather than 500ing on a
 	// dimension the page can't render.
 	const requested = normalizeGroupBy(params.get('group'));
-	const groupBy = dimensions.includes(requested) ? requested : dimensions[0];
+	const groupBy = dimensions.includes(requested) ? requested : (dimensions[0] ?? requested);
 	// Filters on disallowed dimensions are dropped for the same reason.
 	const filters = parseFilters(params.getAll('f')).filter((f) => dimensions.includes(f.dim));
 

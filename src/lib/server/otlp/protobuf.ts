@@ -18,7 +18,8 @@ class Reader {
 		let result = 0n;
 		let shift = 0n;
 		for (;;) {
-			const b = this.buf[this.pos++];
+			// past the end reads as 0, which terminates the varint
+			const b = this.buf[this.pos++] ?? 0;
 			result |= BigInt(b & 0x7f) << shift;
 			if ((b & 0x80) === 0) break;
 			shift += 7n;
@@ -35,7 +36,11 @@ class Reader {
 
 	fixed64(): bigint {
 		let v = 0n;
-		for (let i = 0; i < 8; i++) v |= BigInt(this.buf[this.pos++]) << BigInt(8 * i);
+		for (let i = 0; i < 8; i++) {
+			const byte = this.buf[this.pos++];
+			if (byte === undefined) throw new RangeError('fixed64 reads past the end of the buffer');
+			v |= BigInt(byte) << BigInt(8 * i);
+		}
 		return v;
 	}
 

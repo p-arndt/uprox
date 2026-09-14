@@ -182,7 +182,7 @@ export async function orgBillingLineSeries(
 		const points = buckets.map((_, b) => {
 			let costUsd = 0;
 			let tokens = 0;
-			for (const [lineKey, cell] of cells[b]) {
+			for (const [lineKey, cell] of cells[b] ?? []) {
 				const folded = topKeys.has(lineKey) ? lineKey : OTHERS_KEY;
 				if (folded !== key) continue;
 				costUsd += sumMeterValues(cell.costs);

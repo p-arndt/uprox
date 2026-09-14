@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, assert } from 'vitest';
 
 // deleteToken hard-deletes a machine_token row and appends a `token.delete`
 // audit record. We stub the db layer (so no real DELETE runs) and the audit
@@ -47,6 +47,7 @@ describe('deleteToken', () => {
 
 		expect(auditCalls).toHaveLength(1);
 		const entry = auditCalls[0];
+		assert(entry);
 		expect(entry.action).toBe('token.delete');
 		expect(entry.status).toBe('ok');
 		// serviceId + name survive in the audit row; the FK link does not, since the

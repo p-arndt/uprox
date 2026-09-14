@@ -3,7 +3,7 @@
  * read; unknown keys are ignored.
  */
 import type { createProviderSecret } from '$lib/server/provider-secrets';
-import { PROVIDER_IDS, PROVIDERS } from '$lib/server/providers';
+import { getProvider } from '$lib/server/providers';
 import { badRequest } from '$lib/server/api/errors';
 import {
 	optionalNumber,
@@ -17,13 +17,14 @@ export type ProviderCreateInput = Parameters<typeof createProviderSecret>[1];
 /** POST /api/providers. `baseUrl` is required for providers with a per-deployment endpoint. */
 export function parseProviderCreate(body: JsonBody): ProviderCreateInput {
 	const provider = requiredString(body, 'provider');
-	if (!PROVIDER_IDS.includes(provider)) {
+	const def = getProvider(provider);
+	if (!def) {
 		throw badRequest(`unknown provider "${provider}"`, 'provider');
 	}
 	const secret = requiredString(body, 'secret');
 	const baseUrl = optionalString(body, 'baseUrl')?.trim() || undefined;
-	if (PROVIDERS[provider].requiresEndpoint && !baseUrl) {
-		throw badRequest(`${PROVIDERS[provider].label} requires a baseUrl endpoint`, 'baseUrl');
+	if (def.requiresEndpoint && !baseUrl) {
+		throw badRequest(`${def.label} requires a baseUrl endpoint`, 'baseUrl');
 	}
 	return {
 		provider,

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, assert } from 'vitest';
 
 // orgBudgetStatus reads one row per budgeted service with the service's inline
 // ceilings and its policy's ceilings side by side. We stub the drizzle builder
@@ -41,6 +41,7 @@ describe('orgBudgetStatus', () => {
 		rows = [row({ serviceDailyBudget: '10.0000', serviceMonthlyBudget: '100.0000' })];
 
 		const [status] = await orgBudgetStatus();
+		assert(status);
 
 		expect(status.daily).toEqual({ budgetUsd: 10, spentUsd: 2.5 });
 		expect(status.monthly).toEqual({ budgetUsd: 100, spentUsd: 40 });
@@ -58,6 +59,7 @@ describe('orgBudgetStatus', () => {
 		];
 
 		const [status] = await orgBudgetStatus();
+		assert(status);
 
 		expect(status.daily).toEqual({ budgetUsd: 5, spentUsd: 2.5 });
 		// monthly has no inline value, so it falls through to the policy
@@ -77,6 +79,7 @@ describe('orgBudgetStatus', () => {
 		];
 
 		const [status] = await orgBudgetStatus();
+		assert(status);
 
 		expect(status.daily).toBeNull();
 		expect(status.monthly).toEqual({ budgetUsd: 20, spentUsd: 40 });
@@ -88,6 +91,7 @@ describe('orgBudgetStatus', () => {
 		rows = [row({ policyName: 'standard', policyDailyBudget: '0', policyMonthlyBudget: '300' })];
 
 		const [status] = await orgBudgetStatus();
+		assert(status);
 
 		expect(status.daily).toBeNull();
 		expect(status.monthly).toEqual({ budgetUsd: 300, spentUsd: 40 });

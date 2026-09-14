@@ -45,7 +45,7 @@ export function decrypt(payload: string): string {
 	// with no credential) yields an empty ciphertext but a real iv and auth tag.
 	if (parts.length !== 3) throw new Error('Malformed ciphertext');
 	const [ivB64, tagB64, dataB64] = parts;
-	if (!ivB64 || !tagB64) throw new Error('Malformed ciphertext');
+	if (!ivB64 || !tagB64 || dataB64 === undefined) throw new Error('Malformed ciphertext');
 	const decipher = createDecipheriv(ALGO, masterKey(), Buffer.from(ivB64, 'base64'));
 	decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
 	return Buffer.concat([

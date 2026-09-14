@@ -39,7 +39,7 @@ export function checkRateLimit(tokenId: string, limitPerMinute: number): RateLim
 
 	if (hits.length >= limitPerMinute) {
 		// oldest hit falls out of the window at hits[0] + WINDOW_MS
-		const retryAfter = Math.max(1, Math.ceil((hits[0] + WINDOW_MS - now) / 1000));
+		const retryAfter = Math.max(1, Math.ceil(((hits[0] ?? now) + WINDOW_MS - now) / 1000));
 		windows.set(tokenId, hits);
 		return { ok: false, retryAfter, limit: limitPerMinute, remaining: 0 };
 	}

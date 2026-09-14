@@ -386,7 +386,7 @@ export function responseText(
 export function parseTraceparent(value: string | null | undefined): string | null {
 	if (!value) return null;
 	const m = /^[\da-f]{2}-([\da-f]{32})-[\da-f]{16}-[\da-f]{2}$/i.exec(value.trim());
-	return m ? m[1].toLowerCase() : null;
+	return m?.[1]?.toLowerCase() ?? null;
 }
 
 /**

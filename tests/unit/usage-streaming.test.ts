@@ -48,8 +48,8 @@ describe('headlineCells without a previous window', () => {
 
 	it('fills the deltas once the previous window is known', () => {
 		const cells = headlineCells(totals, { ...totals, costUsd: 10, requests: 0 }, []);
-		expect(cells[0].delta).toBe(100);
+		expect(cells[0]?.delta).toBe(100);
 		// no baseline to divide by
-		expect(cells[1].delta).toBeNull();
+		expect(cells[1]?.delta).toBeNull();
 	});
 });

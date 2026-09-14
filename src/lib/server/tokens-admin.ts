@@ -146,6 +146,7 @@ export async function createToken(
 				})
 			})
 			.returning();
+		if (!created) throw new Error('Token insert returned no row');
 
 		await insertAudit(tx, {
 			action: 'token.create',

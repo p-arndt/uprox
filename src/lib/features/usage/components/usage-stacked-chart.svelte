@@ -93,7 +93,7 @@
 	);
 
 	const bucketAria = (bi: number) =>
-		`${bucketLabel(buckets[bi], unit)}: ${formatMetric(totals[bi], metric)}`;
+		`${bucketLabel(buckets[bi] ?? '', unit)}: ${formatMetric(totals[bi] ?? 0, metric)}`;
 </script>
 
 {#snippet hitColumn(bi: number, extraClass: string)}
@@ -234,9 +234,9 @@
 					: 100 - pct}% + 1rem); bottom: 0.5rem;"
 			>
 				<div class="mb-1.5 flex items-baseline justify-between gap-2">
-					<span class="text-xs font-medium">{bucketLabel(buckets[hovered], unit)}</span>
+					<span class="text-xs font-medium">{bucketLabel(buckets[hovered] ?? '', unit)}</span>
 					<span class="text-xs text-muted-foreground tabular-nums">
-						{formatMetric(totals[hovered], metric)}
+						{formatMetric(totals[hovered] ?? 0, metric)}
 					</span>
 				</div>
 				<div class="space-y-1">

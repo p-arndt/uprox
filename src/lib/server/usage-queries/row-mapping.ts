@@ -150,6 +150,7 @@ export function foldGroupedRows(
 		const bi = bucketIndex.get(r.bucket);
 		if (si === undefined || bi === undefined) continue;
 		const s = series[si];
+		if (!s) continue;
 		const point = {
 			requests: num(r.requests),
 			denied: num(r.denied),

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, assert } from 'vitest';
 import { formatMetric, metricValue } from '$lib/features/usage/metric';
 import { DONUT_TAIL_KEY, donutArcs, donutSlices } from '$lib/features/usage/donut';
 import { formatLatencyMs, headlineCells, pctDelta } from '$lib/features/usage/headline';
@@ -37,8 +37,8 @@ describe('donut', () => {
 			['b', 9],
 			[DONUT_TAIL_KEY, 1]
 		]);
-		expect(slices[1].label).toBe('Others (2+)');
-		expect(slices[1].color).toBe(OTHERS_COLOR);
+		expect(slices[1]?.label).toBe('Others (2+)');
+		expect(slices[1]?.color).toBe(OTHERS_COLOR);
 	});
 
 	it('reconciles against the scope total when given', () => {
@@ -59,7 +59,7 @@ describe('donut', () => {
 			[75, 0],
 			[25, 75]
 		]);
-		expect(arcs[0].dash).toBeCloseTo(74.4);
+		expect(arcs[0]?.dash).toBeCloseTo(74.4);
 	});
 });
 
@@ -101,9 +101,10 @@ describe('headline', () => {
 			'Latency p95'
 		]);
 		expect(cells[0]).toMatchObject({ value: '$20.00', delta: 100, note: '$0.20 avg / request' });
-		expect(cells[1].note).toBe('5.0% errors · 2 denied');
-		expect(cells[2].spark).toEqual([7]);
+		expect(cells[1]?.note).toBe('5.0% errors · 2 denied');
+		expect(cells[2]?.spark).toEqual([7]);
 		expect(cells[3]).toMatchObject({ value: '25.0%' });
+		assert(cells[3]);
 		expect(cells[3].delta).toBeUndefined();
 		expect(cells[4]).toMatchObject({ value: '1.50 s', note: 'p50 400 ms' });
 	});
@@ -123,7 +124,7 @@ describe('token meters', () => {
 			['input', 0.75],
 			['cacheRead', 0.25]
 		]);
-		expect(rows[0].label).toBeTruthy();
+		expect(rows[0]?.label).toBeTruthy();
 	});
 
 	it('derives list cost and saved share', () => {

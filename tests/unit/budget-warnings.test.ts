@@ -50,7 +50,7 @@ describe('budgetWarnings', () => {
 	it('flags a service over its ceiling as over', () => {
 		const out = budgetWarnings([svc({ monthly: { budgetUsd: 20, spentUsd: 25 } })]);
 		expect(out[0]).toMatchObject({ level: 'over', window: 'monthly' });
-		expect(out[0].fraction).toBeCloseTo(1.25);
+		expect(out[0]?.fraction).toBeCloseTo(1.25);
 	});
 
 	it('reports the most-utilized of the two windows for a service', () => {
@@ -62,7 +62,7 @@ describe('budgetWarnings', () => {
 			})
 		]);
 		expect(out).toHaveLength(1);
-		expect(out[0].window).toBe('daily');
+		expect(out[0]?.window).toBe('daily');
 	});
 
 	it('sorts the loudest (highest utilization) warning first', () => {

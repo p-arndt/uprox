@@ -122,7 +122,7 @@ export async function orgTokenMetersSeries(
 
 	const series: GroupedSeries[] = METER_ORDER.map((key) => {
 		const points = buckets.map((_, b) => {
-			const cell = cells[b].get(ALL_LINES);
+			const cell = cells[b]?.get(ALL_LINES);
 			return {
 				requests: 0,
 				denied: 0,

@@ -139,7 +139,7 @@ describe('tokenResponse', () => {
 });
 
 describe('parseProviderCreate', () => {
-	const endpointProvider = Object.keys(PROVIDERS).find((id) => PROVIDERS[id].requiresEndpoint)!;
+	const endpointProvider = Object.keys(PROVIDERS).find((id) => PROVIDERS[id]?.requiresEndpoint)!;
 
 	it('parses a provider secret', () => {
 		expect(parseProviderCreate({ provider: 'openai', secret: 'sk-1', priority: 2 })).toEqual({

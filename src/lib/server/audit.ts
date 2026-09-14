@@ -63,6 +63,7 @@ export async function insertAudit(executor: AuditExecutor, entry: AuditEntry): P
 			detail: entry.detail ?? null
 		})
 		.returning({ id: auditLog.id });
+	if (!row) throw new Error('Audit insert returned no row');
 	return row.id;
 }
 

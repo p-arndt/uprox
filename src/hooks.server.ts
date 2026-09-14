@@ -58,7 +58,9 @@ const CSRF_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 function isFormPost(request: Request): boolean {
 	if (!CSRF_METHODS.has(request.method)) return false;
-	const type = (request.headers.get('content-type') ?? '').split(';', 1)[0].trim().toLowerCase();
+	const type = ((request.headers.get('content-type') ?? '').split(';', 1)[0] ?? '')
+		.trim()
+		.toLowerCase();
 	return FORM_CONTENT_TYPES.includes(type);
 }
 

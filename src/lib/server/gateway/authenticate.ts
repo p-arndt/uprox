@@ -14,7 +14,7 @@ import { gatewayError } from './envelope';
 function readApiKey(event: RequestEvent): string | null {
 	const header = event.request.headers.get('authorization') ?? '';
 	const match = /^Bearer\s+(.+)$/i.exec(header);
-	if (match) return match[1].trim();
+	if (match) return (match[1] ?? '').trim();
 	const apiKey = event.request.headers.get('api-key')?.trim();
 	if (apiKey) return apiKey;
 	const goog = event.request.headers.get('x-goog-api-key')?.trim();

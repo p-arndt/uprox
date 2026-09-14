@@ -130,11 +130,11 @@ describe('foldGroupedRows', () => {
 		expect(buckets).toEqual(['t1', 't2']);
 		expect(series.map((s) => s.key)).toEqual(['a', 'b']);
 		expect(series[0]).toMatchObject({ costUsd: 2, requests: 3, tokens: 40, label: 'A' });
-		expect(series[1].points).toEqual([
+		expect(series[1]?.points).toEqual([
 			{ requests: 0, denied: 0, costUsd: 0, tokens: 0 },
 			{ requests: 3, denied: 0, costUsd: 2, tokens: 40 }
 		]);
-		expect(series[1].hint).toBe('hint');
+		expect(series[1]?.hint).toBe('hint');
 	});
 
 	it('keeps axis series without cells as zeros and ignores unknown keys', () => {

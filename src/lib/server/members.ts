@@ -100,6 +100,7 @@ export async function createInvitation(input: {
 			status: 'pending'
 		})
 		.returning();
+	if (!inv) throw new Error('Invitation insert returned no row');
 	return { invitation: inv };
 }
 
