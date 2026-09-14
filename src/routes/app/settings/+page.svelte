@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -18,28 +17,16 @@
 
 	let { data, form } = $props();
 
-	type Settings = typeof data.settings;
-
-	/** The switch-backed settings, mirrored locally so the Switches can bind. */
-	function togglesFrom(s: Settings) {
-		return {
-			membersCanManageTokens: s.membersCanManageTokens,
-			membersCanManageServices: s.membersCanManageServices,
-			tokensRecopyableDefault: s.tokensRecopyableDefault,
-			budgetAlertsEnabled: s.budgetAlertsEnabled,
-			tracingEnabled: s.tracingEnabled
-		};
-	}
-
-	// Seeded once from server data; the $effect below re-syncs after reloads.
-	let toggles = $state(untrack(() => togglesFrom(data.settings)));
-
 	const canManageSettings = $derived(can(data.role, 'settings:manage', data.memberPermissions));
 
-	// Keep toggles in sync when settings are reloaded (e.g. after invalidateAll).
-	$effect(() => {
-		toggles = togglesFrom(data.settings);
-	});
+	// Switch-backed settings as writable deriveds: a Switch flips them locally and
+	// a reload (e.g. after invalidateAll) re-syncs them from the server. One per
+	// field, because a derived object's properties aren't reactive when bound.
+	let tokensOn = $derived(data.settings.membersCanManageTokens);
+	let servicesOn = $derived(data.settings.membersCanManageServices);
+	let recopyOn = $derived(data.settings.tokensRecopyableDefault);
+	let alertsOn = $derived(data.settings.budgetAlertsEnabled);
+	let tracingOn = $derived(data.settings.tracingEnabled);
 
 	$effect(() => {
 		if (form?.success) {
@@ -82,24 +69,16 @@
 			description="Control what members (not admins/owners) can do."
 			action="updateMemberPermissions"
 		>
-			<input
-				type="hidden"
-				name="membersCanManageTokens"
-				value={String(toggles.membersCanManageTokens)}
-			/>
-			<input
-				type="hidden"
-				name="membersCanManageServices"
-				value={String(toggles.membersCanManageServices)}
-			/>
+			<input type="hidden" name="membersCanManageTokens" value={String(tokensOn)} />
+			<input type="hidden" name="membersCanManageServices" value={String(servicesOn)} />
 
 			<div class="flex items-center justify-between gap-4">
 				<Label for="membersCanManageTokens">Members can create &amp; revoke tokens</Label>
-				<Switch id="membersCanManageTokens" bind:checked={toggles.membersCanManageTokens} />
+				<Switch id="membersCanManageTokens" bind:checked={tokensOn} />
 			</div>
 			<div class="flex items-center justify-between gap-4">
 				<Label for="membersCanManageServices">Members can create services</Label>
-				<Switch id="membersCanManageServices" bind:checked={toggles.membersCanManageServices} />
+				<Switch id="membersCanManageServices" bind:checked={servicesOn} />
 			</div>
 		</SettingsCard>
 
@@ -109,15 +88,11 @@
 			description="How machine tokens are stored at rest."
 			action="updateTokenSecurity"
 		>
-			<input
-				type="hidden"
-				name="tokensRecopyableDefault"
-				value={String(toggles.tokensRecopyableDefault)}
-			/>
+			<input type="hidden" name="tokensRecopyableDefault" value={String(recopyOn)} />
 
 			<div class="flex items-center justify-between gap-4">
 				<Label for="tokensRecopyableDefault">Allow re-copying new tokens by default</Label>
-				<Switch id="tokensRecopyableDefault" bind:checked={toggles.tokensRecopyableDefault} />
+				<Switch id="tokensRecopyableDefault" bind:checked={recopyOn} />
 			</div>
 			<p class="text-xs text-muted-foreground">
 				When on, the "Allow re-copying later" box is pre-checked when issuing a token, storing its
@@ -172,14 +147,14 @@
 			description="Email owners & admins when a service nears or exceeds its policy budget."
 			action="updateBudgetAlerts"
 		>
-			<input type="hidden" name="budgetAlertsEnabled" value={String(toggles.budgetAlertsEnabled)} />
+			<input type="hidden" name="budgetAlertsEnabled" value={String(alertsOn)} />
 
 			<div class="flex items-center justify-between gap-4">
 				<Label for="budgetAlertsEnabled">Enable budget alerts</Label>
-				<Switch id="budgetAlertsEnabled" bind:checked={toggles.budgetAlertsEnabled} />
+				<Switch id="budgetAlertsEnabled" bind:checked={alertsOn} />
 			</div>
 
-			<div class="space-y-2" class:opacity-50={!toggles.budgetAlertsEnabled}>
+			<div class="space-y-2" class:opacity-50={!alertsOn}>
 				<Label for="budgetAlertThresholdPct">Warn threshold (% of budget)</Label>
 				<Input
 					id="budgetAlertThresholdPct"
@@ -189,7 +164,7 @@
 					max="100"
 					value={data.settings.budgetAlertThresholdPct}
 					class="max-w-xs"
-					disabled={!toggles.budgetAlertsEnabled}
+					disabled={!alertsOn}
 				/>
 				<p class="text-xs text-muted-foreground">
 					A service is flagged once its daily or monthly spend reaches this share of the ceiling,
@@ -197,7 +172,7 @@
 				</p>
 			</div>
 
-			<div class="space-y-2" class:opacity-50={!toggles.budgetAlertsEnabled}>
+			<div class="space-y-2" class:opacity-50={!alertsOn}>
 				<Label for="budgetAlertEmail">Notification email (optional)</Label>
 				<Input
 					id="budgetAlertEmail"
@@ -206,7 +181,7 @@
 					placeholder="team@example.com"
 					value={data.settings.budgetAlertEmail ?? ''}
 					class="max-w-xs"
-					disabled={!toggles.budgetAlertsEnabled}
+					disabled={!alertsOn}
 				/>
 				<p class="text-xs text-muted-foreground">
 					Sent in addition to owners &amp; admins. Requires SMTP to be configured; otherwise the
@@ -221,14 +196,14 @@
 			description="Capture each request's prompt & response payload for the in-app trace viewer."
 			action="updateTracing"
 		>
-			<input type="hidden" name="tracingEnabled" value={String(toggles.tracingEnabled)} />
+			<input type="hidden" name="tracingEnabled" value={String(tracingOn)} />
 
 			<div class="flex items-center justify-between gap-4">
 				<Label for="tracingEnabled">Enable request tracing</Label>
-				<Switch id="tracingEnabled" bind:checked={toggles.tracingEnabled} />
+				<Switch id="tracingEnabled" bind:checked={tracingOn} />
 			</div>
 
-			<div class="space-y-2" class:opacity-50={!toggles.tracingEnabled}>
+			<div class="space-y-2" class:opacity-50={!tracingOn}>
 				<Label for="tracingRetentionDays">Retention (days)</Label>
 				<Input
 					id="tracingRetentionDays"
@@ -237,7 +212,7 @@
 					min="1"
 					value={data.settings.tracingRetentionDays}
 					class="max-w-xs"
-					disabled={!toggles.tracingEnabled}
+					disabled={!tracingOn}
 				/>
 				<p class="text-xs text-muted-foreground">
 					Traces older than this are pruned automatically. Payloads can contain sensitive prompt
