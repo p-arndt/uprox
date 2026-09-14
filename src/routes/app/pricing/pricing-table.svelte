@@ -1,9 +1,9 @@
 <script lang="ts">
 	import type { ComponentProps } from 'svelte';
 	import * as Table from '$lib/components/ui/table/index.js';
-	import PriceRow from '$lib/components/price-row.svelte';
+	import PriceRow from '$lib/features/pricing/components/price-row.svelte';
 	import type { TableState } from '$lib/state/table.svelte';
-	import { LONG_CONTEXT_MIN_PROMPT_TOKENS, type PriceTier } from '$lib/pricing';
+	import { LONG_CONTEXT_MIN_PROMPT_TOKENS, type PriceTier } from '$lib/features/pricing/pricing';
 	import Search from '@lucide/svelte/icons/search';
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';

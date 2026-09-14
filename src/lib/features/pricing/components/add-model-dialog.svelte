@@ -4,7 +4,7 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/pricing';
+	import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/features/pricing/pricing';
 	import SelectField from '$lib/components/select-field.svelte';
 	import FormError from '$lib/components/form-error.svelte';
 

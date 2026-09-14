@@ -3,7 +3,7 @@
 	import PageHeader from '$lib/components/page-header.svelte';
 	import PageShell from '$lib/components/page-shell.svelte';
 	import EmptyState from '$lib/components/empty-state.svelte';
-	import AddModelDialog from '$lib/components/add-model-dialog.svelte';
+	import AddModelDialog from '$lib/features/pricing/components/add-model-dialog.svelte';
 	import { createTableState } from '$lib/state/table.svelte';
 	import {
 		providerTabs,
@@ -11,7 +11,7 @@
 		tierValues,
 		OTHER_PROVIDER_KEY,
 		type PriceTier
-	} from '$lib/pricing';
+	} from '$lib/features/pricing/pricing';
 	import { can } from '$lib/permissions';
 	import Coins from '@lucide/svelte/icons/coins';
 	import Plus from '@lucide/svelte/icons/plus';

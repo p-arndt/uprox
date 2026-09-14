@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { OTHER_PROVIDER_KEY, providerTabs, tagPriceProviders } from '$lib/pricing';
+import { OTHER_PROVIDER_KEY, providerTabs, tagPriceProviders } from '$lib/features/pricing/pricing';
 import { isNavActive, navItemFor } from '$lib/nav';
 
 const providers = [

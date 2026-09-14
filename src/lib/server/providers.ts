@@ -3,7 +3,7 @@
  * OpenAI-compatible surface, so the gateway can proxy a single request shape.
  */
 import type { GatewayScope } from '$lib/scopes';
-import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/pricing';
+import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/features/pricing/pricing';
 
 export type { GatewayScope };
 

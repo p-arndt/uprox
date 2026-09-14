@@ -3,7 +3,7 @@ import { eq, gte, lt, sql } from 'drizzle-orm';
 import { service, machineToken, auditLog } from '$lib/server/db/schema';
 import type { ResolvedRange } from '$lib/features/usage/range';
 import { NULL_VALUE, type UsageDimension, type UsageFilter } from '$lib/features/usage/group';
-import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/pricing';
+import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/features/pricing/pricing';
 
 /**
  * The shared filter for the usage breakdowns: gateway traffic inside a resolved

@@ -1,11 +1,16 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
-	import { TIER_FIELDS, tierValues, type PriceRow, type PriceTier } from '$lib/pricing';
+	import {
+		TIER_FIELDS,
+		tierValues,
+		type PriceRow,
+		type PriceTier
+	} from '$lib/features/pricing/pricing';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import ConfirmAction from '$lib/components/confirm-action.svelte';
-	import PriceCell from '$lib/components/price-cell.svelte';
+	import PriceCell from '$lib/features/pricing/components/price-cell.svelte';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import Check from '@lucide/svelte/icons/check';
