@@ -431,7 +431,18 @@ export const auditLog = pgTable(
 		detail: text('detail'),
 		createdAt: timestamp('created_at').defaultNow().notNull()
 	},
-	(t) => [index('audit_log_created_idx').on(t.createdAt)]
+	(t) => [
+		index('audit_log_created_idx').on(t.createdAt),
+		// Usage analytics only read gateway traffic inside a time window. The
+		// migration adds an INCLUDE list of the aggregated columns (drizzle cannot
+		// express INCLUDE) so those scans can be answered from the index alone.
+		index('audit_log_gateway_created_idx')
+			.on(t.createdAt)
+			.where(sql`${t.action} like 'gateway.%'`),
+		// budget enforcement sums spend per service / per token since a day or month start
+		index('audit_log_service_created_idx').on(t.serviceId, t.createdAt),
+		index('audit_log_token_created_idx').on(t.tokenId, t.createdAt)
+	]
 );
 
 /**
