@@ -93,6 +93,22 @@ export async function updateProviderSecret(
 	return row ?? null;
 }
 
-export async function deleteProviderSecret(id: string) {
-	await db.delete(providerSecret).where(eq(providerSecret.id, id));
+/**
+ * Delete a provider secret and audit it. Returns whether a row was removed, so
+ * callers can tell a stale id from a real deletion; nothing is audited for an
+ * unknown id.
+ */
+export async function deleteProviderSecret(id: string): Promise<boolean> {
+	const [row] = await db
+		.delete(providerSecret)
+		.where(eq(providerSecret.id, id))
+		.returning({ provider: providerSecret.provider, label: providerSecret.label });
+	if (!row) return false;
+	await audit({
+		action: 'provider.delete',
+		status: 'ok',
+		provider: row.provider,
+		detail: row.label || row.provider
+	});
+	return true;
 }
