@@ -52,10 +52,8 @@
 	const tokensOf = (r: DimensionUsageRow) => r.inputTokens + r.outputTokens;
 
 	type Ranked = { row: DimensionUsageRow; rank: number };
-	const byNumber =
-		(f: (r: DimensionUsageRow) => number) =>
-		(a: Ranked, b: Ranked) =>
-			f(a.row) - f(b.row);
+	const byNumber = (f: (r: DimensionUsageRow) => number) => (a: Ranked, b: Ranked) =>
+		f(a.row) - f(b.row);
 
 	// Rank is captured BEFORE sorting: the swatch has to keep matching the chart,
 	// which always stacks in cost order. Sorting by requests re-orders the rows

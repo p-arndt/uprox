@@ -173,7 +173,11 @@
 		/>
 
 		{#if grouped.series.length > 1}
-			<UsageLegend series={grouped.series} dim={groupBy} {metric} bind:highlighted
+			<UsageLegend
+				series={grouped.series}
+				dim={groupBy}
+				{metric}
+				bind:highlighted
 				bind:hidden={() => hidden, (v) => (hidden = v)}
 			/>
 		{/if}

@@ -43,8 +43,7 @@
 	];
 
 	const byNumber =
-		(f: (r: ModelEfficiency) => number) =>
-		(a: ModelEfficiency, b: ModelEfficiency) =>
+		(f: (r: ModelEfficiency) => number) => (a: ModelEfficiency, b: ModelEfficiency) =>
 			f(a) - f(b);
 
 	const table = createTableState<ModelEfficiency>({
@@ -114,9 +113,7 @@
 								</td>
 								<td class="py-2 text-right tabular-nums">{formatUsd(r.costUsd)}</td>
 								<td class="py-2 text-right font-medium tabular-nums">
-									<span
-										class={EXTREME_CLASS[priceExtreme(r.costPer1kTokens, extremes) ?? 'none']}
-									>
+									<span class={EXTREME_CLASS[priceExtreme(r.costPer1kTokens, extremes) ?? 'none']}>
 										{formatUsd(r.costPer1kTokens)}
 									</span>
 								</td>

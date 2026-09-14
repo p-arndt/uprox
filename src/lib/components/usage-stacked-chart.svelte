@@ -229,7 +229,9 @@
 		<div class="pointer-events-none relative">
 			<div
 				class="absolute z-20 w-72 rounded-lg border bg-popover p-2.5 shadow-lg"
-				style="{leftSide ? 'left' : 'right'}: calc({leftSide ? pct : 100 - pct}% + 1rem); bottom: 0.5rem;"
+				style="{leftSide ? 'left' : 'right'}: calc({leftSide
+					? pct
+					: 100 - pct}% + 1rem); bottom: 0.5rem;"
 			>
 				<div class="mb-1.5 flex items-baseline justify-between gap-2">
 					<span class="text-xs font-medium">{bucketLabel(buckets[hovered], unit)}</span>

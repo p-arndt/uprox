@@ -7,7 +7,10 @@ export interface SelectOption {
 
 /** Policy presets, led by the "none attached" choice ('' on submit). */
 export function presetOptions(policies: { id: string; name: string }[]): SelectOption[] {
-	return [{ value: '', label: 'No preset' }, ...policies.map((p) => ({ value: p.id, label: p.name }))];
+	return [
+		{ value: '', label: 'No preset' },
+		...policies.map((p) => ({ value: p.id, label: p.name }))
+	];
 }
 
 /** Example endpoint URL for providers that need one, matching the provider's hint text. */

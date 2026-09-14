@@ -63,7 +63,9 @@
 						aria-hidden="true"
 					></span>
 					<span class="max-w-56 truncate {off ? 'line-through' : ''}">{s.label}</span>
-					<span class="text-muted-foreground tabular-nums">{formatMetric(metricValue(s, metric), metric)}</span>
+					<span class="text-muted-foreground tabular-nums"
+						>{formatMetric(metricValue(s, metric), metric)}</span
+					>
 				</button>
 			</li>
 		{/each}

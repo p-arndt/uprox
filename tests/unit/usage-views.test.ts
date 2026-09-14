@@ -142,7 +142,11 @@ describe('efficiency', () => {
 			cheapest: null,
 			dearest: null
 		});
-		const ex = priceExtremes([{ costPer1kTokens: 1 }, { costPer1kTokens: 3 }, { costPer1kTokens: 2 }]);
+		const ex = priceExtremes([
+			{ costPer1kTokens: 1 },
+			{ costPer1kTokens: 3 },
+			{ costPer1kTokens: 2 }
+		]);
 		expect(ex).toEqual({ cheapest: 1, dearest: 3 });
 		expect(priceExtreme(1, ex)).toBe('cheapest');
 		expect(priceExtreme(3, ex)).toBe('dearest');
