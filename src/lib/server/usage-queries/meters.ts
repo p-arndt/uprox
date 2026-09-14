@@ -16,15 +16,11 @@ import {
 	type MeterTokenSums
 } from '$lib/usage-meters';
 import { usageConds } from '$lib/server/usage-queries/predicates';
-import type { GroupedSeries, GroupedSeriesResult } from '$lib/server/usage-queries/types';
+import type { GroupedSeries, GroupedSeriesResult } from '$lib/features/usage/types';
 import { METER_SUM_SELECT, meterLabel } from '$lib/server/usage-queries/meter-sql';
 import { ALL_LINES, bucketedMeterCells } from '$lib/server/usage-queries/meter-cells';
 import { loadRateCards, ratesFor } from '$lib/server/usage-queries/rate-cards';
 import type { TokenMeter, TokenMeterBreakdown } from '$lib/features/usage/meter-types';
-
-// The shapes live in the client-safe feature module; re-exported so existing
-// `$lib/server/data` imports keep working.
-export type { TokenMeter, TokenMeterBreakdown };
 
 /**
  * Decompose the window's token volume into its billing meters, with the cost

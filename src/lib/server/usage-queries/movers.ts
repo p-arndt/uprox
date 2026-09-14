@@ -4,8 +4,6 @@ import type { UsageDimension, UsageFilter } from '$lib/usage-group';
 import type { DimensionUsageRow, UsageMover } from '$lib/features/usage/types';
 import { orgUsageByDimension } from '$lib/server/usage-queries/by-dimension';
 
-export type { UsageMover };
-
 /**
  * The series whose spend moved most between the selected window and the
  * immediately-preceding one of equal length — "what changed", which is the first

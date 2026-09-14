@@ -7,8 +7,6 @@ import type { UsageFilter } from '$lib/usage-group';
 import { usageConds } from '$lib/server/usage-queries/predicates';
 import type { ModelEfficiency } from '$lib/features/usage/types';
 
-export type { ModelEfficiency };
-
 /**
  * Per-model unit economics — the table behind "should we switch models".
  *

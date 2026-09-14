@@ -19,7 +19,7 @@ import type {
 	DimensionUsageRow,
 	GroupedSeries,
 	GroupedSeriesResult
-} from '$lib/server/usage-queries/types';
+} from '$lib/features/usage/types';
 import { METER_SUM_SELECT, meterShortLabel } from '$lib/server/usage-queries/meter-sql';
 import { bucketedMeterCells } from '$lib/server/usage-queries/meter-cells';
 import { loadRateCards, ratesFor } from '$lib/server/usage-queries/rate-cards';

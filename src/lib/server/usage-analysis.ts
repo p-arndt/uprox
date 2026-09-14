@@ -30,8 +30,6 @@ import { MAX_SERIES } from '$lib/usage-colors';
 import { readUsageWindow, writeUsageWindow } from '$lib/server/usage-window-pref';
 import { cacheWindow, usageCache, usageCacheKey } from '$lib/server/usage-cache';
 
-export type { UsageAnalysis };
-
 const DAY_MS = 86_400_000;
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 

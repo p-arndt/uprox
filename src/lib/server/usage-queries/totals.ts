@@ -9,8 +9,6 @@ import { latencyHistogram } from '$lib/server/usage-queries/latency';
 import { mapTotalsRow } from '$lib/server/usage-queries/row-mapping';
 import type { UsageTotals } from '$lib/features/usage/types';
 
-export type { UsageTotals };
-
 /**
  * Headline aggregates for the whole org (or one service, with `serviceId`) over
  * the window — the single source for the token/cost cards. Computed in one query
