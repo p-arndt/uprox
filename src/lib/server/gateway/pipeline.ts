@@ -6,7 +6,8 @@
  * credentials) → send → record (stream or buffered).
  */
 import type { RequestEvent } from '@sveltejs/kit';
-import { authHeaders, PROVIDERS, type Capability, type ProviderDef } from '$lib/server/providers';
+import type { GatewayScope } from '$lib/scopes';
+import { authHeaders, PROVIDERS, type ProviderDef } from '$lib/server/providers';
 import { getAdapter, type ProviderAdapter } from '$lib/server/adapters';
 import { cacheKeyFor, isDeterministicRequest } from '$lib/server/cache';
 import { isRecord } from '$lib/server/json';
@@ -31,7 +32,7 @@ import { streamWithRecording } from './stream';
 export interface ProxyOptions {
 	auth: GatewayAuth;
 	/** the gateway capability this request exercises (also the policy scope) */
-	scope: Capability;
+	scope: GatewayScope;
 	model: string;
 	/** upstream path appended to the provider base url, e.g. "/chat/completions" */
 	path: string;
@@ -140,7 +141,7 @@ async function recordBuffered(
 
 /* ------------------------- OpenAI-compatible pipeline ------------------------- */
 
-const CACHEABLE_SCOPES: ReadonlySet<Capability> = new Set(['chat', 'embeddings', 'responses']);
+const CACHEABLE_SCOPES: ReadonlySet<GatewayScope> = new Set(['chat', 'embeddings', 'responses']);
 
 /**
  * Exact-match cache target for an OpenAI-shaped request, or null when it isn't
@@ -196,7 +197,7 @@ function withUsageChunk(body: unknown, wanted: boolean): unknown {
  */
 function openAiBetaHeader(
 	event: RequestEvent,
-	scope: Capability,
+	scope: GatewayScope,
 	adapter: ProviderAdapter | null
 ): Record<string, string> {
 	if (adapter) return {};
@@ -296,7 +297,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 export interface MultipartProxyOptions {
 	auth: GatewayAuth;
 	/** the gateway capability this request exercises (also the policy scope) */
-	scope: Capability;
+	scope: GatewayScope;
 	model: string;
 	/** upstream path appended to the provider base url, e.g. "/audio/transcriptions" */
 	path: string;
@@ -376,7 +377,7 @@ export async function proxyMultipartToProvider(
 export interface NativeGeminiOptions {
 	auth: GatewayAuth;
 	/** the gateway capability this request exercises (chat or embeddings) */
-	scope: Capability;
+	scope: GatewayScope;
 	model: string;
 	/** native method: generateContent | streamGenerateContent | embedContent | batchEmbedContents */
 	method: string;

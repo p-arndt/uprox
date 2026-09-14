@@ -12,7 +12,7 @@
  * gateway via the provider's `google` auth scheme (see providers.ts).
  */
 import type { ProviderAdapter, AdapterModel } from './types';
-import type { Capability } from '$lib/scopes';
+import type { GatewayScope } from '$lib/scopes';
 import { isRecord } from '$lib/server/json';
 
 function num(v: unknown): number | null {
@@ -539,7 +539,7 @@ export const geminiAdapter: ProviderAdapter = {
 			? `${baseUrl}/models/${model}:streamGenerateContent?alt=sse`
 			: `${baseUrl}/models/${model}:generateContent`;
 	},
-	translateRequest(scope: Capability, body: unknown) {
+	translateRequest(scope: GatewayScope, body: unknown) {
 		return scope === 'embeddings'
 			? toGeminiEmbedRequest(body, modelFromEmbedBody(body))
 			: toGeminiChatRequest(body);
@@ -594,7 +594,7 @@ function modelFromEmbedBody(body: unknown): string {
  */
 export function parseGeminiAction(
 	segment: string
-): { model: string; method: string; scope: Capability; stream: boolean } | null {
+): { model: string; method: string; scope: GatewayScope; stream: boolean } | null {
 	const idx = segment.lastIndexOf(':');
 	if (idx <= 0) return null;
 	const model = segment.slice(0, idx);
