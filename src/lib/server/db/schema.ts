@@ -9,6 +9,7 @@ import {
 	jsonb,
 	uniqueIndex,
 	index,
+	primaryKey,
 	type AnyPgColumn
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
@@ -315,7 +316,9 @@ export const budgetAlertState = pgTable(
 		windowStart: timestamp('window_start').notNull(),
 		sentAt: timestamp('sent_at').defaultNow().notNull()
 	},
-	(t) => [uniqueIndex('budget_alert_state_scope_window_uidx').on(t.scope, t.scopeId, t.window)]
+	// One ledger row per (scope, scopeId, window): the primary key is also the
+	// upsert conflict target in budget-alerts.ts.
+	(t) => [primaryKey({ columns: [t.scope, t.scopeId, t.window] })]
 );
 
 /**
