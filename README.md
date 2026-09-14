@@ -304,6 +304,7 @@ Thin routes call server modules grouped by domain. Business logic lives in pure,
 modules, and client code never value-imports `$lib/server`. Tests come in three layers: unit,
 real-SQL on PGlite, and E2E. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the
 structure, rules, and query performance conventions.
+The admin REST API is documented in [`docs/API.md`](docs/API.md).
 
 ## Built with
 

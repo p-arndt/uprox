@@ -3,6 +3,8 @@
 How uprox is structured and the rules new code should follow. Existing code is being
 moved towards this shape. When you touch a file, leave it closer to the target.
 
+The admin REST API under `/api` is documented in [`docs/API.md`](API.md).
+
 ## Layers
 
 ```
