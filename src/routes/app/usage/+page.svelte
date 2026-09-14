@@ -1,17 +1,12 @@
 <script lang="ts">
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
 	import BudgetAlert from '$lib/components/budget-alert.svelte';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
-	import UsageRangePicker from '$lib/components/usage-range-picker.svelte';
 	import UsageWorkbench from '$lib/components/usage-workbench.svelte';
 	import { resolve } from '$app/paths';
 	import type { ResolvedPathname } from '$app/types';
 	import { createUsageView } from '$lib/state/usage-view.svelte';
 	import { NULL_VALUE, type UsageDimension } from '$lib/usage-group';
 	import type { DimensionUsageRow } from '$lib/features/usage/types';
-	import Download from '@lucide/svelte/icons/download';
-	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import PageShell from '$lib/components/page-shell.svelte';
 	import PageHeader from '$lib/components/page-header.svelte';
 
@@ -45,56 +40,6 @@
 	{/if}
 {/snippet}
 
-{#snippet leading()}
-	<UsageRangePicker
-		ranges={data.ranges}
-		range={data.range}
-		hrefWith={view.hrefWith}
-		customFrom={data.customFrom}
-		customTo={data.customTo}
-		onApplyCustom={view.applyCustom}
-	/>
-{/snippet}
-
-{#snippet trailing()}
-	<Button
-		variant="ghost"
-		size="icon"
-		class="size-8"
-		onclick={view.refresh}
-		disabled={view.refreshing}
-		aria-label="Refresh usage"
-	>
-		<RefreshCw class="size-4 {view.refreshing ? 'animate-spin' : ''}" />
-	</Button>
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<Button {...props} variant="outline" size="sm" class="gap-1.5">
-					<Download class="size-4" />
-					Export
-				</Button>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Item>
-				{#snippet child({ props })}
-					<a {...props} href={view.exportHref(exportPath, 'breakdown')} download>
-						Breakdown (CSV)
-					</a>
-				{/snippet}
-			</DropdownMenu.Item>
-			<DropdownMenu.Item>
-				{#snippet child({ props })}
-					<a {...props} href={view.exportHref(exportPath, 'timeseries')} download>
-						Time series (CSV)
-					</a>
-				{/snippet}
-			</DropdownMenu.Item>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
-{/snippet}
-
 <PageShell width="wide">
 	<PageHeader
 		title="Cost analysis"
@@ -120,13 +65,9 @@
 
 	<UsageWorkbench
 		analysis={data}
-		rangeLabel={view.rangeLabel}
-		bucketHref={(b) => view.hrefWith({ bucket: b })}
-		onGroupBy={view.setGroupBy}
-		onFilters={view.setFilters}
+		{view}
+		{exportPath}
 		{rowLabel}
-		{leading}
-		{trailing}
 		budgets={data.budgets}
 		budgetThreshold={data.budgetThreshold}
 	/>
