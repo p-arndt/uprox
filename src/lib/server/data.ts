@@ -2834,18 +2834,27 @@ export async function orgBudgetStatus(): Promise<BudgetStatus[]> {
 	// template can't serialize a Date on its own and throws at execution. The left
 	// join is scoped to the month window (the wider of the two); the daily figure
 	// is a narrower filtered aggregate within those rows.
+	//
+	// The ceiling is resolved exactly like enforcement does (see resolveBudget in
+	// effective-config.ts): the service's inline value when set — including an
+	// explicit 0, meaning unlimited — else its policy's. The policy is therefore a
+	// left join: a service can carry an inline budget without any policy.
+	const effectiveDaily = sql`coalesce(${service.dailyBudgetUsd}, ${policy.dailyBudgetUsd})`;
+	const effectiveMonthly = sql`coalesce(${service.monthlyBudgetUsd}, ${policy.monthlyBudgetUsd})`;
 	const rows = await db
 		.select({
 			serviceId: service.id,
 			serviceName: service.name,
 			policyName: policy.name,
-			dailyBudget: policy.dailyBudgetUsd,
-			monthlyBudget: policy.monthlyBudgetUsd,
+			serviceDailyBudget: service.dailyBudgetUsd,
+			serviceMonthlyBudget: service.monthlyBudgetUsd,
+			policyDailyBudget: policy.dailyBudgetUsd,
+			policyMonthlyBudget: policy.monthlyBudgetUsd,
 			dailySpent: sql<string>`coalesce(sum(${auditLog.costUsd}) filter (where ${gte(auditLog.createdAt, dayStart)}), 0)`,
 			monthlySpent: sql<string>`coalesce(sum(${auditLog.costUsd}), 0)`
 		})
 		.from(service)
-		.innerJoin(policy, eq(policy.id, service.policyId))
+		.leftJoin(policy, eq(policy.id, service.policyId))
 		.leftJoin(
 			auditLog,
 			and(
@@ -2857,18 +2866,35 @@ export async function orgBudgetStatus(): Promise<BudgetStatus[]> {
 		.where(
 			and(
 				isNull(service.deletedAt),
-				sql`(${policy.dailyBudgetUsd} > 0 or ${policy.monthlyBudgetUsd} > 0)`
+				sql`(${effectiveDaily} > 0 or ${effectiveMonthly} > 0)`
 			)
 		)
-		.groupBy(service.id, service.name, policy.name, policy.dailyBudgetUsd, policy.monthlyBudgetUsd);
+		.groupBy(
+			service.id,
+			service.name,
+			service.dailyBudgetUsd,
+			service.monthlyBudgetUsd,
+			policy.name,
+			policy.dailyBudgetUsd,
+			policy.monthlyBudgetUsd
+		);
 
 	return rows.map((r) => {
-		const dailyBudget = Number(r.dailyBudget ?? 0);
-		const monthlyBudget = Number(r.monthlyBudget ?? 0);
+		const dailyFromService = r.serviceDailyBudget != null;
+		const monthlyFromService = r.serviceMonthlyBudget != null;
+		const dailyBudget = Number((dailyFromService ? r.serviceDailyBudget : r.policyDailyBudget) ?? 0);
+		const monthlyBudget = Number(
+			(monthlyFromService ? r.serviceMonthlyBudget : r.policyMonthlyBudget) ?? 0
+		);
+		// Name the policy only when a shown ceiling actually comes from it; a
+		// ceiling set on the service itself is labelled as such.
+		const usesPolicy =
+			r.policyName != null &&
+			((dailyBudget > 0 && !dailyFromService) || (monthlyBudget > 0 && !monthlyFromService));
 		return {
 			serviceId: r.serviceId,
 			serviceName: r.serviceName,
-			policyName: r.policyName,
+			policyName: usesPolicy ? (r.policyName as string) : 'service limit',
 			daily:
 				dailyBudget > 0 ? { budgetUsd: dailyBudget, spentUsd: Number(r.dailySpent ?? 0) } : null,
 			monthly:
