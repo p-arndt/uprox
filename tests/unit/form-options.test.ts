@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { endpointPlaceholder, presetOptions } from '$lib/components/form-options';
+import { endpointPlaceholder, presetOptions } from '$lib/components/form/form-options';
 
 describe('presetOptions', () => {
 	it('leads with the empty "No preset" choice', () => {
