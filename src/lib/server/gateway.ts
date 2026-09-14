@@ -13,7 +13,6 @@ import {
 	authHeaders,
 	selectProviderSecret,
 	PROVIDERS,
-	type ContextTier,
 	type Capability,
 	type ProviderDef
 } from '$lib/server/providers';
@@ -27,8 +26,12 @@ import { checkRateLimit } from '$lib/server/ratelimit';
 import { checkBudget, reserve } from '$lib/server/budget';
 import { maybeSendBudgetAlert, maybeSendInstanceBudgetAlert } from '$lib/server/budget-alerts';
 import { cacheKeyFor, getCached, putCached, isDeterministicRequest } from '$lib/server/cache';
-import { estimateCost } from '$lib/server/pricing';
+import { estimateCost, type CostEstimate } from '$lib/server/pricing';
 import { isRecord } from '$lib/server/json';
+
+/* ------------------------------------------------------------------------- */
+/* Error envelopes                                                           */
+/* ------------------------------------------------------------------------- */
 
 /** OpenAI-style error envelope, so OpenAI SDK clients parse it correctly. */
 export function gatewayError(status: number, message: string, type = 'invalid_request_error') {
@@ -36,62 +39,79 @@ export function gatewayError(status: number, message: string, type = 'invalid_re
 }
 
 /**
- * Enforce the three budget scopes that apply to a request: the instance-wide
- * ceiling, the service's aggregate ceiling, and the token's personal cap. All
- * are checked; a request must pass each budget that is set. On denial returns
- * the 402 Response (already audited); otherwise returns a single release handle
- * that frees every reservation it took (a no-op when no budget applies). See
- * budget.ts for the bucket model.
+ * Native-Gemini error envelope (`{ error: { code, message, status } }`), so the
+ * Google GenAI SDK — which expects native errors, not OpenAI ones — parses a
+ * gateway rejection correctly.
  */
-async function enforceBudgets(
-	token: ResolvedToken,
-	provider: ProviderDef,
-	model: string,
-	ip: string | null,
-	auditDeny: (entry: AuditEntry) => Promise<unknown>,
-	// builds the 402 response in the caller's error envelope (OpenAI vs Gemini)
-	makeDenyResponse: (reason: string) => Response = (reason) =>
-		gatewayError(402, `Request denied: ${reason}`, 'insufficient_quota')
-): Promise<Response | (() => void)> {
-	const { serviceBudget, tokenBudget, instanceBudget } = token.effective;
-	const buckets = [
-		// the instance ceiling shares one bucket across all traffic — a fixed id
-		{ scope: 'instance' as const, id: 'instance', limits: instanceBudget },
-		{ scope: 'service' as const, id: token.serviceId, limits: serviceBudget },
-		{ scope: 'token' as const, id: token.tokenId, limits: tokenBudget }
-	].filter((b) => b.limits.dailyBudgetUsd > 0 || b.limits.monthlyBudgetUsd > 0);
-
-	// Soft-alert evaluation (emails admins once per window/level), per budget
-	// scope. Runs on allow and deny alike. Never blocks the request.
-	if (serviceBudget.dailyBudgetUsd > 0 || serviceBudget.monthlyBudgetUsd > 0) {
-		void maybeSendBudgetAlert(token.serviceId, token.serviceName, serviceBudget);
-	}
-	if (instanceBudget.dailyBudgetUsd > 0 || instanceBudget.monthlyBudgetUsd > 0) {
-		void maybeSendInstanceBudgetAlert(instanceBudget);
-	}
-
-	for (const b of buckets) {
-		const budget = await checkBudget(b.scope, b.id, b.limits);
-		if (!budget.ok) {
-			await auditDeny({
-				action: 'policy.deny',
-				status: 'deny',
-				serviceId: token.serviceId,
-				tokenId: token.tokenId,
-				provider: provider.id,
-				model,
-				statusCode: 402,
-				ip,
-				detail: budget.reason
-			});
-			return makeDenyResponse(budget.reason);
-		}
-	}
-
-	// Reserve only after all checks pass, so a denied request leaves no residue.
-	const releases = buckets.map((b) => reserve(b.scope, b.id));
-	return () => releases.forEach((r) => r());
+function geminiNativeError(status: number, message: string, googleStatus: string): Response {
+	return json({ error: { code: status, message, status: googleStatus } }, { status });
 }
+
+/** Why the gateway rejected a request, independent of the wire envelope. */
+export type ErrorKind =
+	| 'invalid_request'
+	| 'model_not_found'
+	| 'permission'
+	| 'insufficient_quota'
+	| 'rate_limit'
+	| 'upstream_misconfigured'
+	| 'upstream_unavailable';
+
+const OPENAI_ERROR_TYPES: Record<ErrorKind, string> = {
+	invalid_request: 'invalid_request_error',
+	model_not_found: 'model_not_found',
+	permission: 'permission_error',
+	insufficient_quota: 'insufficient_quota',
+	rate_limit: 'rate_limit_error',
+	upstream_misconfigured: 'api_error',
+	upstream_unavailable: 'api_error'
+};
+
+const GOOGLE_ERROR_STATUSES: Record<ErrorKind, string> = {
+	invalid_request: 'INVALID_ARGUMENT',
+	model_not_found: 'INVALID_ARGUMENT',
+	permission: 'PERMISSION_DENIED',
+	insufficient_quota: 'RESOURCE_EXHAUSTED',
+	rate_limit: 'RESOURCE_EXHAUSTED',
+	upstream_misconfigured: 'FAILED_PRECONDITION',
+	upstream_unavailable: 'UNAVAILABLE'
+};
+
+/**
+ * Builds client-facing error responses in one ingress family's wire shape, so
+ * the shared pipeline steps can reject a request without knowing whether the
+ * caller is an OpenAI SDK or the Google GenAI SDK.
+ */
+export interface ErrorEnvelope {
+	error(status: number, message: string, kind: ErrorKind): Response;
+	/** 429 with a `retry-after` header (seconds, at least 1) */
+	rateLimited(limit: number | undefined, retryAfterSeconds: number | undefined): Response;
+}
+
+function makeEnvelope(
+	build: (status: number, message: string, kind: ErrorKind) => Response
+): ErrorEnvelope {
+	return {
+		error: build,
+		rateLimited(limit, retryAfterSeconds) {
+			const res = build(429, `Rate limit exceeded: ${limit} requests/min`, 'rate_limit');
+			res.headers.set('retry-after', String(retryAfterSeconds ?? 1));
+			return res;
+		}
+	};
+}
+
+export const openAiEnvelope: ErrorEnvelope = makeEnvelope((status, message, kind) =>
+	gatewayError(status, message, OPENAI_ERROR_TYPES[kind])
+);
+
+export const geminiEnvelope: ErrorEnvelope = makeEnvelope((status, message, kind) =>
+	geminiNativeError(status, message, GOOGLE_ERROR_STATUSES[kind])
+);
+
+/* ------------------------------------------------------------------------- */
+/* Usage extraction                                                          */
+/* ------------------------------------------------------------------------- */
 
 /**
  * Normalize usage from a *native* Gemini response (buffered or a streamed
@@ -105,23 +125,16 @@ function geminiNativeUsage(parsed: unknown): NormalizedUsage | null {
 	return usageObj ? normalizeUsage(usageObj) : null;
 }
 
-interface DrainedSse {
-	usage: NormalizedUsage | null;
-	/** the verbatim SSE body, reassembled — used to cache a streamed response */
-	raw: string;
-	/** false if the stream errored/aborted before completing (don't cache) */
-	complete: boolean;
-}
-
 /**
- * Pull a usage figure out of one decoded SSE chunk, or null if it carries none.
- * The OpenAI extractor reads the chat shape (`{ usage }`) and the Responses
- * shape (`{ response: { usage } }`); the native Gemini extractor reads
- * `{ usageMetadata }`. Whichever the stream uses, the drain below keeps the last
- * one seen.
+ * Pull a usage figure out of one decoded JSON payload (a buffered response or a
+ * streamed SSE chunk), or null if it carries none.
  */
 type UsageExtractor = (obj: Record<string, unknown>) => NormalizedUsage | null;
 
+/**
+ * The OpenAI stream extractor reads the chat shape (`{ usage }`) and the
+ * Responses shape (`{ response: { usage } }`).
+ */
 const openAiUsageExtractor: UsageExtractor = (obj) => {
 	const u =
 		(isRecord(obj.usage) && obj.usage) ||
@@ -129,8 +142,30 @@ const openAiUsageExtractor: UsageExtractor = (obj) => {
 	return u ? normalizeUsage(u) : null;
 };
 
+/** Buffered OpenAI-shaped responses carry usage at the top level only. */
+const bufferedOpenAiUsageExtractor: UsageExtractor = (obj) => normalizeUsage(obj.usage);
+
+/** The native Gemini extractor reads `{ usageMetadata }`. */
 const geminiUsageExtractor: UsageExtractor = (obj) =>
 	isRecord(obj.usageMetadata) ? geminiNativeUsage(obj) : null;
+
+/** Usage from a buffered response body; null for non-JSON bodies or no usage. */
+function usageFromText(text: string, extract: UsageExtractor): NormalizedUsage | null {
+	try {
+		const parsed: unknown = JSON.parse(text);
+		return isRecord(parsed) ? extract(parsed) : null;
+	} catch {
+		return null;
+	}
+}
+
+interface DrainedSse {
+	usage: NormalizedUsage | null;
+	/** the verbatim SSE body, reassembled — used to cache a streamed response */
+	raw: string;
+	/** false if the stream errored/aborted before completing (don't cache) */
+	complete: boolean;
+}
 
 /**
  * Drain an SSE response stream: capture the last token usage it reports (via the
@@ -183,6 +218,10 @@ async function drainSse(
 	}
 	return { usage, raw, complete };
 }
+
+/* ------------------------------------------------------------------------- */
+/* Request headers and authentication                                        */
+/* ------------------------------------------------------------------------- */
 
 /**
  * Read the caller's machine token. Accepts
@@ -262,6 +301,10 @@ export async function authenticateGateway(
 	return { ok: true, auth: { token, ip: event.getClientAddress() } };
 }
 
+/* ------------------------------------------------------------------------- */
+/* Credentials                                                               */
+/* ------------------------------------------------------------------------- */
+
 interface ProviderCreds {
 	apiKey: string;
 	/** endpoint override (Azure), null when the static baseUrl applies */
@@ -291,6 +334,530 @@ async function loadConfiguredProviders(): Promise<string[]> {
 	return rows.map((r) => r.provider);
 }
 
+export { loadProviderCreds };
+
+/* ------------------------------------------------------------------------- */
+/* Request context and audit trace                                           */
+/* ------------------------------------------------------------------------- */
+
+/** Response payload attached to a request trace. */
+export interface TraceResponse {
+	response?: string | null;
+	format?: 'json' | 'sse';
+}
+
+/** Writes an audit row and, when tracing is on, the paired request trace. */
+export type AuditTrace = (entry: AuditEntry, resp?: TraceResponse) => Promise<void>;
+
+export interface AuditTraceOptions {
+	serviceId: string;
+	/** request tracing switch resolved from the effective config */
+	tracingEnabled: boolean;
+	groupId: string | null;
+	metadata: Record<string, unknown> | null;
+	/** the request payload stored on the trace (the body, or a summary of it) */
+	request: unknown;
+}
+
+/**
+ * Build the audit+trace writer for one request. Every audit row is written; when
+ * tracing is enabled (policy override wins over the instance default) the row is
+ * paired with a request trace — the prompt plus, on the paths that produced one,
+ * the response payload — for the in-app trace viewer.
+ */
+export function makeAuditTrace(
+	opts: AuditTraceOptions,
+	deps: { audit: typeof audit; recordTrace: typeof recordTrace } = { audit, recordTrace }
+): AuditTrace {
+	return async (entry, resp) => {
+		const auditLogId = await deps.audit(entry);
+		if (opts.tracingEnabled && auditLogId) {
+			await deps.recordTrace({
+				auditLogId,
+				serviceId: opts.serviceId,
+				groupId: opts.groupId,
+				metadata: opts.metadata,
+				request: opts.request,
+				response: resp?.response ?? null,
+				format: resp?.format ?? null
+			});
+		}
+	};
+}
+
+/** Everything the shared pipeline steps need to know about one gateway request. */
+interface RequestContext {
+	event: RequestEvent;
+	token: ResolvedToken;
+	ip: string;
+	started: number;
+	scope: Capability;
+	model: string;
+	envelope: ErrorEnvelope;
+	auditTrace: AuditTrace;
+}
+
+function createContext(
+	event: RequestEvent,
+	auth: GatewayAuth,
+	init: { scope: Capability; model: string; envelope: ErrorEnvelope; traceRequest: unknown }
+): RequestContext {
+	const { token, ip } = auth;
+	return {
+		event,
+		token,
+		ip,
+		started: Date.now(),
+		scope: init.scope,
+		model: init.model,
+		envelope: init.envelope,
+		auditTrace: makeAuditTrace({
+			serviceId: token.serviceId,
+			tracingEnabled: token.effective.tracingEnabled,
+			groupId: readTraceGroup(event),
+			metadata: readTraceMetadata(event),
+			request: init.traceRequest
+		})
+	};
+}
+
+interface RejectionAudit {
+	/** provider id to record; omitted when routing failed before one was known */
+	provider?: string | null;
+	statusCode: number;
+	detail: string;
+	/** a policy decision (`policy.deny`) rather than a gateway error */
+	deny?: boolean;
+	/** record latency (for failures after work started, e.g. the upstream call) */
+	timed?: boolean;
+}
+
+/** Audit a request the gateway rejected and hand back the client response. */
+async function reject(
+	ctx: RequestContext,
+	info: RejectionAudit,
+	response: Response
+): Promise<Response> {
+	await ctx.auditTrace({
+		action: info.deny ? 'policy.deny' : `gateway.${ctx.scope}`,
+		status: info.deny ? 'deny' : 'error',
+		serviceId: ctx.token.serviceId,
+		tokenId: ctx.token.tokenId,
+		provider: info.provider,
+		model: ctx.model,
+		statusCode: info.statusCode,
+		...(info.timed ? { latencyMs: Date.now() - ctx.started } : {}),
+		ip: ctx.ip,
+		detail: info.detail
+	});
+	return response;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Guards                                                                    */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Route by model, choosing among the providers this instance has configured.
+ * OpenAI and Azure share the model namespace; an explicit `preferProvider` (set
+ * by Azure-style URL routes to signal URL-level intent) wins, otherwise the
+ * policy's preferredProvider breaks the tie. See resolveProvider.
+ */
+async function resolveRoutedProvider(
+	ctx: RequestContext,
+	preferProvider: string | undefined
+): Promise<ProviderDef | Response> {
+	const configuredProviders = await loadConfiguredProviders();
+	const provider = resolveProvider(
+		ctx.model,
+		configuredProviders,
+		preferProvider ?? ctx.token.effective.preferredProvider
+	);
+	if (provider) return provider;
+
+	// Distinguish "we don't recognize this model" from "we recognize it but the
+	// instance hasn't configured the provider that would serve it".
+	const known = providerForModel(ctx.model);
+	if (known) {
+		return reject(
+			ctx,
+			{ provider: known.id, statusCode: 502, detail: `no ${known.id} secret configured` },
+			ctx.envelope.error(
+				502,
+				`No ${known.label} credentials configured for this instance`,
+				'upstream_misconfigured'
+			)
+		);
+	}
+	return reject(
+		ctx,
+		{ statusCode: 400, detail: `unknown model "${ctx.model}"` },
+		ctx.envelope.error(400, `Unknown or unsupported model: ${ctx.model}`, 'model_not_found')
+	);
+}
+
+/**
+ * Capability, policy and rate-limit checks shared by every model-routed
+ * pipeline. Returns the (already audited) rejection, or null to continue.
+ */
+async function checkAccess(ctx: RequestContext, provider: ProviderDef): Promise<Response | null> {
+	const { token, scope, model } = ctx;
+
+	// not every provider implements every endpoint (e.g. the Responses API and
+	// embeddings are OpenAI-only)
+	if (!providerSupports(provider, scope)) {
+		return reject(
+			ctx,
+			{
+				provider: provider.id,
+				statusCode: 400,
+				detail: `${provider.id} does not support ${scope}`
+			},
+			ctx.envelope.error(
+				400,
+				`${provider.label} does not support ${scope} requests (model "${model}")`,
+				'model_not_found'
+			)
+		);
+	}
+
+	const decision = evaluatePolicy(token, { provider: provider.id, model, scope });
+	if (!decision.allow) {
+		return reject(
+			ctx,
+			{ provider: provider.id, statusCode: 403, detail: decision.reason, deny: true },
+			ctx.envelope.error(403, `Request denied by policy: ${decision.reason}`, 'permission')
+		);
+	}
+
+	// rate limiting (in-memory, per token) — protects the gateway and upstream
+	// from runaway callers before we do any I/O.
+	const rl = checkRateLimit(token.tokenId, token.effective.rateLimitPerMinute);
+	if (!rl.ok) {
+		return reject(
+			ctx,
+			{
+				provider: provider.id,
+				statusCode: 429,
+				detail: `rate limit exceeded (${rl.limit}/min)`,
+				deny: true
+			},
+			ctx.envelope.rateLimited(rl.limit, rl.retryAfter)
+		);
+	}
+	return null;
+}
+
+/**
+ * Replay a cached response when the exact-match cache has one. A hit is free —
+ * no key, no upstream call, no spend — so this runs before the budget gate.
+ */
+async function replayCached(
+	ctx: RequestContext,
+	provider: ProviderDef,
+	cacheKey: string,
+	stream: boolean,
+	detailPrefix = ''
+): Promise<Response | null> {
+	const hit = await getCached(cacheKey);
+	if (!hit) return null;
+	await ctx.auditTrace(
+		{
+			action: `gateway.${ctx.scope}`,
+			status: 'ok',
+			serviceId: ctx.token.serviceId,
+			tokenId: ctx.token.tokenId,
+			provider: provider.id,
+			model: ctx.model,
+			statusCode: hit.statusCode,
+			costUsd: 0,
+			// exact savings: what this request would have cost upstream
+			savedUsd: hit.costUsd,
+			// tokens the miss consumed — replayed here as "saved" so analytics can
+			// show cache impact without double-counting consumption.
+			savedInputTokens: hit.inputTokens,
+			savedOutputTokens: hit.outputTokens,
+			latencyMs: Date.now() - ctx.started,
+			ip: ctx.ip,
+			detail: `${detailPrefix}cache hit${stream ? ' (stream)' : ''}`
+		},
+		{ response: hit.response, format: stream ? 'sse' : 'json' }
+	);
+	return new Response(hit.response, {
+		status: hit.statusCode,
+		headers: stream
+			? { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', 'x-uprox-cache': 'HIT' }
+			: { 'content-type': 'application/json', 'x-uprox-cache': 'HIT' }
+	});
+}
+
+/**
+ * Enforce the three budget scopes that apply to a request: the instance-wide
+ * ceiling, the service's aggregate ceiling, and the token's personal cap. All
+ * are checked; a request must pass each budget that is set. On denial returns
+ * the 402 Response (already audited); otherwise returns a single release handle
+ * that frees every reservation it took (a no-op when no budget applies). See
+ * budget.ts for the bucket model.
+ */
+async function enforceBudgets(
+	ctx: RequestContext,
+	provider: ProviderDef
+): Promise<Response | (() => void)> {
+	const { token } = ctx;
+	const { serviceBudget, tokenBudget, instanceBudget } = token.effective;
+	const buckets = [
+		// the instance ceiling shares one bucket across all traffic — a fixed id
+		{ scope: 'instance' as const, id: 'instance', limits: instanceBudget },
+		{ scope: 'service' as const, id: token.serviceId, limits: serviceBudget },
+		{ scope: 'token' as const, id: token.tokenId, limits: tokenBudget }
+	].filter((b) => b.limits.dailyBudgetUsd > 0 || b.limits.monthlyBudgetUsd > 0);
+
+	// Soft-alert evaluation (emails admins once per window/level), per budget
+	// scope. Runs on allow and deny alike. Never blocks the request.
+	if (serviceBudget.dailyBudgetUsd > 0 || serviceBudget.monthlyBudgetUsd > 0) {
+		void maybeSendBudgetAlert(token.serviceId, token.serviceName, serviceBudget);
+	}
+	if (instanceBudget.dailyBudgetUsd > 0 || instanceBudget.monthlyBudgetUsd > 0) {
+		void maybeSendInstanceBudgetAlert(instanceBudget);
+	}
+
+	for (const b of buckets) {
+		const budget = await checkBudget(b.scope, b.id, b.limits);
+		if (!budget.ok) {
+			return reject(
+				ctx,
+				{ provider: provider.id, statusCode: 402, detail: budget.reason, deny: true },
+				ctx.envelope.error(402, `Request denied: ${budget.reason}`, 'insufficient_quota')
+			);
+		}
+	}
+
+	// Reserve only after all checks pass, so a denied request leaves no residue.
+	const releases = buckets.map((b) => reserve(b.scope, b.id));
+	return () => releases.forEach((r) => r());
+}
+
+/** What a request needs to reach its upstream once every guard has passed. */
+interface UpstreamGrant {
+	apiKey: string;
+	baseUrl: string;
+	/** frees the in-flight budget reservation; call exactly once */
+	release: () => void;
+}
+
+/**
+ * Budget gate, then credentials and base URL. The budget reservation covers the
+ * in-flight gap (a request's cost lands in the audit log only on completion); it
+ * is released here on failure and by the recorder once the cost is recorded.
+ */
+async function acquireUpstream(
+	ctx: RequestContext,
+	provider: ProviderDef
+): Promise<UpstreamGrant | Response> {
+	const budgetGate = await enforceBudgets(ctx, provider);
+	if (budgetGate instanceof Response) return budgetGate;
+	const release = budgetGate;
+
+	// honour the service's pinned secret (e.g. a specific Azure resource) when it
+	// belongs to the resolved provider
+	const creds = await loadProviderCreds(provider.id, ctx.token.providerSecretId);
+	if (!creds) {
+		release();
+		return reject(
+			ctx,
+			{ provider: provider.id, statusCode: 502, detail: `no ${provider.id} secret configured` },
+			ctx.envelope.error(
+				502,
+				`No ${provider.label} credentials configured for this instance`,
+				'upstream_misconfigured'
+			)
+		);
+	}
+
+	// for Azure this is the instance's configured resource endpoint; a
+	// misconfigured endpoint-based provider can't be reached
+	const baseUrl = resolveBaseUrl(provider, creds.baseUrl);
+	if (!baseUrl) {
+		release();
+		return reject(
+			ctx,
+			{ provider: provider.id, statusCode: 502, detail: `no ${provider.id} endpoint configured` },
+			ctx.envelope.error(
+				502,
+				`No ${provider.label} endpoint configured for this instance`,
+				'upstream_misconfigured'
+			)
+		);
+	}
+	return { apiKey: creds.apiKey, baseUrl, release };
+}
+
+/* ------------------------------------------------------------------------- */
+/* Upstream call and usage recording                                         */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Call the upstream. A network failure releases the reservation, is audited and
+ * comes back as a 502 in the caller's envelope.
+ */
+async function fetchUpstream(
+	ctx: RequestContext,
+	provider: ProviderDef,
+	grant: UpstreamGrant,
+	url: string,
+	init: RequestInit
+): Promise<{ ok: true; upstream: Response } | { ok: false; response: Response }> {
+	try {
+		return { ok: true, upstream: await fetch(url, init) };
+	} catch (err) {
+		grant.release();
+		const response = await reject(
+			ctx,
+			{
+				provider: provider.id,
+				statusCode: 502,
+				detail: err instanceof Error ? err.message : 'upstream fetch failed',
+				timed: true
+			},
+			ctx.envelope.error(502, 'Upstream provider request failed', 'upstream_unavailable')
+		);
+		return { ok: false, response };
+	}
+}
+
+/** Where a cacheable response is stored. */
+interface CacheTarget {
+	key: string;
+	ttlSeconds: number;
+}
+
+interface CompletionRecord {
+	provider: ProviderDef;
+	statusCode: number;
+	ok: boolean;
+	usage: NormalizedUsage | null;
+	/** response payload for the trace and the cache */
+	response: string;
+	format?: 'json' | 'sse';
+	detail?: string;
+	/** null when the request isn't cacheable */
+	cache: CacheTarget | null;
+	/** false for a truncated stream, which must never be cached */
+	complete: boolean;
+	/** frees the in-flight budget reservation */
+	release: () => void;
+}
+
+/** Cost a usage figure; a pricing failure records a null cost instead of throwing. */
+async function costOf(model: string, usage: NormalizedUsage | null): Promise<CostEstimate> {
+	if (!usage) return { costUsd: null, tier: null };
+	try {
+		return await estimateCost(
+			model,
+			usage.input ?? undefined,
+			usage.output ?? undefined,
+			usage.cacheRead ?? 0,
+			usage.cacheWrite ?? 0
+		);
+	} catch (err) {
+		console.error('[gateway] cost estimation failed', err);
+		return { costUsd: null, tier: null };
+	}
+}
+
+/**
+ * The single usage -> cost -> audit (+ trace) -> cache recorder shared by every
+ * pipeline, buffered and streamed. Always releases the budget reservation once
+ * the real cost is in the audit log, and populates the cache on a clean success.
+ */
+async function recordCompletion(ctx: RequestContext, r: CompletionRecord): Promise<void> {
+	const { usage } = r;
+	try {
+		const { costUsd, tier } = await costOf(ctx.model, usage);
+		await ctx.auditTrace(
+			{
+				action: `gateway.${ctx.scope}`,
+				status: r.ok ? 'ok' : 'error',
+				serviceId: ctx.token.serviceId,
+				tokenId: ctx.token.tokenId,
+				provider: r.provider.id,
+				model: ctx.model,
+				statusCode: r.statusCode,
+				costUsd,
+				inputTokens: usage?.input ?? null,
+				outputTokens: usage?.output ?? null,
+				providerCachedTokens: usage?.cacheRead ?? null,
+				cacheWriteTokens: usage?.cacheWrite ?? null,
+				contextTier: tier,
+				latencyMs: Date.now() - ctx.started,
+				ip: ctx.ip,
+				...(r.detail ? { detail: r.detail } : {})
+			},
+			{ response: r.response, format: r.format }
+		);
+		if (r.cache && r.ok && r.complete && r.response) {
+			await putCached({
+				cacheKey: r.cache.key,
+				provider: r.provider.id,
+				model: ctx.model,
+				statusCode: r.statusCode,
+				response: r.response,
+				costUsd,
+				inputTokens: usage?.input ?? null,
+				outputTokens: usage?.output ?? null,
+				ttlSeconds: r.cache.ttlSeconds
+			});
+		}
+	} finally {
+		r.release();
+	}
+}
+
+interface StreamRecording {
+	provider: ProviderDef;
+	upstream: Response;
+	source: ReadableStream<Uint8Array>;
+	extract: UsageExtractor;
+	cache: CacheTarget | null;
+	detail: string;
+	release: () => void;
+}
+
+/**
+ * Hand a streamed response to the client while its usage is recorded in the
+ * background once the stream finishes.
+ */
+function streamWithRecording(ctx: RequestContext, s: StreamRecording): Response {
+	const [clientBranch, costBranch] = s.source.tee();
+	void (async () => {
+		const { usage, raw, complete } = await drainSse(costBranch, s.extract);
+		await recordCompletion(ctx, {
+			provider: s.provider,
+			statusCode: s.upstream.status,
+			ok: true,
+			usage,
+			response: raw,
+			format: 'sse',
+			detail: s.detail,
+			cache: s.cache,
+			complete,
+			release: s.release
+		});
+	})();
+	return new Response(clientBranch, {
+		status: s.upstream.status,
+		headers: {
+			'content-type': s.upstream.headers.get('content-type') ?? 'text/event-stream',
+			'cache-control': 'no-cache',
+			...(s.cache ? { 'x-uprox-cache': 'MISS' } : {})
+		}
+	});
+}
+
+/* ------------------------------------------------------------------------- */
+/* OpenAI-compatible JSON pipeline                                           */
+/* ------------------------------------------------------------------------- */
+
 export interface ProxyOptions {
 	auth: GatewayAuth;
 	/** the gateway capability this request exercises (also the policy scope) */
@@ -314,151 +881,26 @@ export interface ProxyOptions {
  */
 export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): Promise<Response> {
 	const { auth, scope, model, path, body, stream, preferProvider } = opts;
-	const started = Date.now();
-	const { token, ip } = auth;
-
-	// Request tracing: policy override wins over the instance default. When on, we
-	// pair each audit row with a request trace (the prompt + response payload) for
-	// the in-app trace viewer. auditTrace writes both; pass the response payload on
-	// the paths that produced one (cache hits and completions), request-only elsewhere.
-	const traceOn = token.effective.tracingEnabled;
-	const traceGroupId = readTraceGroup(event);
-	const traceMetadata = readTraceMetadata(event);
-	const auditTrace = async (
-		entry: AuditEntry,
-		resp?: { response?: string | null; format?: 'json' | 'sse' }
-	) => {
-		const auditLogId = await audit(entry);
-		if (traceOn && auditLogId) {
-			await recordTrace({
-				auditLogId,
-				serviceId: token.serviceId,
-				groupId: traceGroupId,
-				metadata: traceMetadata,
-				request: body,
-				response: resp?.response ?? null,
-				format: resp?.format ?? null
-			});
-		}
-	};
-
-	// Route by model, choosing among the providers this instance has configured.
-	// OpenAI and Azure share the model namespace; an explicit `preferProvider`
-	// (set by Azure-style URL routes to signal URL-level intent) wins, otherwise
-	// the policy's preferredProvider breaks the tie. See resolveProvider.
-	const configuredProviders = await loadConfiguredProviders();
-	const provider: ProviderDef | null = resolveProvider(
+	const ctx = createContext(event, auth, {
+		scope,
 		model,
-		configuredProviders,
-		preferProvider ?? token.effective.preferredProvider
-	);
-	// The model/deployment name to send upstream and price by — passed through
-	// unchanged (no provider alias to strip).
-	const sendModel = model;
-	if (!provider) {
-		// Distinguish "we don't recognize this model" from "we recognize it but
-		// the instance hasn't configured the provider that would serve it".
-		const known = providerForModel(model);
-		await auditTrace({
-			action: `gateway.${scope}`,
-			status: 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: known?.id,
-			model,
-			statusCode: known ? 502 : 400,
-			ip,
-			detail: known ? `no ${known.id} secret configured` : `unknown model "${model}"`
-		});
-		return known
-			? gatewayError(
-					502,
-					`No ${PROVIDERS[known.id].label} credentials configured for this instance`,
-					'api_error'
-				)
-			: gatewayError(400, `Unknown or unsupported model: ${model}`, 'model_not_found');
-	}
+		envelope: openAiEnvelope,
+		traceRequest: body
+	});
+	const { token } = ctx;
 
-	// capability check: not every provider implements every endpoint
-	// (e.g. the Responses API and embeddings are OpenAI-only).
-	if (!providerSupports(provider, scope)) {
-		await auditTrace({
-			action: `gateway.${scope}`,
-			status: 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 400,
-			ip,
-			detail: `${provider.id} does not support ${scope}`
-		});
-		return gatewayError(
-			400,
-			`${PROVIDERS[provider.id].label} does not support ${scope} requests (model "${model}")`,
-			'model_not_found'
-		);
-	}
+	const provider = await resolveRoutedProvider(ctx, preferProvider);
+	if (provider instanceof Response) return provider;
 
-	// policy enforcement
-	const decision = evaluatePolicy(token, { provider: provider.id, model, scope });
-	if (!decision.allow) {
-		await auditTrace({
-			action: 'policy.deny',
-			status: 'deny',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 403,
-			ip,
-			detail: decision.reason
-		});
-		return gatewayError(403, `Request denied by policy: ${decision.reason}`, 'permission_error');
-	}
-
-	// rate limiting (in-memory, per token) — protects the gateway and upstream
-	// from runaway callers before we do any I/O.
-	const rl = checkRateLimit(token.tokenId, token.effective.rateLimitPerMinute);
-	if (!rl.ok) {
-		await auditTrace({
-			action: 'policy.deny',
-			status: 'deny',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 429,
-			ip,
-			detail: `rate limit exceeded (${rl.limit}/min)`
-		});
-		return new Response(
-			JSON.stringify({
-				error: {
-					message: `Rate limit exceeded: ${rl.limit} requests/min`,
-					type: 'rate_limit_error',
-					code: null,
-					param: null
-				}
-			}),
-			{
-				status: 429,
-				headers: {
-					'content-type': 'application/json',
-					'retry-after': String(rl.retryAfter ?? 1)
-				}
-			}
-		);
-	}
+	const denied = await checkAccess(ctx, provider);
+	if (denied) return denied;
 
 	// exact-match cache: applies to chat, embeddings, and the Responses API.
-	// A hit replays the stored upstream response for free — no key, no upstream
-	// call, no spend — so we check it before the budget gate.
-	// Streaming responses are cacheable too: we buffer the SSE body below and
-	// replay it verbatim on a hit. The cache key includes the request's `stream`
-	// flag, so a streamed request only ever matches a stored SSE body and a
-	// buffered request only matches stored JSON — formats never cross.
-	// caching is an instance-wide optimization, not access control: it applies even
+	// Streaming responses are cacheable too: the SSE body is captured and replayed
+	// verbatim on a hit. The cache key includes the request's `stream` flag, so a
+	// streamed request only ever matches a stored SSE body and a buffered request
+	// only matches stored JSON — formats never cross.
+	// Caching is an instance-wide optimization, not access control: it applies even
 	// to services with no policy. A policy's cacheTtlSeconds, when set (non-null),
 	// overrides the instance default — including 0 to explicitly opt a policy out.
 	// Note on the Responses API: a multi-turn call carries `previous_response_id`,
@@ -472,104 +914,20 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		(scope === 'chat' || scope === 'embeddings' || scope === 'responses') &&
 		cacheTtl > 0 &&
 		!responsesStoreOff &&
-		// only cache reproducible requests: embeddings always, chat/responses
-		// only when sampling is pinned (temperature 0 or an explicit seed), so
-		// two identical-but-varied prompts each reach the model.
+		// only cache reproducible requests: embeddings always, chat/responses only
+		// when sampling is pinned (temperature 0 or an explicit seed), so two
+		// identical-but-varied prompts each reach the model.
 		isDeterministicRequest(scope, body);
-	const cacheKey = cacheable ? cacheKeyFor(provider.id, path, body, token.providerSecretId) : null;
-	if (cacheKey) {
-		const hit = await getCached(cacheKey);
-		if (hit) {
-			await auditTrace(
-				{
-					action: `gateway.${scope}`,
-					status: 'ok',
-					serviceId: token.serviceId,
-					tokenId: token.tokenId,
-					provider: provider.id,
-					model,
-					statusCode: hit.statusCode,
-					costUsd: 0,
-					// exact savings: what this request would have cost upstream
-					savedUsd: hit.costUsd,
-					// tokens the miss consumed — replayed here as "saved" so analytics
-					// can show cache impact without double-counting consumption.
-					savedInputTokens: hit.inputTokens,
-					savedOutputTokens: hit.outputTokens,
-					latencyMs: Date.now() - started,
-					ip,
-					detail: stream ? 'cache hit (stream)' : 'cache hit'
-				},
-				{ response: hit.response, format: stream ? 'sse' : 'json' }
-			);
-			return new Response(hit.response, {
-				status: hit.statusCode,
-				headers: stream
-					? {
-							'content-type': 'text/event-stream',
-							'cache-control': 'no-cache',
-							'x-uprox-cache': 'HIT'
-						}
-					: { 'content-type': 'application/json', 'x-uprox-cache': 'HIT' }
-			});
-		}
+	const cache: CacheTarget | null = cacheable
+		? { key: cacheKeyFor(provider.id, path, body, token.providerSecretId), ttlSeconds: cacheTtl }
+		: null;
+	if (cache) {
+		const hit = await replayCached(ctx, provider, cache.key, stream);
+		if (hit) return hit;
 	}
 
-	// budget enforcement: the service's aggregate ceiling AND the token's personal
-	// cap, both resolved via the effective-config cascade and both enforced. A
-	// reservation covers the in-flight gap (a request's cost lands in the audit log
-	// only on completion); the returned handle frees every reservation it took — a
-	// no-op when no budget applies, so the completion/error paths below can call it
-	// unconditionally.
-	const budgetGate = await enforceBudgets(token, provider, model, ip, auditTrace);
-	if (budgetGate instanceof Response) return budgetGate;
-	const releaseReservation = budgetGate;
-
-	// upstream credentials — honour the service's pinned secret (e.g. a specific
-	// Azure resource) when it belongs to the resolved provider.
-	const creds = await loadProviderCreds(provider.id, token.providerSecretId);
-	if (!creds) {
-		releaseReservation();
-		await auditTrace({
-			action: `gateway.${scope}`,
-			status: 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 502,
-			ip,
-			detail: `no ${provider.id} secret configured`
-		});
-		return gatewayError(
-			502,
-			`No ${PROVIDERS[provider.id].label} credentials configured for this instance`,
-			'api_error'
-		);
-	}
-
-	// resolve the upstream base URL — for Azure this is the instance's configured
-	// resource endpoint; a misconfigured endpoint-based provider can't be reached.
-	const baseUrl = resolveBaseUrl(provider, creds.baseUrl);
-	if (!baseUrl) {
-		releaseReservation();
-		await auditTrace({
-			action: `gateway.${scope}`,
-			status: 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 502,
-			ip,
-			detail: `no ${provider.id} endpoint configured`
-		});
-		return gatewayError(
-			502,
-			`No ${PROVIDERS[provider.id].label} endpoint configured for this instance`,
-			'api_error'
-		);
-	}
+	const grant = await acquireUpstream(ctx, provider);
+	if (grant instanceof Response) return grant;
 
 	// A provider with an adapter speaks a non-OpenAI native API; it builds its own
 	// URL and translates the request/response bodies. Pass-through providers send
@@ -587,198 +945,76 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	}
 
 	const upstreamUrl = adapter
-		? adapter.buildUrl({ baseUrl, scope, model: sendModel, stream })
-		: `${baseUrl}${path}`;
+		? adapter.buildUrl({ baseUrl: grant.baseUrl, scope, model, stream })
+		: `${grant.baseUrl}${path}`;
 	const upstreamBody = adapter ? adapter.translateRequest(scope, outboundBody) : outboundBody;
 
-	// proxy upstream
 	// Realtime endpoints are gated behind `OpenAI-Beta: realtime=v1`; default it
 	// when the client omitted the header, but honour a client-supplied value.
 	const incomingBeta =
 		event.request.headers.get('openai-beta') ?? (scope === 'realtime' ? 'realtime=v1' : null);
-	let upstream: Response;
-	try {
-		upstream = await fetch(upstreamUrl, {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json',
-				// Forward the beta opt-in header some OpenAI endpoints require —
-				// e.g. the Realtime endpoints need `OpenAI-Beta: realtime=v1`, and
-				// without it OpenAI 404s the route. Only for pass-through providers;
-				// adapters speak their own native API.
-				...(!adapter && incomingBeta ? { 'openai-beta': incomingBeta } : {}),
-				...authHeaders(provider, creds.apiKey)
-			},
-			body: JSON.stringify(upstreamBody)
-		});
-	} catch (err) {
-		releaseReservation();
-		await auditTrace({
-			action: `gateway.${scope}`,
-			status: 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 502,
-			latencyMs: Date.now() - started,
-			ip,
-			detail: err instanceof Error ? err.message : 'upstream fetch failed'
-		});
-		return gatewayError(502, 'Upstream provider request failed', 'api_error');
-	}
+	const fetched = await fetchUpstream(ctx, provider, grant, upstreamUrl, {
+		method: 'POST',
+		headers: {
+			'content-type': 'application/json',
+			// Forward the beta opt-in header some OpenAI endpoints require — e.g. the
+			// Realtime endpoints need `OpenAI-Beta: realtime=v1`, and without it OpenAI
+			// 404s the route. Only for pass-through providers; adapters speak their
+			// own native API.
+			...(!adapter && incomingBeta ? { 'openai-beta': incomingBeta } : {}),
+			...authHeaders(provider, grant.apiKey)
+		},
+		body: JSON.stringify(upstreamBody)
+	});
+	if (!fetched.ok) return fetched.response;
+	const { upstream } = fetched;
 
-	// streaming: tee the body — one branch goes to the client untouched, the
-	// other is drained in the background to extract the final usage chunk so we
-	// can still record cost. The audit fires once the stream finishes. For an
-	// adapter provider we first translate the native event stream into OpenAI SSE,
-	// so both the client branch and the usage drain see the familiar shape.
+	// Streaming: the client gets the body untouched while usage is captured for
+	// cost. For an adapter provider we first translate the native event stream
+	// into OpenAI SSE, so both the client and the usage capture see that shape.
 	if (stream && upstream.ok && upstream.body) {
-		const sourceStream = adapter
-			? adapter.translateStream({ model: sendModel }, upstream.body)
-			: upstream.body;
-		const [clientBranch, costBranch] = sourceStream.tee();
-		void (async () => {
-			try {
-				const { usage, raw, complete } = await drainSse(costBranch, openAiUsageExtractor);
-				const { costUsd: cost, tier } = usage
-					? await estimateCost(
-							sendModel,
-							usage.input ?? undefined,
-							usage.output ?? undefined,
-							usage.cacheRead ?? 0,
-							usage.cacheWrite ?? 0
-						)
-					: { costUsd: null, tier: null };
-				await auditTrace(
-					{
-						action: `gateway.${scope}`,
-						status: 'ok',
-						serviceId: token.serviceId,
-						tokenId: token.tokenId,
-						provider: provider.id,
-						model,
-						statusCode: upstream.status,
-						costUsd: cost,
-						inputTokens: usage?.input ?? null,
-						outputTokens: usage?.output ?? null,
-						providerCachedTokens: usage?.cacheRead ?? null,
-						cacheWriteTokens: usage?.cacheWrite ?? null,
-						contextTier: tier,
-						latencyMs: Date.now() - started,
-						ip,
-						detail: 'stream'
-					},
-					{ response: raw, format: 'sse' }
-				);
-				// only cache a stream that finished cleanly — never a truncated one
-				if (cacheKey && complete && raw) {
-					await putCached({
-						cacheKey,
-						provider: provider.id,
-						model,
-						statusCode: upstream.status,
-						response: raw,
-						costUsd: cost,
-						inputTokens: usage?.input ?? null,
-						outputTokens: usage?.output ?? null,
-						ttlSeconds: cacheTtl
-					});
-				}
-			} finally {
-				// real cost is now in the audit log — drop the in-flight reservation
-				releaseReservation();
-			}
-		})();
-		return new Response(clientBranch, {
-			status: upstream.status,
-			headers: {
-				'content-type': upstream.headers.get('content-type') ?? 'text/event-stream',
-				'cache-control': 'no-cache',
-				...(cacheKey ? { 'x-uprox-cache': 'MISS' } : {})
-			}
+		return streamWithRecording(ctx, {
+			provider,
+			upstream,
+			source: adapter ? adapter.translateStream({ model }, upstream.body) : upstream.body,
+			extract: openAiUsageExtractor,
+			cache,
+			detail: 'stream',
+			release: grant.release
 		});
 	}
 
-	// buffered response: translate (for adapter providers) then parse usage for
-	// cost tracking. After translation the body is OpenAI-shaped, so usage parsing,
-	// caching and the returned payload all use the same code path as pass-through.
+	// Buffered: translate (for adapter providers) then parse usage for cost. After
+	// translation the body is OpenAI-shaped, so usage parsing, caching and the
+	// returned payload all use the same code path as pass-through.
 	const rawText = await upstream.text();
 	const text = adapter
-		? adapter.translateResponse({ scope, model: sendModel, text: rawText, ok: upstream.ok })
+		? adapter.translateResponse({ scope, model, text: rawText, ok: upstream.ok })
 		: rawText;
-	let cost: number | null = null;
-	let tier: ContextTier | null = null;
-	let cachedTokens: number | null = null;
-	let cacheWriteTokens: number | null = null;
-	let inputTokens: number | null = null;
-	let outputTokens: number | null = null;
-	try {
-		const parsed = JSON.parse(text) as { usage?: unknown };
-		const usage = normalizeUsage(parsed.usage);
-		inputTokens = usage?.input ?? null;
-		outputTokens = usage?.output ?? null;
-		cachedTokens = usage?.cacheRead ?? null;
-		cacheWriteTokens = usage?.cacheWrite ?? null;
-		({ costUsd: cost, tier } = await estimateCost(
-			sendModel,
-			inputTokens ?? undefined,
-			outputTokens ?? undefined,
-			cachedTokens ?? 0,
-			cacheWriteTokens ?? 0
-		));
-	} catch {
-		// non-JSON or no usage; leave cost null
-	}
-
-	await auditTrace(
-		{
-			action: `gateway.${scope}`,
-			status: upstream.ok ? 'ok' : 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: upstream.status,
-			costUsd: cost,
-			inputTokens,
-			outputTokens,
-			providerCachedTokens: cachedTokens,
-			cacheWriteTokens,
-			contextTier: tier,
-			latencyMs: Date.now() - started,
-			ip
-		},
-		{ response: text, format: 'json' }
-	);
-	// real cost is now in the audit log — drop the in-flight reservation
-	releaseReservation();
-
-	// populate the cache on a successful, cacheable response
-	if (cacheKey && upstream.ok) {
-		await putCached({
-			cacheKey,
-			provider: provider.id,
-			model,
-			statusCode: upstream.status,
-			response: text,
-			costUsd: cost,
-			inputTokens,
-			outputTokens,
-			ttlSeconds: cacheTtl
-		});
-	}
+	await recordCompletion(ctx, {
+		provider,
+		statusCode: upstream.status,
+		ok: upstream.ok,
+		usage: usageFromText(text, bufferedOpenAiUsageExtractor),
+		response: text,
+		format: 'json',
+		cache,
+		complete: true,
+		release: grant.release
+	});
 
 	return new Response(text, {
 		status: upstream.status,
 		headers: {
 			'content-type': 'application/json',
-			...(cacheKey ? { 'x-uprox-cache': 'MISS' } : {})
+			...(cache ? { 'x-uprox-cache': 'MISS' } : {})
 		}
 	});
 }
 
-export { loadProviderCreds };
+/* ------------------------------------------------------------------------- */
+/* Multipart pipeline                                                        */
+/* ------------------------------------------------------------------------- */
 
 export interface MultipartProxyOptions {
 	auth: GatewayAuth;
@@ -795,272 +1031,71 @@ export interface MultipartProxyOptions {
 
 /**
  * Model-routed proxy for endpoints whose request body is multipart/form-data —
- * the OpenAI Audio API (`/audio/transcriptions`). It shares the JSON path's
- * cross-cutting concerns (route by model → capability check → policy → rate
- * limit → budget → audit), but forwards a rebuilt {@link FormData} instead of a
- * JSON body, so the uploaded audio survives with its boundary intact. No
- * caching or streaming: a transcription isn't a deterministic, replayable
- * request. Cost is best-effort — token-billed models (gpt-4o-transcribe) report
- * usage and are priced; whisper-1 reports none and records a null cost.
+ * audio transcriptions and image edits. It shares the JSON path's cross-cutting
+ * concerns (route by model → capability check → policy → rate limit → budget →
+ * audit), but forwards a rebuilt {@link FormData} instead of a JSON body, so the
+ * uploaded bytes survive with their boundary intact. No caching or streaming: a
+ * transcription isn't a deterministic, replayable request. Cost is best-effort —
+ * token-billed models (gpt-4o-transcribe, gpt-image-1) report usage and are
+ * priced; whisper-1 reports none and records a null cost.
  */
 export async function proxyMultipartToProvider(
 	event: RequestEvent,
 	opts: MultipartProxyOptions
 ): Promise<Response> {
 	const { auth, scope, model, path, form, preferProvider } = opts;
-	const started = Date.now();
-	const { token, ip } = auth;
-
-	// Request tracing: mirror proxyToProvider, but never store the raw multipart
-	// body (it's binary audio) — record a compact request summary instead.
-	const traceOn = token.effective.tracingEnabled;
-	const traceGroupId = readTraceGroup(event);
-	const traceMetadata = readTraceMetadata(event);
-	const auditTrace = async (entry: AuditEntry, resp?: { response?: string | null }) => {
-		const auditLogId = await audit(entry);
-		if (traceOn && auditLogId) {
-			await recordTrace({
-				auditLogId,
-				serviceId: token.serviceId,
-				groupId: traceGroupId,
-				metadata: traceMetadata,
-				request: { endpoint: path, model },
-				response: resp?.response ?? null,
-				format: 'json'
-			});
-		}
-	};
-
-	// Route by model among configured providers (OpenAI/Azure share the namespace;
-	// preferProvider or the policy's preferredProvider breaks the tie).
-	const configuredProviders = await loadConfiguredProviders();
-	const provider: ProviderDef | null = resolveProvider(
+	// never store the raw multipart body (binary audio/images) on the trace —
+	// record a compact request summary instead
+	const ctx = createContext(event, auth, {
+		scope,
 		model,
-		configuredProviders,
-		preferProvider ?? token.effective.preferredProvider
-	);
-	if (!provider) {
-		const known = providerForModel(model);
-		await auditTrace({
-			action: `gateway.${scope}`,
-			status: 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: known?.id,
-			model,
-			statusCode: known ? 502 : 400,
-			ip,
-			detail: known ? `no ${known.id} secret configured` : `unknown model "${model}"`
-		});
-		return known
-			? gatewayError(
-					502,
-					`No ${PROVIDERS[known.id].label} credentials configured for this instance`,
-					'api_error'
-				)
-			: gatewayError(400, `Unknown or unsupported model: ${model}`, 'model_not_found');
-	}
+		envelope: openAiEnvelope,
+		traceRequest: { endpoint: path, model }
+	});
 
-	if (!providerSupports(provider, scope)) {
-		await auditTrace({
-			action: `gateway.${scope}`,
-			status: 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 400,
-			ip,
-			detail: `${provider.id} does not support ${scope}`
-		});
-		return gatewayError(
-			400,
-			`${PROVIDERS[provider.id].label} does not support ${scope} requests (model "${model}")`,
-			'model_not_found'
-		);
-	}
+	const provider = await resolveRoutedProvider(ctx, preferProvider);
+	if (provider instanceof Response) return provider;
 
-	// policy enforcement
-	const decision = evaluatePolicy(token, { provider: provider.id, model, scope });
-	if (!decision.allow) {
-		await auditTrace({
-			action: 'policy.deny',
-			status: 'deny',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 403,
-			ip,
-			detail: decision.reason
-		});
-		return gatewayError(403, `Request denied by policy: ${decision.reason}`, 'permission_error');
-	}
+	const denied = await checkAccess(ctx, provider);
+	if (denied) return denied;
 
-	// rate limiting (in-memory, per token)
-	const rl = checkRateLimit(token.tokenId, token.effective.rateLimitPerMinute);
-	if (!rl.ok) {
-		await auditTrace({
-			action: 'policy.deny',
-			status: 'deny',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 429,
-			ip,
-			detail: `rate limit exceeded (${rl.limit}/min)`
-		});
-		return new Response(
-			JSON.stringify({
-				error: {
-					message: `Rate limit exceeded: ${rl.limit} requests/min`,
-					type: 'rate_limit_error',
-					code: null,
-					param: null
-				}
-			}),
-			{
-				status: 429,
-				headers: {
-					'content-type': 'application/json',
-					'retry-after': String(rl.retryAfter ?? 1)
-				}
-			}
-		);
-	}
-
-	// budget enforcement (reservation covers the in-flight gap; released below)
-	const budgetGate = await enforceBudgets(token, provider, model, ip, auditTrace);
-	if (budgetGate instanceof Response) return budgetGate;
-	const releaseReservation = budgetGate;
-
-	const creds = await loadProviderCreds(provider.id, token.providerSecretId);
-	if (!creds) {
-		releaseReservation();
-		await auditTrace({
-			action: `gateway.${scope}`,
-			status: 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 502,
-			ip,
-			detail: `no ${provider.id} secret configured`
-		});
-		return gatewayError(
-			502,
-			`No ${PROVIDERS[provider.id].label} credentials configured for this instance`,
-			'api_error'
-		);
-	}
-
-	const baseUrl = resolveBaseUrl(provider, creds.baseUrl);
-	if (!baseUrl) {
-		releaseReservation();
-		await auditTrace({
-			action: `gateway.${scope}`,
-			status: 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 502,
-			ip,
-			detail: `no ${provider.id} endpoint configured`
-		});
-		return gatewayError(
-			502,
-			`No ${PROVIDERS[provider.id].label} endpoint configured for this instance`,
-			'api_error'
-		);
-	}
+	const grant = await acquireUpstream(ctx, provider);
+	if (grant instanceof Response) return grant;
 
 	// Forward the query string (Azure's ?api-version=… etc.) verbatim. Do NOT set
 	// content-type: fetch derives the multipart boundary from the FormData body.
-	const upstreamUrl = `${baseUrl}${path}${event.url.search}`;
-	let upstream: Response;
-	try {
-		upstream = await fetch(upstreamUrl, {
-			method: 'POST',
-			headers: authHeaders(provider, creds.apiKey),
-			body: form
-		});
-	} catch (err) {
-		releaseReservation();
-		await auditTrace({
-			action: `gateway.${scope}`,
-			status: 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 502,
-			latencyMs: Date.now() - started,
-			ip,
-			detail: err instanceof Error ? err.message : 'upstream fetch failed'
-		});
-		return gatewayError(502, 'Upstream provider request failed', 'api_error');
-	}
+	const upstreamUrl = `${grant.baseUrl}${path}${event.url.search}`;
+	const fetched = await fetchUpstream(ctx, provider, grant, upstreamUrl, {
+		method: 'POST',
+		headers: authHeaders(provider, grant.apiKey),
+		body: form
+	});
+	if (!fetched.ok) return fetched.response;
+	const { upstream } = fetched;
 
 	// Buffer the response and parse usage best-effort. Transcriptions may return
 	// JSON (`response_format=json|verbose_json`) or plain text (`text|srt|vtt`);
-	// the JSON.parse fails harmlessly on the latter, leaving cost null.
+	// the latter simply yields no usage and a null cost.
 	const text = await upstream.text();
-	let cost: number | null = null;
-	let tier: ContextTier | null = null;
-	let inputTokens: number | null = null;
-	let outputTokens: number | null = null;
-	try {
-		const parsed = JSON.parse(text) as { usage?: unknown };
-		const usage = normalizeUsage(parsed.usage);
-		if (usage) {
-			inputTokens = usage.input;
-			outputTokens = usage.output;
-			({ costUsd: cost, tier } = await estimateCost(
-				model,
-				usage.input ?? undefined,
-				usage.output ?? undefined
-			));
-		}
-	} catch {
-		// non-JSON (text/srt/vtt) or no usage; leave cost null
-	}
-
-	await auditTrace(
-		{
-			action: `gateway.${scope}`,
-			status: upstream.ok ? 'ok' : 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: upstream.status,
-			costUsd: cost,
-			inputTokens,
-			outputTokens,
-			contextTier: tier,
-			latencyMs: Date.now() - started,
-			ip
-		},
-		{ response: text }
-	);
-	releaseReservation();
+	await recordCompletion(ctx, {
+		provider,
+		statusCode: upstream.status,
+		ok: upstream.ok,
+		usage: usageFromText(text, bufferedOpenAiUsageExtractor),
+		response: text,
+		cache: null,
+		complete: true,
+		release: grant.release
+	});
 
 	// Preserve the upstream content-type (json vs text/plain for srt/vtt).
 	const outCt = upstream.headers.get('content-type') ?? 'application/json';
 	return new Response(text, { status: upstream.status, headers: { 'content-type': outCt } });
 }
 
-/**
- * Native-Gemini error envelope (`{ error: { code, message, status } }`), so the
- * Google GenAI SDK — which expects native errors, not OpenAI ones — parses a
- * gateway rejection correctly.
- */
-function geminiNativeError(status: number, message: string, googleStatus: string): Response {
-	return json({ error: { code: status, message, status: googleStatus } }, { status });
-}
+/* ------------------------------------------------------------------------- */
+/* Native Gemini pipeline                                                    */
+/* ------------------------------------------------------------------------- */
 
 export interface NativeGeminiOptions {
 	auth: GatewayAuth;
@@ -1072,6 +1107,9 @@ export interface NativeGeminiOptions {
 	stream: boolean;
 	body: unknown;
 }
+
+/** Model names that are safe to interpolate into an upstream URL path. */
+const SAFE_MODEL_NAME = /^[A-Za-z0-9._-]+$/;
 
 /**
  * Native-ingress sibling of {@link proxyToProvider}. Accepts a request shaped for
@@ -1089,96 +1127,24 @@ export async function proxyGeminiNative(
 	opts: NativeGeminiOptions
 ): Promise<Response> {
 	const { auth, scope, model, method, stream, body } = opts;
-	const started = Date.now();
-	const { token, ip } = auth;
 	const provider = PROVIDERS.gemini;
-
-	// Request tracing (see proxyToProvider): pair each audit row with the captured
-	// native request/response payload for the trace viewer when tracing is enabled.
-	const traceOn = token.effective.tracingEnabled;
-	const traceGroupId = readTraceGroup(event);
-	const traceMetadata = readTraceMetadata(event);
-	const auditTrace = async (
-		entry: AuditEntry,
-		resp?: { response?: string | null; format?: 'json' | 'sse' }
-	) => {
-		const auditLogId = await audit(entry);
-		if (traceOn && auditLogId) {
-			await recordTrace({
-				auditLogId,
-				serviceId: token.serviceId,
-				groupId: traceGroupId,
-				metadata: traceMetadata,
-				request: body,
-				response: resp?.response ?? null,
-				format: resp?.format ?? null
-			});
-		}
-	};
-
-	// capability check (chat + embeddings only)
-	if (!providerSupports(provider, scope)) {
-		await auditTrace({
-			action: `gateway.${scope}`,
-			status: 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 400,
-			ip,
-			detail: `gemini does not support ${scope}`
-		});
-		return geminiNativeError(400, `Gemini does not support ${scope} requests`, 'INVALID_ARGUMENT');
-	}
 
 	// defense-in-depth: `model` is interpolated raw into the upstream URL below, so
 	// reject anything outside a safe model-name charset before it gets there.
-	if (model && !/^[A-Za-z0-9._-]+$/.test(model)) {
-		return geminiNativeError(400, 'Invalid model name', 'INVALID_ARGUMENT');
+	if (model && !SAFE_MODEL_NAME.test(model)) {
+		return geminiEnvelope.error(400, 'Invalid model name', 'invalid_request');
 	}
 
-	// policy enforcement
-	const decision = evaluatePolicy(token, { provider: provider.id, model, scope });
-	if (!decision.allow) {
-		await auditTrace({
-			action: 'policy.deny',
-			status: 'deny',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 403,
-			ip,
-			detail: decision.reason
-		});
-		return geminiNativeError(
-			403,
-			`Request denied by policy: ${decision.reason}`,
-			'PERMISSION_DENIED'
-		);
-	}
+	const ctx = createContext(event, auth, {
+		scope,
+		model,
+		envelope: geminiEnvelope,
+		traceRequest: body
+	});
+	const { token } = ctx;
 
-	// rate limiting (in-memory, per token)
-	const rl = checkRateLimit(token.tokenId, token.effective.rateLimitPerMinute);
-	if (!rl.ok) {
-		await auditTrace({
-			action: 'policy.deny',
-			status: 'deny',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 429,
-			ip,
-			detail: `rate limit exceeded (${rl.limit}/min)`
-		});
-		return geminiNativeError(
-			429,
-			`Rate limit exceeded: ${rl.limit} requests/min`,
-			'RESOURCE_EXHAUSTED'
-		);
-	}
+	const denied = await checkAccess(ctx, provider);
+	if (denied) return denied;
 
 	// exact-match cache. Determinism for native bodies: embeddings always;
 	// generateContent only when sampling is pinned (generationConfig.temperature 0).
@@ -1189,244 +1155,72 @@ export async function proxyGeminiNative(
 	// Key on the native path + body; distinct from the OpenAI-ingress cache (which
 	// keys on `/chat/completions` + an OpenAI body), so formats never cross.
 	const cachePath = `/models/${model}:${method}`;
-	const cacheKey = cacheable
-		? cacheKeyFor(provider.id, cachePath, body, token.providerSecretId)
+	const cache: CacheTarget | null = cacheable
+		? {
+				key: cacheKeyFor(provider.id, cachePath, body, token.providerSecretId),
+				ttlSeconds: cacheTtl
+			}
 		: null;
-	if (cacheKey) {
-		const hit = await getCached(cacheKey);
-		if (hit) {
-			await auditTrace(
-				{
-					action: `gateway.${scope}`,
-					status: 'ok',
-					serviceId: token.serviceId,
-					tokenId: token.tokenId,
-					provider: provider.id,
-					model,
-					statusCode: hit.statusCode,
-					costUsd: 0,
-					savedUsd: hit.costUsd,
-					savedInputTokens: hit.inputTokens,
-					savedOutputTokens: hit.outputTokens,
-					latencyMs: Date.now() - started,
-					ip,
-					detail: stream ? 'native cache hit (stream)' : 'native cache hit'
-				},
-				{ response: hit.response, format: stream ? 'sse' : 'json' }
-			);
-			return new Response(hit.response, {
-				status: hit.statusCode,
-				headers: stream
-					? {
-							'content-type': 'text/event-stream',
-							'cache-control': 'no-cache',
-							'x-uprox-cache': 'HIT'
-						}
-					: { 'content-type': 'application/json', 'x-uprox-cache': 'HIT' }
-			});
-		}
+	if (cache) {
+		const hit = await replayCached(ctx, provider, cache.key, stream, 'native ');
+		if (hit) return hit;
 	}
 
-	// budget enforcement (service + token ceilings), mirroring proxyToProvider but
-	// in the Gemini-native error envelope.
-	const budgetGate = await enforceBudgets(token, provider, model, ip, auditTrace, (reason) =>
-		geminiNativeError(402, `Request denied: ${reason}`, 'RESOURCE_EXHAUSTED')
-	);
-	if (budgetGate instanceof Response) return budgetGate;
-	const releaseReservation = budgetGate;
-
-	// upstream credentials and (static) base URL
-	const creds = await loadProviderCreds(provider.id, token.providerSecretId);
-	if (!creds) {
-		releaseReservation();
-		await auditTrace({
-			action: `gateway.${scope}`,
-			status: 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 502,
-			ip,
-			detail: 'no gemini secret configured'
-		});
-		return geminiNativeError(
-			502,
-			'No Google Gemini credentials configured for this instance',
-			'FAILED_PRECONDITION'
-		);
-	}
-	const baseUrl = resolveBaseUrl(provider, creds.baseUrl);
-	if (!baseUrl) {
-		releaseReservation();
-		return geminiNativeError(502, 'No Google Gemini endpoint configured', 'FAILED_PRECONDITION');
-	}
+	const grant = await acquireUpstream(ctx, provider);
+	if (grant instanceof Response) return grant;
 
 	// Forward the query string verbatim except `key` — the Google SDK may put the
 	// API key there, and that's the uprox token, which must never reach Google.
 	const search = new URLSearchParams(event.url.search);
 	search.delete('key');
 	const qs = search.toString();
-	const upstreamUrl = `${baseUrl}/models/${model}:${method}${qs ? `?${qs}` : ''}`;
+	const upstreamUrl = `${grant.baseUrl}/models/${model}:${method}${qs ? `?${qs}` : ''}`;
 
-	let upstream: Response;
-	try {
-		upstream = await fetch(upstreamUrl, {
-			method: 'POST',
-			headers: {
-				'content-type': 'application/json',
-				...authHeaders(provider, creds.apiKey)
-			},
-			body: JSON.stringify(body)
-		});
-	} catch (err) {
-		releaseReservation();
-		await auditTrace({
-			action: `gateway.${scope}`,
-			status: 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 502,
-			latencyMs: Date.now() - started,
-			ip,
-			detail: err instanceof Error ? err.message : 'upstream fetch failed'
-		});
-		return geminiNativeError(502, 'Upstream provider request failed', 'UNAVAILABLE');
-	}
+	const fetched = await fetchUpstream(ctx, provider, grant, upstreamUrl, {
+		method: 'POST',
+		headers: {
+			'content-type': 'application/json',
+			...authHeaders(provider, grant.apiKey)
+		},
+		body: JSON.stringify(body)
+	});
+	if (!fetched.ok) return fetched.response;
+	const { upstream } = fetched;
 
-	// streaming passthrough: tee — client gets the native SSE untouched; the cost
-	// branch is drained for the native usageMetadata so we can still bill it.
+	// streaming passthrough: the client gets the native SSE untouched while the
+	// native usageMetadata is captured so we can still bill it.
 	if (stream && upstream.ok && upstream.body) {
-		const [clientBranch, costBranch] = upstream.body.tee();
-		void (async () => {
-			try {
-				const { usage, raw, complete } = await drainSse(costBranch, geminiUsageExtractor);
-				const { costUsd: cost, tier } = usage
-					? await estimateCost(
-							model,
-							usage.input ?? undefined,
-							usage.output ?? undefined,
-							usage.cacheRead ?? 0,
-							usage.cacheWrite ?? 0
-						)
-					: { costUsd: null, tier: null };
-				await auditTrace(
-					{
-						action: `gateway.${scope}`,
-						status: 'ok',
-						serviceId: token.serviceId,
-						tokenId: token.tokenId,
-						provider: provider.id,
-						model,
-						statusCode: upstream.status,
-						costUsd: cost,
-						inputTokens: usage?.input ?? null,
-						outputTokens: usage?.output ?? null,
-						providerCachedTokens: usage?.cacheRead ?? null,
-						cacheWriteTokens: usage?.cacheWrite ?? null,
-						contextTier: tier,
-						latencyMs: Date.now() - started,
-						ip,
-						detail: 'native stream'
-					},
-					{ response: raw, format: 'sse' }
-				);
-				if (cacheKey && complete && raw) {
-					await putCached({
-						cacheKey,
-						provider: provider.id,
-						model,
-						statusCode: upstream.status,
-						response: raw,
-						costUsd: cost,
-						inputTokens: usage?.input ?? null,
-						outputTokens: usage?.output ?? null,
-						ttlSeconds: cacheTtl
-					});
-				}
-			} finally {
-				releaseReservation();
-			}
-		})();
-		return new Response(clientBranch, {
-			status: upstream.status,
-			headers: {
-				'content-type': upstream.headers.get('content-type') ?? 'text/event-stream',
-				'cache-control': 'no-cache',
-				...(cacheKey ? { 'x-uprox-cache': 'MISS' } : {})
-			}
+		return streamWithRecording(ctx, {
+			provider,
+			upstream,
+			source: upstream.body,
+			extract: geminiUsageExtractor,
+			cache,
+			detail: 'native stream',
+			release: grant.release
 		});
 	}
 
 	// buffered passthrough: read native usageMetadata for cost, return body as-is.
 	const text = await upstream.text();
-	let cost: number | null = null;
-	let tier: ContextTier | null = null;
-	let cachedTokens: number | null = null;
-	let cacheWriteTokens: number | null = null;
-	let inputTokens: number | null = null;
-	let outputTokens: number | null = null;
-	try {
-		const usage = geminiNativeUsage(JSON.parse(text));
-		inputTokens = usage?.input ?? null;
-		outputTokens = usage?.output ?? null;
-		cachedTokens = usage?.cacheRead ?? null;
-		cacheWriteTokens = usage?.cacheWrite ?? null;
-		({ costUsd: cost, tier } = await estimateCost(
-			model,
-			inputTokens ?? undefined,
-			outputTokens ?? undefined,
-			cachedTokens ?? 0,
-			cacheWriteTokens ?? 0
-		));
-	} catch {
-		// non-JSON or no usage; leave cost null
-	}
-
-	await auditTrace(
-		{
-			action: `gateway.${scope}`,
-			status: upstream.ok ? 'ok' : 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: upstream.status,
-			costUsd: cost,
-			inputTokens,
-			outputTokens,
-			providerCachedTokens: cachedTokens,
-			cacheWriteTokens,
-			contextTier: tier,
-			latencyMs: Date.now() - started,
-			ip,
-			detail: 'native'
-		},
-		{ response: text, format: 'json' }
-	);
-	releaseReservation();
-
-	if (cacheKey && upstream.ok) {
-		await putCached({
-			cacheKey,
-			provider: provider.id,
-			model,
-			statusCode: upstream.status,
-			response: text,
-			costUsd: cost,
-			inputTokens,
-			outputTokens,
-			ttlSeconds: cacheTtl
-		});
-	}
+	await recordCompletion(ctx, {
+		provider,
+		statusCode: upstream.status,
+		ok: upstream.ok,
+		usage: usageFromText(text, geminiNativeUsage),
+		response: text,
+		format: 'json',
+		detail: 'native',
+		cache,
+		complete: true,
+		release: grant.release
+	});
 
 	return new Response(text, {
 		status: upstream.status,
 		headers: {
 			'content-type': upstream.headers.get('content-type') ?? 'application/json',
-			...(cacheKey ? { 'x-uprox-cache': 'MISS' } : {})
+			...(cache ? { 'x-uprox-cache': 'MISS' } : {})
 		}
 	});
 }
@@ -1459,7 +1253,7 @@ export async function proxyGeminiModels(
 	// defense-in-depth: `model` is interpolated raw into the upstream URL below, so
 	// reject anything outside a safe model-name charset (only for the get call —
 	// `model` is null for the list call).
-	if (model && !/^[A-Za-z0-9._-]+$/.test(model)) {
+	if (model && !SAFE_MODEL_NAME.test(model)) {
 		return geminiNativeError(404, `Model "${model}" is not available`, 'NOT_FOUND');
 	}
 
@@ -1571,6 +1365,10 @@ export async function proxyGeminiModels(
 	});
 	return json(out);
 }
+
+/* ------------------------------------------------------------------------- */
+/* Raw pass-through (Files API)                                              */
+/* ------------------------------------------------------------------------- */
 
 export interface RawProxyOptions {
 	auth: GatewayAuth;
