@@ -53,6 +53,9 @@ jobs:
       - name: Unit tests
         run: pnpm test:unit --run
 
+      - name: DB tests (PGlite)
+        run: pnpm test:db
+
       - name: Migration drift check
         # Generating from the current schema must be a no-op. If drizzle-kit
         # writes a new migration, the schema and ./drizzle are out of sync.
