@@ -7,6 +7,10 @@
  * milliseconds with only a few thousand distinct values, so a `group by
  * latency_ms` hash aggregate is small and cheap, and the percentile can be
  * interpolated from it with exactly the arithmetic `percentile_cont` uses.
+ *
+ * Only the window totals use this. Measured per model (`group by model,
+ * latency_ms`) the histogram was no faster than `percentile_cont`, so the
+ * model-efficiency table keeps the plain aggregate.
  */
 import { and, isNotNull, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
@@ -81,38 +85,4 @@ export async function latencyHistogram(
 		)
 		.groupBy(auditLog.latencyMs);
 	return rows.map((r) => ({ latencyMs: Number(r.latencyMs), count: Number(r.count) }));
-}
-
-/** Latency histograms per model over the window, keyed by model name. */
-export async function latencyHistogramsByModel(
-	range: ResolvedRange,
-	opts: ScopeOpts = {}
-): Promise<Map<string, LatencyBucket[]>> {
-	const rows = await db
-		.select({
-			model: auditLog.model,
-			latencyMs: auditLog.latencyMs,
-			count: sql<number>`count(*)::int`
-		})
-		.from(auditLog)
-		.where(
-			and(
-				isNotNull(auditLog.model),
-				isNotNull(auditLog.latencyMs),
-				...usageConds(range, opts.serviceId, opts.tokenId, opts.filters)
-			)
-		)
-		.groupBy(auditLog.model, auditLog.latencyMs);
-
-	const byModel = new Map<string, LatencyBucket[]>();
-	for (const r of rows) {
-		const model = r.model as string;
-		let buckets = byModel.get(model);
-		if (!buckets) {
-			buckets = [];
-			byModel.set(model, buckets);
-		}
-		buckets.push({ latencyMs: Number(r.latencyMs), count: Number(r.count) });
-	}
-	return byModel;
 }
