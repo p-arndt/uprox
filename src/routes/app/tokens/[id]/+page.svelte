@@ -2,19 +2,17 @@
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import UsageRangePicker from '$lib/components/usage-range-picker.svelte';
 	import UsageWorkbench from '$lib/components/usage-workbench.svelte';
 	import { resolve } from '$app/paths';
 	import { enhance } from '$app/forms';
 	import { createUsageView } from '$lib/state/usage-view.svelte';
 	import type { UsageDimension } from '$lib/usage-group';
-	import type { DimensionUsageRow } from '$lib/server/data';
+	import type { DimensionUsageRow } from '$lib/features/usage/types';
 	import { toast } from 'svelte-sonner';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import DetailHeader from '$lib/components/detail-header.svelte';
-	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import Eye from '@lucide/svelte/icons/eye';
 	import Copy from '@lucide/svelte/icons/copy';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
@@ -55,30 +53,6 @@
 	{:else}
 		<span class="truncate font-medium" title={row.label}>{row.label}</span>
 	{/if}
-{/snippet}
-
-{#snippet leading()}
-	<UsageRangePicker
-		ranges={data.ranges}
-		range={data.range}
-		hrefWith={view.hrefWith}
-		customFrom={data.customFrom}
-		customTo={data.customTo}
-		onApplyCustom={view.applyCustom}
-	/>
-{/snippet}
-
-{#snippet trailing()}
-	<Button
-		variant="ghost"
-		size="icon"
-		class="size-8"
-		onclick={view.refresh}
-		disabled={view.refreshing}
-		aria-label="Refresh usage"
-	>
-		<RefreshCw class="size-4 {view.refreshing ? 'animate-spin' : ''}" />
-	</Button>
 {/snippet}
 
 <PageShell width="wide">
@@ -132,16 +106,7 @@
 		{/snippet}
 	</DetailHeader>
 
-	<UsageWorkbench
-		analysis={data}
-		rangeLabel={view.rangeLabel}
-		bucketHref={(b) => view.hrefWith({ bucket: b })}
-		onGroupBy={view.setGroupBy}
-		onFilters={view.setFilters}
-		{rowLabel}
-		{leading}
-		{trailing}
-	/>
+	<UsageWorkbench analysis={data} {view} {rowLabel} />
 </PageShell>
 
 <!-- re-copy reveal: shows the stored secret again for a re-copyable token -->

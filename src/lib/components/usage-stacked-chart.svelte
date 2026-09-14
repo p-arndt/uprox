@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { GroupedSeries } from '$lib/server/data';
+	import type { GroupedSeries } from '$lib/features/usage/types';
 	import type { SeriesBucket } from '$lib/usage-range';
 	import { colorForSeries } from '$lib/usage-colors';
 	import { formatMetric, type UsageMetric } from '$lib/features/usage/metric';

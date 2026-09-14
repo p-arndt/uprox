@@ -5,24 +5,9 @@ import { auditLog } from '$lib/server/db/schema';
 import type { ResolvedRange } from '$lib/usage-range';
 import type { UsageFilter } from '$lib/usage-group';
 import { usageConds } from '$lib/server/usage-queries/predicates';
+import type { ModelEfficiency } from '$lib/features/usage/types';
 
-export interface ModelEfficiency {
-	model: string;
-	provider: string | null;
-	requests: number;
-	costUsd: number;
-	inputTokens: number;
-	outputTokens: number;
-	/** USD per 1,000 tokens (input + output) — the comparable unit price */
-	costPer1kTokens: number;
-	costPerRequest: number;
-	/** output ÷ input; high means verbose answers, which is where cost lands */
-	outputRatio: number | null;
-	/** share of input served from the provider's prompt cache */
-	cacheReadShare: number;
-	latencyP50: number | null;
-	latencyP95: number | null;
-}
+export type { ModelEfficiency };
 
 /**
  * Per-model unit economics — the table behind "should we switch models".

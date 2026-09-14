@@ -9,7 +9,8 @@
  * `basePath`, so the navigation lint rule stays satisfied at the source.
  */
 
-import { goto, invalidateAll } from '$app/navigation';
+import { goto, replaceState } from '$app/navigation';
+import { page } from '$app/state';
 import type { ResolvedPathname } from '$app/types';
 import { buildUsageHref, type UsageUrlOverrides, type UsageUrlState } from '$lib/usage-url';
 import type { UsageDimension, UsageFilter } from '$lib/usage-group';
@@ -26,6 +27,9 @@ export interface UsageViewData {
 }
 
 export type UsageExportShape = 'breakdown' | 'timeseries';
+
+/** Query param that makes the usage loader skip its query cache (the refresh button). */
+export const FRESH_PARAM = 'fresh';
 
 /** Human label for the active window: the preset label or the custom bounds. */
 export function usageRangeLabel(data: UsageViewData): string {
@@ -101,19 +105,56 @@ export function createUsageView(opts: {
 		setFilters(filters) {
 			goto(hrefWith({ filters }), { noScroll: true, keepFocus: true });
 		},
-		// Re-runs the page load without a full reload; invalidateAll resolves once
-		// the new data lands.
+		// Re-runs the page load without a full reload. `fresh=1` tells the loader
+		// to skip its query cache, so a refresh always shows current figures; the
+		// param is stripped from the address bar again once the data lands, so a
+		// later reload or a copied link goes back to using the cache.
 		async refresh() {
 			if (refreshing) return;
 			refreshing = true;
 			try {
-				await invalidateAll();
+				const href = hrefWith({});
+				await goto(`${href}&${FRESH_PARAM}=1` as ResolvedPathname, {
+					replaceState: true,
+					noScroll: true,
+					keepFocus: true,
+					invalidateAll: true
+				});
+				replaceState(href, page.state);
 			} finally {
 				refreshing = false;
 			}
 		},
 		exportHref(exportPath, shape) {
 			return buildUsageExportHref(exportPath, current(), shape) as ResolvedPathname;
+		}
+	};
+}
+
+/**
+ * Reactive view of the latest value of a streamed promise: `undefined` while
+ * the current promise is pending, then its value. When the source hands over a
+ * new promise (a navigation re-ran the load), the old one is ignored even if it
+ * settles later, so a slow earlier response can never overwrite newer data.
+ */
+export function latest<T>(source: () => Promise<T> | undefined): {
+	readonly current: T | undefined;
+} {
+	let current = $state<T | undefined>(undefined);
+	$effect(() => {
+		const promise = source();
+		let active = true;
+		current = undefined;
+		promise?.then((value) => {
+			if (active) current = value;
+		});
+		return () => {
+			active = false;
+		};
+	});
+	return {
+		get current() {
+			return current;
 		}
 	};
 }

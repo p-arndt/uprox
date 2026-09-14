@@ -7,7 +7,7 @@
 	import UsageLegend from '$lib/components/usage-legend.svelte';
 	import { BUCKET_OPTIONS } from '$lib/usage-range';
 	import { dimensionLabel, isDerivedDimension, type UsageDimension } from '$lib/usage-group';
-	import type { GroupedSeriesResult } from '$lib/server/data';
+	import type { GroupedSeriesResult } from '$lib/features/usage/types';
 	import type { UsageMetric } from '$lib/features/usage/metric';
 	import type { ChartMode } from '$lib/features/usage/chart-math';
 	import type { ResolvedPathname } from '$app/types';

@@ -2,7 +2,8 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import DeltaPill from '$lib/components/delta-pill.svelte';
 	import Sparkline from '$lib/components/sparkline.svelte';
-	import type { UsageTotals, UsageSeries } from '$lib/server/data';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import type { UsageTotals, UsageSeries } from '$lib/features/usage/types';
 	import { headlineCells } from '$lib/features/usage/headline';
 
 	// One summary band, not two rows of assorted cards. Spend, volume and health
@@ -15,11 +16,14 @@
 	let {
 		totals,
 		prevTotals,
+		comparison = 'ready',
 		series,
 		rangeLabel
 	}: {
 		totals: UsageTotals;
-		prevTotals: UsageTotals;
+		/** previous window; null while it streams in or when it failed */
+		prevTotals: UsageTotals | null;
+		comparison?: 'pending' | 'ready' | 'failed';
 		series: UsageSeries;
 		rangeLabel: string;
 	} = $props();
@@ -40,6 +44,10 @@
 					{#if c.delta !== undefined}
 						<DeltaPill value={c.delta} tone={c.tone ?? 'neutral'} />
 						<span class="text-xs text-muted-foreground">vs prev {rangeLabel}</span>
+					{:else if c.compares && comparison === 'pending'}
+						<Skeleton class="h-4 w-28 rounded-md" aria-hidden="true" />
+					{:else if c.compares && comparison === 'failed'}
+						<span class="text-xs text-muted-foreground">Comparison unavailable</span>
 					{/if}
 				</div>
 				<p class="text-xs text-muted-foreground tabular-nums">{c.note}</p>

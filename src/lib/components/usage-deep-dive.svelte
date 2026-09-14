@@ -7,9 +7,12 @@
 	import UsageDonutRow from '$lib/components/usage-donut-row.svelte';
 	import UsageModelEfficiency from '$lib/components/usage-model-efficiency.svelte';
 	import UsageTokenMeters from '$lib/components/usage-token-meters.svelte';
+	import UsageStreamedPanel from '$lib/components/usage-streamed-panel.svelte';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import { dimensionLabel, type UsageDimension } from '$lib/usage-group';
-	import type { UsageAnalysis } from '$lib/server/usage-analysis';
-	import type { DimensionUsageRow } from '$lib/server/data';
+	import { latest } from '$lib/state/usage-view.svelte';
+	import type { UsageAnalysis } from '$lib/features/usage/types';
+	import type { DimensionUsageRow } from '$lib/features/usage/types';
 
 	// Everything below the chart, behind one tab bar.
 	//
@@ -32,14 +35,24 @@
 		rowLabel?: Snippet<[DimensionUsageRow, UsageDimension]>;
 	} = $props();
 
+	// The secondary panels stream in after first paint.
+	const movers = latest(() => analysis.movers);
+	const donuts = latest(() => analysis.donuts);
+	const efficiency = latest(() => analysis.efficiency);
+	const meters = latest(() => analysis.meters);
+
+	/** A streamed tab is offered while loading or failed, and once it has rows. */
+	const offer = (s: { value: unknown[]; failed: boolean } | undefined) =>
+		s === undefined || s.failed || s.value.length > 0;
+
 	// A tab that would open onto an empty panel is not offered at all, so the bar
 	// only ever advertises breakdowns this window can actually show.
 	const tabs = $derived(
 		[
 			{ key: 'breakdown', label: 'Breakdown', show: true },
-			{ key: 'movers', label: 'What changed', show: analysis.movers.length > 0 },
-			{ key: 'composition', label: 'Composition', show: analysis.donuts.length > 0 },
-			{ key: 'efficiency', label: 'Model efficiency', show: analysis.efficiency.length > 0 },
+			{ key: 'movers', label: 'What changed', show: offer(movers.current) },
+			{ key: 'composition', label: 'Composition', show: offer(donuts.current) },
+			{ key: 'efficiency', label: 'Model efficiency', show: offer(efficiency.current) },
 			{ key: 'meters', label: 'Token meters', show: true }
 		].filter((t) => t.show)
 	);
@@ -86,18 +99,50 @@
 	</Tabs.Content>
 
 	<Tabs.Content value="movers">
-		<UsageMovers movers={analysis.movers} dim={analysis.groupBy} {rangeLabel} />
+		<UsageStreamedPanel state={movers.current} title="What changed" rows={6}>
+			{#snippet children(value)}
+				<UsageMovers movers={value} dim={analysis.groupBy} {rangeLabel} />
+			{/snippet}
+		</UsageStreamedPanel>
 	</Tabs.Content>
 
 	<Tabs.Content value="composition">
-		<UsageDonutRow panels={analysis.donuts} scopeTotal={analysis.totals.costUsd} />
+		<UsageStreamedPanel state={donuts.current} title="Composition">
+			{#snippet skeleton()}
+				<div class="grid gap-4 lg:grid-cols-3" aria-busy="true">
+					{#each Array.from({ length: 3 }, (_, i) => i) as i (i)}
+						<Card.Root>
+							<Card.Header class="pb-2">
+								<Skeleton class="h-4 w-28 rounded-md" />
+							</Card.Header>
+							<Card.Content class="flex justify-center">
+								<Skeleton class="aspect-square w-40 rounded-full" />
+							</Card.Content>
+						</Card.Root>
+					{/each}
+				</div>
+			{/snippet}
+			{#snippet children(value)}
+				<UsageDonutRow panels={value} scopeTotal={analysis.totals.costUsd} />
+			{/snippet}
+		</UsageStreamedPanel>
 	</Tabs.Content>
 
 	<Tabs.Content value="efficiency">
-		<UsageModelEfficiency rows={analysis.efficiency} />
+		<UsageStreamedPanel state={efficiency.current} title="Model efficiency" rows={8}>
+			{#snippet children(value)}
+				<UsageModelEfficiency rows={value} />
+			{/snippet}
+		</UsageStreamedPanel>
 	</Tabs.Content>
 
 	<Tabs.Content value="meters">
-		<UsageTokenMeters breakdown={analysis.meters} />
+		<UsageStreamedPanel state={meters.current} title="Token meters" rows={6}>
+			{#snippet children(value)}
+				{#if value}
+					<UsageTokenMeters breakdown={value} />
+				{/if}
+			{/snippet}
+		</UsageStreamedPanel>
 	</Tabs.Content>
 </Tabs.Root>

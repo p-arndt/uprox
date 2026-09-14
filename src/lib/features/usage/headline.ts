@@ -27,6 +27,8 @@ export interface HeadlineCell {
 	value: string;
 	/** signed % vs the previous window, null without a baseline, absent where meaningless */
 	delta?: number | null;
+	/** true for cells that compare against the previous window (even while it loads) */
+	compares?: boolean;
 	tone?: 'cost' | 'neutral';
 	/** the qualifier under the figure — where the number came from */
 	note: string;
@@ -51,9 +53,12 @@ export function formatLatencyMs(ms: number | null): string {
 
 export function headlineCells(
 	totals: HeadlineTotals,
-	prevTotals: HeadlineTotals,
+	/** previous window; null while it streams in or when it failed to load */
+	prevTotals: HeadlineTotals | null,
 	points: HeadlinePoint[]
 ): HeadlineCell[] {
+	const delta = (cur: number, prior: (t: HeadlineTotals) => number) =>
+		prevTotals ? { delta: pctDelta(cur, prior(prevTotals)) } : {};
 	const totalTokens = totals.inputTokens + totals.outputTokens;
 	const avgCostPerReq = totals.requests > 0 ? totals.costUsd / totals.requests : 0;
 	const errorRate = totals.requests > 0 ? totals.errors / totals.requests : 0;
@@ -61,7 +66,8 @@ export function headlineCells(
 		{
 			label: 'Spend',
 			value: formatUsd(totals.costUsd),
-			delta: pctDelta(totals.costUsd, prevTotals.costUsd),
+			compares: true,
+			...delta(totals.costUsd, (t) => t.costUsd),
 			tone: 'cost',
 			note: `${formatUsd(avgCostPerReq)} avg / request`,
 			spark: points.map((p) => p.costUsd)
@@ -69,14 +75,16 @@ export function headlineCells(
 		{
 			label: 'Requests',
 			value: formatCount(totals.requests),
-			delta: pctDelta(totals.requests, prevTotals.requests),
+			compares: true,
+			...delta(totals.requests, (t) => t.requests),
 			note: `${(errorRate * 100).toFixed(1)}% errors · ${formatCount(totals.denied)} denied`,
 			spark: points.map((p) => p.requests)
 		},
 		{
 			label: 'Tokens',
 			value: formatTokens(totalTokens),
-			delta: pctDelta(totalTokens, prevTotals.inputTokens + prevTotals.outputTokens),
+			compares: true,
+			...delta(totalTokens, (t) => t.inputTokens + t.outputTokens),
 			note: `${formatTokens(totals.inputTokens)} in · ${formatTokens(totals.outputTokens)} out`,
 			spark: points.map((p) => p.inputTokens + p.outputTokens)
 		},

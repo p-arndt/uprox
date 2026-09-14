@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import UsageDonut from '$lib/components/usage-donut.svelte';
 	import { dimensionLabel, type UsageDimension } from '$lib/usage-group';
-	import type { DimensionUsageRow } from '$lib/server/data';
+	import type { DimensionUsageRow } from '$lib/features/usage/types';
 	import type { UsageMetric } from '$lib/features/usage/metric';
 
 	// Three compositions side by side rather than behind tabs. Cost analysis is a

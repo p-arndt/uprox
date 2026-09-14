@@ -19,6 +19,7 @@
 		groupBy,
 		filters,
 		options,
+		optionsPending = false,
 		dimensions,
 		onGroupBy,
 		onFilters
@@ -27,6 +28,8 @@
 		filters: UsageFilter[];
 		/** selectable values per dimension, derived from traffic in the window */
 		options: UsageFilterOptions;
+		/** the options are still streaming in */
+		optionsPending?: boolean;
 		/** which dimensions this page allows; a scoped page hides the ones that
 		 *  would collapse to a single row (service, on a service-detail page) */
 		dimensions: readonly UsageDimension[];
@@ -51,5 +54,5 @@
 		defaultDim={filterDims[0]?.key ?? dimensions[0]}
 		{onFilters}
 	/>
-	<UsageFilterPills {filters} {options} {onFilters} />
+	<UsageFilterPills {filters} {options} {optionsPending} {onFilters} />
 </div>

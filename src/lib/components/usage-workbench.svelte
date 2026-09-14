@@ -2,14 +2,14 @@
 	import type { Snippet } from 'svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import UsageHeadline from '$lib/components/usage-headline.svelte';
-	import UsageAnalysisToolbar from '$lib/components/usage-analysis-toolbar.svelte';
+	import UsageToolbarControls from '$lib/components/usage-toolbar-controls.svelte';
 	import UsageAnalysisCard from '$lib/components/usage-analysis-card.svelte';
 	import UsageDeepDive from '$lib/components/usage-deep-dive.svelte';
 	import BudgetGauge from '$lib/components/budget-gauge.svelte';
-	import type { UsageDimension, UsageFilter } from '$lib/usage-group';
-	import type { UsageAnalysis } from '$lib/server/usage-analysis';
-	import type { DimensionUsageRow } from '$lib/server/data';
+	import type { UsageDimension } from '$lib/usage-group';
+	import type { DimensionUsageRow, Streamed, UsageAnalysis } from '$lib/features/usage/types';
 	import type { BudgetStatus } from '$lib/budget';
+	import { latest, type UsageView } from '$lib/state/usage-view.svelte';
 	import type { ResolvedPathname } from '$app/types';
 
 	// The whole cost-analysis surface, shared verbatim by the org usage page and
@@ -20,66 +20,35 @@
 
 	let {
 		analysis,
-		rangeLabel,
-		bucketHref,
-		onGroupBy,
-		onFilters,
+		view,
+		exportPath,
 		rowLabel,
-		leading,
-		trailing,
-		budgets = [],
-		instanceBudget = null,
+		budgets,
 		budgetThreshold
 	}: {
 		analysis: UsageAnalysis;
-		rangeLabel: string;
-		bucketHref: (key: string) => ResolvedPathname;
-		onGroupBy: (dim: UsageDimension) => void;
-		onFilters: (next: UsageFilter[]) => void;
+		/** the page's URL-state controller (window, grouping, filters, refresh) */
+		view: UsageView;
+		/** the page's resolved CSV export endpoint; omit to hide the export menu */
+		exportPath?: ResolvedPathname;
 		/** renders a row's name cell, so each page owns its own drill-down links */
 		rowLabel?: Snippet<[DimensionUsageRow, UsageDimension]>;
-		/** page-owned controls at the start of the command bar (the range picker) */
-		leading?: Snippet;
-		/** page-owned actions at the end of the command bar (refresh, export) */
-		trailing?: Snippet;
-		budgets?: BudgetStatus[];
-		instanceBudget?: BudgetStatus | null;
+		/** budget statuses (instance ceiling first), streamed after first paint */
+		budgets?: Promise<Streamed<BudgetStatus[]>>;
 		budgetThreshold?: number;
 	} = $props();
 
 	const hasTraffic = $derived(analysis.totals.requests > 0 || analysis.breakdown.length > 0);
+
+	// streamed after first paint
+	const prevTotals = latest(() => analysis.prevTotals);
+	const budgetStatuses = latest(() => budgets);
+	const comparison = $derived(
+		prevTotals.current === undefined ? 'pending' : prevTotals.current.failed ? 'failed' : 'ready'
+	);
 </script>
 
-<!-- One command bar: window, grouping and filters on the left, page actions on
-     the right. Every control here is the same height and shape, so the row reads
-     as a single band of chrome instead of assorted buttons.
-
-     It sticks below the app header (h-14) because every panel underneath is a
-     rendering of the choices made here — the page is a loop of "change the
-     window, read the result", and that loop breaks the moment the controls
-     scroll away and you have to travel back up to adjust them. The negative
-     margins let the opaque band bleed to the padding edge of the page so
-     content passing underneath is covered rather than peeking out the side. -->
-<div class="sticky top-14 z-10 -mx-4 bg-background/95 px-4 py-2 backdrop-blur sm:-mx-6 sm:px-6">
-	<div
-		class="flex flex-col gap-2 rounded-xl border bg-card px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
-	>
-		<div class="flex flex-wrap items-center gap-2">
-			{@render leading?.()}
-			<UsageAnalysisToolbar
-				groupBy={analysis.groupBy}
-				filters={analysis.filters}
-				dimensions={analysis.dimensions}
-				options={analysis.filterOptions}
-				{onGroupBy}
-				{onFilters}
-			/>
-		</div>
-		{#if trailing}
-			<div class="flex shrink-0 items-center gap-2">{@render trailing()}</div>
-		{/if}
-	</div>
-</div>
+<UsageToolbarControls {analysis} {view} {exportPath} />
 
 <!-- Budget headroom: instance ceiling and policy ceilings in ONE card, one row
      each. Two separate cards pushed the chart most of a screen below the command
@@ -90,8 +59,13 @@
      mismatch is why it can't be a line on the chart — dividing a monthly ceiling
      down to an hourly bucket produces a threshold any single request clears. -->
 {#snippet budgetHeadroom()}
+	<!-- no skeleton: most instances carry no ceiling, and the gauge renders
+	     nothing then, so a placeholder would only flash and disappear -->
+	{#if budgetStatuses.current?.failed}
+		<p class="text-sm text-muted-foreground" role="status">Budget headroom could not be loaded.</p>
+	{/if}
 	<BudgetGauge
-		statuses={instanceBudget ? [instanceBudget, ...budgets] : budgets}
+		statuses={budgetStatuses.current?.value ?? []}
 		threshold={budgetThreshold}
 		showServiceName={true}
 		title="Budget headroom"
@@ -104,29 +78,30 @@
 	<Card.Root>
 		<Card.Content class="py-16 text-center text-sm text-muted-foreground">
 			{#if analysis.filters.length > 0}
-				No gateway traffic for {rangeLabel} matching these filters.
+				No gateway traffic for rangeLabel={view.rangeLabel} matching these filters.
 			{:else}
-				No gateway traffic for {rangeLabel}.
+				No gateway traffic for rangeLabel={view.rangeLabel}.
 			{/if}
 		</Card.Content>
 	</Card.Root>
 {:else}
 	<UsageHeadline
 		totals={analysis.totals}
-		prevTotals={analysis.prevTotals}
+		prevTotals={prevTotals.current?.value ?? null}
+		{comparison}
 		series={analysis.series}
-		{rangeLabel}
+		rangeLabel={view.rangeLabel}
 	/>
 
 	<UsageAnalysisCard
 		grouped={analysis.grouped}
 		groupBy={analysis.groupBy}
-		{rangeLabel}
+		rangeLabel={view.rangeLabel}
 		bucket={analysis.bucket}
-		{bucketHref}
+		bucketHref={(b) => view.hrefWith({ bucket: b })}
 	/>
 
-	<UsageDeepDive {analysis} {rangeLabel} {rowLabel} />
+	<UsageDeepDive {analysis} rangeLabel={view.rangeLabel} {rowLabel} />
 
 	<!-- Last, and deliberately: a ceiling belongs to the billing period, not to
 	     the window on screen, so it answers a different question than everything

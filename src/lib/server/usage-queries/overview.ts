@@ -2,7 +2,7 @@
 import { isNull, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { service, machineToken, providerSecret, auditLog } from '$lib/server/db/schema';
-import { cacheRate } from '$lib/cache-rate';
+import { mapOrgStats } from '$lib/server/usage-queries/row-mapping';
 
 /** Aggregate dashboard stats for the overview page. */
 export async function orgStats() {
@@ -46,46 +46,14 @@ export async function orgStats() {
 		.from(auditLog)
 		.where(sql`${auditLog.action} like 'gateway.%'`);
 
-	const cacheHits = Number(reqs?.cacheHits ?? 0);
-	const total = Number(reqs?.total ?? 0);
-	const inputTokens = Number(reqs?.inputTokens ?? 0);
-	const outputTokens = Number(reqs?.outputTokens ?? 0);
-	const savedInputTokens = Number(reqs?.savedInputTokens ?? 0);
-	const savedOutputTokens = Number(reqs?.savedOutputTokens ?? 0);
-	const providerCachedTokens = Number(reqs?.providerCachedTokens ?? 0);
-	const embeddingInputTokens = Number(reqs?.embeddingInputTokens ?? 0);
-
-	// share of input tokens that benefited from any cache layer — see cacheRate()
-	const { rate: tokenCacheRate } = cacheRate({
-		inputTokens,
-		embeddingInputTokens,
-		savedInputTokens,
-		providerCachedTokens
-	});
-
-	return {
-		services: Number(counts?.services ?? 0),
-		providers: Number(providerCount?.count ?? 0),
-		activeTokens: Number(tokenCount?.active ?? 0),
-		requests: total,
-		denied: Number(reqs?.denied ?? 0),
-		costUsd: Number(reqs?.cost ?? 0),
-		cacheHits,
-		// share of all gateway requests served from uprox's cache (0–1) — kept
-		// for callers that want the request-count view, but the headline tile
-		// now uses tokenCacheRate so provider cache counts too.
-		cacheHitRate: total > 0 ? cacheHits / total : 0,
-		// share of input tokens that benefited from any cache layer (0–1)
-		tokenCacheRate,
-		// exact: sum of each hit's recorded saved amount
-		cacheSavedUsd: Number(reqs?.cacheSaved ?? 0),
-		// total input tokens upstream providers served from their own prompt cache
-		providerCachedTokens,
-		inputTokens,
-		outputTokens,
-		savedInputTokens,
-		savedOutputTokens
-	};
+	return mapOrgStats(
+		{
+			services: counts?.services,
+			providers: providerCount?.count,
+			activeTokens: tokenCount?.active
+		},
+		reqs
+	);
 }
 
 export interface DailyStat {

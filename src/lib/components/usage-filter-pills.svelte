@@ -7,6 +7,7 @@
 		type UsageFilter,
 		type UsageFilterOptions
 	} from '$lib/usage-group';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import X from '@lucide/svelte/icons/x';
 
 	// Active filter pills. Each removes just its own value; "Clear all" only
@@ -15,10 +16,13 @@
 	let {
 		filters,
 		options,
+		optionsPending = false,
 		onFilters
 	}: {
 		filters: UsageFilter[];
 		options: UsageFilterOptions;
+		/** labels are still streaming in; avoids flashing raw ids in the pills */
+		optionsPending?: boolean;
 		onFilters: (next: UsageFilter[]) => void;
 	} = $props();
 
@@ -36,7 +40,11 @@
 			class="inline-flex items-center gap-1 rounded-full border bg-muted/50 py-0.5 pr-1 pl-2.5 text-xs"
 		>
 			<span class="text-muted-foreground">{dimensionLabel(f.dim)}:</span>
-			<span class="max-w-40 truncate font-medium">{labelFor(f.dim, v)}</span>
+			{#if optionsPending}
+				<Skeleton class="h-3.5 w-16 rounded-md" aria-hidden="true" />
+			{:else}
+				<span class="max-w-40 truncate font-medium">{labelFor(f.dim, v)}</span>
+			{/if}
 			<button
 				type="button"
 				class="rounded-full p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

@@ -19,11 +19,8 @@ import {
 	DIMENSION_JOIN,
 	usageCondsSql
 } from '$lib/server/usage-queries/predicates';
-import type {
-	DimensionUsageRow,
-	GroupedSeries,
-	GroupedSeriesResult
-} from '$lib/server/usage-queries/types';
+import type { DimensionUsageRow, GroupedSeriesResult } from '$lib/features/usage/types';
+import { foldGroupedRows } from '$lib/server/usage-queries/row-mapping';
 import { meterLabel } from '$lib/server/usage-queries/meter-sql';
 import { orgTokenMeters, orgTokenMetersSeries } from '$lib/server/usage-queries/meters';
 import { orgBillingLines, orgBillingLineSeries } from '$lib/server/usage-queries/billing-lines';
@@ -267,48 +264,13 @@ export async function orgUsageSeriesGrouped(
 		order by g.bucket asc
 	`);
 
-	// Positional rebuild: buckets in first-seen (ascending) order, then one dense
-	// point array per series indexed by that bucket order.
-	const buckets: string[] = [];
-	const bucketIndex = new Map<string, number>();
-	for (const r of rows) {
-		if (!bucketIndex.has(r.bucket)) {
-			bucketIndex.set(r.bucket, buckets.length);
-			buckets.push(r.bucket);
-		}
-	}
-
 	const meta = new Map(top.map((r) => [r.key, r]));
-	const series: GroupedSeries[] = axisKeys.map((key) => {
-		const m = meta.get(key);
-		return {
-			key,
-			label: m?.label ?? fallbackLabel(dim, key),
-			hint: m?.hint ?? null,
-			points: buckets.map(() => ({ requests: 0, denied: 0, costUsd: 0, tokens: 0 })),
-			costUsd: 0,
-			requests: 0,
-			tokens: 0
-		};
-	});
-	const seriesIndex = new Map(series.map((s, i) => [s.key, i]));
-
-	for (const r of rows) {
-		const si = seriesIndex.get(r.key);
-		const bi = bucketIndex.get(r.bucket);
-		if (si === undefined || bi === undefined) continue;
-		const s = series[si];
-		const point = {
-			requests: Number(r.requests ?? 0),
-			denied: Number(r.denied ?? 0),
-			costUsd: Number(r.cost ?? 0),
-			tokens: Number(r.tokens ?? 0)
-		};
-		s.points[bi] = point;
-		s.costUsd += point.costUsd;
-		s.requests += point.requests;
-		s.tokens += point.tokens;
-	}
+	const axis = axisKeys.map((key) => ({
+		key,
+		label: meta.get(key)?.label ?? fallbackLabel(dim, key),
+		hint: meta.get(key)?.hint ?? null
+	}));
+	const { buckets, series } = foldGroupedRows(rows, axis);
 
 	return { unit, buckets, series, hasOthers };
 }
