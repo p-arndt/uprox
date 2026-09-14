@@ -1,17 +1,16 @@
 import { fail, redirect } from '@sveltejs/kit';
-import type { Actions, PageServerLoad } from './$types';
+import type { Actions, PageServerLoad, RequestEvent } from './$types';
 import { auth } from '$lib/server/auth';
 import { APIError } from 'better-auth/api';
 import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { invitation, user } from '$lib/server/db/schema';
-import { getEnabledProviders, getOidcConfig, isEmailAuthEnabled } from '$lib/server/auth-config';
-
-/** Only allow internal, single-slash paths to prevent open redirects. */
-function safeRedirect(target: string | null | undefined): string {
-	if (target && target.startsWith('/') && !target.startsWith('//')) return target;
-	return '/app';
-}
+import {
+	getEnabledProviders,
+	getOidcConfig,
+	isEmailAuthEnabled,
+	safeRedirect
+} from '$lib/server/auth-config';
 
 /** Fetch our own invitation row by id (the row id doubles as the invite token). */
 async function findInvitation(id: string) {
@@ -54,7 +53,7 @@ export const load: PageServerLoad = async (event) => {
 };
 
 /** Re-validate the invitation server-side; returns it or a fail() response. */
-async function loadValidInvitation(event: Parameters<Actions[string]>[0]) {
+async function loadValidInvitation(event: RequestEvent) {
 	const inv = await findInvitation(event.params.id);
 	if (!inv || inv.status !== 'pending') {
 		return { error: fail(400, { message: 'This invitation is no longer valid.' }) };
@@ -70,7 +69,7 @@ async function loadValidInvitation(event: Parameters<Actions[string]>[0]) {
  * mark the invite accepted. Requires a logged-in user whose email matches the
  * invited address. Never downgrades an existing owner.
  */
-async function acceptAndRedirect(event: Parameters<Actions[string]>[0]) {
+async function acceptAndRedirect(event: RequestEvent) {
 	const current = event.locals.user;
 	if (!current) {
 		return fail(401, { message: 'You must be signed in to accept this invitation.' });

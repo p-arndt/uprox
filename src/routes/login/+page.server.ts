@@ -2,13 +2,12 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { auth } from '$lib/server/auth';
 import { APIError } from 'better-auth/api';
-import { getEnabledProviders, getOidcConfig, isEmailAuthEnabled } from '$lib/server/auth-config';
-
-/** Only allow internal, single-slash paths to prevent open redirects. */
-function safeRedirect(target: string | null | undefined): string {
-	if (target && target.startsWith('/') && !target.startsWith('//')) return target;
-	return '/app';
-}
+import {
+	getEnabledProviders,
+	getOidcConfig,
+	isEmailAuthEnabled,
+	safeRedirect
+} from '$lib/server/auth-config';
 
 export const load: PageServerLoad = (event) => {
 	const redirectTo = safeRedirect(event.url.searchParams.get('redirectTo'));
