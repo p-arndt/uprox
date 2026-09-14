@@ -1,7 +1,6 @@
 # Architecture and conventions
 
-How uprox is structured and the rules new code should follow. Existing code is being
-moved towards this shape. When you touch a file, leave it closer to the target.
+How uprox is structured and the rules new code should follow.
 
 The admin REST API under `/api` is documented in [`docs/API.md`](API.md).
 
@@ -17,10 +16,20 @@ src/
   lib/
     server/                  server-only modules, grouped by domain
       db/                    drizzle client + schema (never imported by client code)
-    features/<domain>/       target home for domain logic, components and types
-    components/              shared UI building blocks
+      gateway/               request pipeline driven by endpoint descriptors
+      adapters/              upstream provider adapters
+      api/                   REST body parsers and error shapes for /api
+      otlp/                  OTLP trace decoding
+      usage-queries/         cost-analysis SQL, one module per query family
+    features/<domain>/       domain logic, types and components (see below)
+    components/              UI building blocks shared across features
+      layout/                page-shell, page-header, detail-header, empty-state, stat-card
+      form/                  field-label, select-field, entity-dialog, confirm-action, ...
+      data/                  delta-pill, sparkline
       ui/                    vendored shadcn-svelte primitives (do not edit)
-    *.ts                     pure, isomorphic helpers (format, permissions, ...)
+    state/                   shared rune state (table sorting)
+    hooks/                   shared rune hooks
+    *.ts                     pure, isomorphic helpers (format, permissions, nav, ...)
 drizzle/                     generated SQL migrations + snapshots
 tests/unit | tests/db | tests/e2e
 ```
@@ -50,7 +59,7 @@ unit tested without mocks. I/O wrappers stay thin and call into them.
 - `src/lib/server/<domain>.ts` (or `src/lib/server/<domain>/`) per domain: services,
   tokens, providers, policies, pricing, budgets, usage, traces, members, settings.
 - There is no catch-all barrel. Import each function from the module that defines it.
-- The gateway is being restructured into a request pipeline
+- The gateway is a request pipeline
   (authenticate -> resolve endpoint -> policy/budget/rate limit -> cache -> upstream
   adapter -> meter/audit/trace) driven by **endpoint descriptors**: one declarative
   entry per public endpoint (path, request kind, model extraction, streaming,
@@ -65,17 +74,41 @@ Shared runtime code (constants, formatters, permission checks) goes in `src/lib/
 or a feature folder. Server code must not import `$lib/components`.
 Both rules are enforced by `no-restricted-imports` in `eslint.config.js`.
 
-### Feature folders (target for `src/lib`)
+### Feature folders
+
+Client-safe domain code lives in `src/lib/features/<domain>/`: pure modules and
+shared types at the top level, the domain's Svelte components in `components/`.
+Everything here is isomorphic, so server modules may import the pure modules (never
+the components).
 
 ```
-src/lib/features/usage/
-  range.ts            pure logic (+ tests in tests/unit)
-  types.ts            shared types, safe for client and server
-  UsageChart.svelte   feature-specific components
+src/lib/features/
+  usage/        range, group, url, meters, colors, cache-rate, chart-math, donut,
+                headline, metric, efficiency, token-meters, types, meter-types,
+                view.svelte.ts (URL-backed view state)
+    components/ usage-workbench, usage-headline, usage-stacked-chart, usage-*, ...
+  traces/       trace.ts (payload parsing), otel.ts (span tree)
+    components/ trace-conversation, trace-metadata, trace-waterfall, raw-payload-tabs
+  tokens/       tokens.ts
+    components/ token-form, token-row, create-token-dialog, edit-token-dialog, secret-dialog
+  providers/    providers.ts
+    components/ provider-key-dialog, rotate-key-dialog, edit-meta-dialog, provider-secret-row
+  pricing/      pricing.ts
+    components/ price-row, price-cell, add-model-dialog
+  policies/     inline-limits.ts, inline-limits-hints.ts
+    components/ policy-form, inline-limits-fields, inline-limits-advanced
+  budget/       budget.ts
+    components/ budget-alert, budget-gauge
+  auth/
+    components/ auth-shell, oidc-sign-in-form
 ```
 
-Put new domain-specific code in `src/lib/features/<domain>/`. `src/lib/components/`
-is for building blocks used across features.
+Tests for pure modules stay in `tests/unit/`.
+
+Put new domain-specific code in the matching feature folder. A component used by a
+single route (e.g. `src/routes/app/services/service-form.svelte`) stays colocated
+with that route. `src/lib/components/` is only for building blocks used across
+features.
 
 ### Vendored UI
 
