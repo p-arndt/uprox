@@ -13,7 +13,7 @@ import {
 } from '$lib/server/db/schema';
 import { encrypt, decrypt } from '$lib/server/crypto';
 import { issueToken } from '$lib/server/tokens';
-import { audit } from '$lib/server/audit';
+import { audit, insertAudit } from '$lib/server/audit';
 import type { BudgetStatus } from '$lib/budget';
 import { cacheRate } from '$lib/cache-rate';
 import type { MetaFilter } from '$lib/trace';
@@ -336,38 +336,46 @@ export async function createToken(
 	if (!svc) throw new Error('Service not found');
 
 	const issued = issueToken();
-	const [row] = await db
-		.insert(machineToken)
-		.values({
-			serviceId: svc.id,
-			name: input.name,
-			display: issued.display,
-			hashedToken: issued.hashedToken,
-			// only persisted when the issuer opted into re-copying
-			encryptedToken: input.recopyable ? encrypt(issued.plaintext) : null,
-			scopes: input.scopes ?? [],
-			allowedModels: input.allowedModels ?? [],
-			policyId: input.policyId ?? null,
-			expiresAt: input.expiresAt ?? null,
-			createdByUserId: userId,
-			...inlineConfigColumns({
-				allowedProviders: input.allowedProviders,
-				preferredProvider: input.preferredProvider,
-				rateLimitPerMinute: input.rateLimitPerMinute,
-				dailyBudgetUsd: input.dailyBudgetUsd,
-				monthlyBudgetUsd: input.monthlyBudgetUsd,
-				cacheTtlSeconds: input.cacheTtlSeconds,
-				tracingEnabled: input.tracingEnabled
+	// The token and its audit entry commit together: a token that exists without
+	// its creation record (or a record for a token that was never stored) would
+	// break the audit trail's guarantee. insertAudit throws, so a failed audit
+	// write rolls the token back instead of being swallowed.
+	const row = await db.transaction(async (tx) => {
+		const [created] = await tx
+			.insert(machineToken)
+			.values({
+				serviceId: svc.id,
+				name: input.name,
+				display: issued.display,
+				hashedToken: issued.hashedToken,
+				// only persisted when the issuer opted into re-copying
+				encryptedToken: input.recopyable ? encrypt(issued.plaintext) : null,
+				scopes: input.scopes ?? [],
+				allowedModels: input.allowedModels ?? [],
+				policyId: input.policyId ?? null,
+				expiresAt: input.expiresAt ?? null,
+				createdByUserId: userId,
+				...inlineConfigColumns({
+					allowedProviders: input.allowedProviders,
+					preferredProvider: input.preferredProvider,
+					rateLimitPerMinute: input.rateLimitPerMinute,
+					dailyBudgetUsd: input.dailyBudgetUsd,
+					monthlyBudgetUsd: input.monthlyBudgetUsd,
+					cacheTtlSeconds: input.cacheTtlSeconds,
+					tracingEnabled: input.tracingEnabled
+				})
 			})
-		})
-		.returning();
+			.returning();
 
-	await audit({
-		action: 'token.create',
-		status: 'ok',
-		serviceId: svc.id,
-		tokenId: row.id,
-		detail: input.name
+		await insertAudit(tx, {
+			action: 'token.create',
+			status: 'ok',
+			serviceId: svc.id,
+			tokenId: created.id,
+			detail: input.name
+		});
+
+		return created;
 	});
 
 	return { token: row, plaintext: issued.plaintext };
@@ -2863,12 +2871,7 @@ export async function orgBudgetStatus(): Promise<BudgetStatus[]> {
 				gte(auditLog.createdAt, monthStart)
 			)
 		)
-		.where(
-			and(
-				isNull(service.deletedAt),
-				sql`(${effectiveDaily} > 0 or ${effectiveMonthly} > 0)`
-			)
-		)
+		.where(and(isNull(service.deletedAt), sql`(${effectiveDaily} > 0 or ${effectiveMonthly} > 0)`))
 		.groupBy(
 			service.id,
 			service.name,
@@ -2882,7 +2885,9 @@ export async function orgBudgetStatus(): Promise<BudgetStatus[]> {
 	return rows.map((r) => {
 		const dailyFromService = r.serviceDailyBudget != null;
 		const monthlyFromService = r.serviceMonthlyBudget != null;
-		const dailyBudget = Number((dailyFromService ? r.serviceDailyBudget : r.policyDailyBudget) ?? 0);
+		const dailyBudget = Number(
+			(dailyFromService ? r.serviceDailyBudget : r.policyDailyBudget) ?? 0
+		);
 		const monthlyBudget = Number(
 			(monthlyFromService ? r.serviceMonthlyBudget : r.policyMonthlyBudget) ?? 0
 		);
