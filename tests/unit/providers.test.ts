@@ -535,6 +535,27 @@ describe('gemini price lookup by longest prefix', () => {
 	});
 });
 
+describe('resolvePrice exact and prefix matching', () => {
+	it('prefers an exact key over a shorter prefix key', () => {
+		const prices = { o3: { in: 2, out: 8 }, 'o3-mini': { in: 1, out: 4 } };
+		expect(resolvePrice(prices, 'o3')).toBe(prices.o3);
+		expect(resolvePrice(prices, 'o3-mini')).toBe(prices['o3-mini']);
+		expect(resolvePrice(prices, 'o3-mini-high')).toBe(prices['o3-mini']);
+		expect(resolvePrice(prices, 'o3-pro')).toBe(prices.o3);
+	});
+
+	it('does not match a key that is only a prefix of the model the other way round', () => {
+		expect(resolvePrice({ 'gpt-5.4-mini': { in: 1, out: 1 } }, 'gpt-5.4')).toBeNull();
+	});
+
+	it('sees keys added to a fresh map object', () => {
+		const first = { 'gpt-4o': { in: 1, out: 1 } };
+		expect(resolvePrice(first, 'gpt-4o-mini')).toBe(first['gpt-4o']);
+		const second = { ...first, 'gpt-4o-mini': { in: 2, out: 2 } };
+		expect(resolvePrice(second, 'gpt-4o-mini')).toBe(second['gpt-4o-mini']);
+	});
+});
+
 describe('resolvePrice', () => {
 	const prices = {
 		'gpt-5.4': { in: 2.5, out: 15 },

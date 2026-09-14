@@ -6,6 +6,20 @@
  * a service is to its ceiling and turns that into a display warning.
  */
 
+/**
+ * Start of the UTC day containing `now` — the boundary the daily budget resets
+ * on. Shared by enforcement, alerts and the dashboard status so all three sum
+ * spend over exactly the same window.
+ */
+export function startOfUtcDay(now = new Date()): Date {
+	return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+}
+
+/** Start of the UTC month containing `now` — the boundary the monthly budget resets on. */
+export function startOfUtcMonth(now = new Date()): Date {
+	return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+}
+
 /** One spend window (daily or monthly) for a service: ceiling and spend-so-far. */
 export interface BudgetWindow {
 	budgetUsd: number;
@@ -43,7 +57,12 @@ export interface BudgetWarning {
 /** Default soft-warning threshold: flag a service once it crosses 80% of a ceiling. */
 export const BUDGET_WARN_THRESHOLD = 0.8;
 
-/** Classify a utilization fraction (spent/budget) into a display level. */
+/**
+ * Classify a utilization fraction (spent/budget) against a warn threshold, also
+ * a fraction: 'over' at or past the ceiling, 'warn' at or past the threshold.
+ * The single classifier shared by the dashboard warnings and the budget alert
+ * emails (which store the threshold as a percent and divide by 100).
+ */
 export function budgetLevel(fraction: number, threshold = BUDGET_WARN_THRESHOLD): BudgetLevel {
 	if (fraction >= 1) return 'over';
 	if (fraction >= threshold) return 'warn';

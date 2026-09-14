@@ -120,6 +120,13 @@
       "when": 1789421196666,
       "tag": "0016_audit_log_usage_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1789423256815,
+      "tag": "0017_budget_alert_state_pk",
+      "breakpoints": true
     }
   ]
 }

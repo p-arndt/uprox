@@ -24,7 +24,7 @@ import {
 	type RawMeterSums,
 	meterSumsFromRow
 } from '$lib/server/usage-queries/meter-sql';
-import { listModelPrices, ratesFor } from '$lib/server/usage-queries/rate-cards';
+import { loadRateCards, ratesFor } from '$lib/server/usage-queries/rate-cards';
 
 /**
  * The key the meter series aggregates under when it isn't splitting per line —
@@ -87,7 +87,7 @@ export async function bucketedMeterCells(
 		order by g.bucket asc
 	`);
 
-	const prices = await listModelPrices();
+	const prices = await loadRateCards();
 	const buckets: string[] = [];
 	const idx = new Map<string, number>();
 	const cells: Map<string, MeterCell>[] = [];

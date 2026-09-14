@@ -2,6 +2,7 @@
 import { desc, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { policy } from '$lib/server/db/schema';
+import { audit } from '$lib/server/audit';
 
 export function listPolicies() {
 	return db.select().from(policy).orderBy(desc(policy.createdAt));
@@ -66,6 +67,13 @@ export async function updatePolicy(
 	return row ?? null;
 }
 
-export async function deletePolicy(id: string) {
-	await db.delete(policy).where(eq(policy.id, id));
+/**
+ * Delete a policy and audit it. Returns whether a row was removed, so callers
+ * can tell a stale id from a real deletion; nothing is audited for an unknown id.
+ */
+export async function deletePolicy(id: string): Promise<boolean> {
+	const [row] = await db.delete(policy).where(eq(policy.id, id)).returning({ name: policy.name });
+	if (!row) return false;
+	await audit({ action: 'policy.delete', status: 'ok', detail: row.name });
+	return true;
 }

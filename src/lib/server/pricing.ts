@@ -135,8 +135,13 @@ function selectVisible() {
 
 /**
  * The instance's effective price map: platform defaults overlaid with custom
- * (isDefault = false) rows (custom wins per model). Cached globally for
- * {@link CACHE_TTL_MS}.
+ * (isDefault = false) rows (custom wins per model), keyed by lower-cased model.
+ * Cached globally for {@link CACHE_TTL_MS} and dropped by every pricing write.
+ *
+ * This is the one loader of resolved prices: gateway cost estimation and the
+ * usage analytics' rate cards (usage-queries/rate-cards.ts) both read it and
+ * match models with `resolvePrice`, so the two never disagree about a price.
+ * The returned map is shared — do not mutate it.
  */
 export async function getEffectivePriceMap(): Promise<PriceMap> {
 	if (cachedEntry && cachedEntry.expires > Date.now()) return cachedEntry.map;
@@ -155,10 +160,10 @@ export async function getEffectivePriceMap(): Promise<PriceMap> {
 	const map: PriceMap = {};
 	// defaults first, then custom rows override any matching model
 	for (const r of rows) {
-		if (r.isDefault) map[r.model] = toPrice(r);
+		if (r.isDefault) map[r.model.toLowerCase()] = toPrice(r);
 	}
 	for (const r of rows) {
-		if (!r.isDefault) map[r.model] = toPrice(r);
+		if (!r.isDefault) map[r.model.toLowerCase()] = toPrice(r);
 	}
 
 	cachedEntry = { map, expires: Date.now() + CACHE_TTL_MS };

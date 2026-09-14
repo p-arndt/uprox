@@ -2,7 +2,7 @@
 import { and, eq, gte, isNull, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { service, policy, auditLog } from '$lib/server/db/schema';
-import type { BudgetStatus } from '$lib/budget';
+import { startOfUtcDay, startOfUtcMonth, type BudgetStatus } from '$lib/budget';
 import { getSettings } from '$lib/server/settings';
 
 /**
@@ -17,8 +17,8 @@ import { getSettings } from '$lib/server/settings';
  */
 export async function orgBudgetStatus(): Promise<BudgetStatus[]> {
 	const now = new Date();
-	const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-	const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+	const monthStart = startOfUtcMonth(now);
+	const dayStart = startOfUtcDay(now);
 
 	// Built with the query builder rather than a raw `db.execute`: that's the only
 	// path that binds a Date parameter through the column's type mapping (the same
@@ -108,8 +108,8 @@ export async function instanceBudgetStatus(): Promise<BudgetStatus | null> {
 	if (dailyBudget <= 0 && monthlyBudget <= 0) return null;
 
 	const now = new Date();
-	const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-	const dayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+	const monthStart = startOfUtcMonth(now);
+	const dayStart = startOfUtcDay(now);
 
 	const [row] = await db
 		.select({

@@ -2,10 +2,12 @@
  * Upstream provider registry. Every provider here speaks (or has) an
  * OpenAI-compatible surface, so the gateway can proxy a single request shape.
  */
-import type { Capability } from '$lib/scopes';
+import type { GatewayScope } from '$lib/scopes';
 import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/pricing';
 
-export type { Capability };
+export type { GatewayScope };
+/** @deprecated Use {@link GatewayScope}; re-exported for the gateway modules that still import it. */
+export type { Capability } from '$lib/scopes';
 
 export interface ProviderDef {
 	id: string;
@@ -19,7 +21,7 @@ export interface ProviderDef {
 	/** model-name prefixes used to route a request to this provider */
 	modelPrefixes: string[];
 	/** gateway endpoints this provider's upstream actually implements */
-	capabilities: Capability[];
+	capabilities: GatewayScope[];
 	/**
 	 * How the upstream authenticates. 'bearer' sends `Authorization: Bearer <key>`
 	 * (OpenAI, Anthropic); 'api-key' sends an `api-key: <key>` header (Azure);
@@ -184,7 +186,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 };
 
 /** Whether a provider implements a given gateway capability. */
-export function providerSupports(provider: ProviderDef, capability: Capability): boolean {
+export function providerSupports(provider: ProviderDef, capability: GatewayScope): boolean {
 	return provider.capabilities.includes(capability);
 }
 
@@ -576,14 +578,31 @@ export function costFromPrice(
 	return Math.round(cost * 1e8) / 1e8;
 }
 
+/** Price-map keys, longest first, memoized per map object. */
+const sortedKeysCache = new WeakMap<Record<string, ModelPrice>, string[]>();
+
+function keysLongestFirst(prices: Record<string, ModelPrice>): string[] {
+	let keys = sortedKeysCache.get(prices);
+	if (!keys) {
+		keys = Object.keys(prices).sort((a, b) => b.length - a.length);
+		sortedKeysCache.set(prices, keys);
+	}
+	return keys;
+}
+
 /**
- * Resolve the longest-prefix price for a model from a price map, matching the
- * legacy lookup: e.g. "gpt-5.4-mini" wins over "gpt-5.4".
+ * Resolve the longest-prefix price for a model from a price map: an exact key
+ * wins, otherwise the longest key the model name starts with — e.g.
+ * "gpt-5.4-mini-2026" resolves to "gpt-5.4-mini", not "gpt-5.4". The model name
+ * is matched case-insensitively; keys are expected lower-case (as stored).
+ *
+ * This is the single price resolver: the gateway's cost estimate and the usage
+ * analytics' rate cards both go through it. The sorted key list is memoized per
+ * map object, so treat a price map as immutable once it has been resolved against.
  */
 export function resolvePrice(prices: Record<string, ModelPrice>, model: string): ModelPrice | null {
 	const m = model.toLowerCase();
-	const key = Object.keys(prices)
-		.sort((a, b) => b.length - a.length)
-		.find((k) => m.startsWith(k));
+	if (Object.hasOwn(prices, m)) return prices[m];
+	const key = keysLongestFirst(prices).find((k) => m.startsWith(k));
 	return key ? prices[key] : null;
 }

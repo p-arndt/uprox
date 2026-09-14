@@ -11,7 +11,7 @@
  * Because translation produces standard OpenAI payloads, everything downstream
  * (usage normalization, response caching, audit) keeps working unchanged.
  */
-import type { Capability } from '$lib/scopes';
+import type { GatewayScope } from '$lib/scopes';
 
 /** A model id as it appears in an OpenAI-style model listing. */
 export interface AdapterModel {
@@ -24,15 +24,20 @@ export interface ProviderAdapter {
 	 * operation in the path (e.g. `/models/{model}:generateContent`), so this
 	 * replaces the `baseUrl + path` concatenation used for pass-through providers.
 	 */
-	buildUrl(opts: { baseUrl: string; scope: Capability; model: string; stream: boolean }): string;
+	buildUrl(opts: { baseUrl: string; scope: GatewayScope; model: string; stream: boolean }): string;
 	/** Translate an OpenAI-shaped request body into the provider-native body. */
-	translateRequest(scope: Capability, body: unknown): unknown;
+	translateRequest(scope: GatewayScope, body: unknown): unknown;
 	/**
 	 * Translate a buffered native response into an OpenAI-shaped JSON string.
 	 * `ok` is the upstream HTTP success flag: on a non-2xx the native error body
 	 * is rewrapped in an OpenAI error envelope so SDK clients parse it correctly.
 	 */
-	translateResponse(opts: { scope: Capability; model: string; text: string; ok: boolean }): string;
+	translateResponse(opts: {
+		scope: GatewayScope;
+		model: string;
+		text: string;
+		ok: boolean;
+	}): string;
 	/**
 	 * Wrap a native streaming response body, emitting OpenAI-compatible
 	 * `chat.completion.chunk` SSE (including a trailing usage chunk and `[DONE]`),
