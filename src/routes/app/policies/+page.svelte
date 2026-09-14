@@ -8,6 +8,7 @@
 	import EmptyState from '$lib/components/empty-state.svelte';
 	import ConfirmAction from '$lib/components/confirm-action.svelte';
 	import PolicyForm, { type PolicyFormValues } from '$lib/components/policy-form.svelte';
+	import { inlineLimitsFromRow } from '$lib/components/inline-limits';
 	import { can } from '$lib/permissions';
 	import ShieldHalf from '@lucide/svelte/icons/shield-half';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -119,14 +120,9 @@
 										(editing = {
 											id: p.id,
 											name: p.name,
-											allowedProviders: [...p.allowedProviders],
-											allowedModels: p.allowedModels.join(', '),
-											preferredProvider: p.preferredProvider ?? '',
-											rateLimitPerMinute: p.rateLimitPerMinute,
-											dailyBudgetUsd: String(Number(p.dailyBudgetUsd)),
-											monthlyBudgetUsd: String(Number(p.monthlyBudgetUsd)),
-											cacheTtlSeconds: p.cacheTtlSeconds == null ? '' : String(p.cacheTtlSeconds),
-											tracingEnabled: p.tracingEnabled == null ? '' : String(p.tracingEnabled)
+											...inlineLimitsFromRow(p),
+											// a preset's rate limit is always set (0 = unlimited)
+											rateLimitPerMinute: p.rateLimitPerMinute
 										})}
 								>
 									<Pencil class="size-4" />

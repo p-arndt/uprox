@@ -3,6 +3,7 @@ import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
 import { listPolicies, createPolicy, deletePolicy, updatePolicy } from '$lib/server/data';
 import { PROVIDERS } from '$lib/server/providers';
+import { inlineFromForm } from '$lib/server/parse-config';
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
@@ -12,6 +13,26 @@ export const load: PageServerLoad = async (event) => {
 	};
 };
 
+/**
+ * A preset's fields from the shared limits form. Unlike the inline overrides on
+ * services and tokens, a preset's lists, rate limit and budgets are always set:
+ * blank means "allow all" / unlimited (0). The cache TTL and tracing keep the
+ * tri-state, where blank inherits the instance default.
+ */
+function policyFromForm(data: FormData) {
+	const inline = inlineFromForm(data, { includeModels: true });
+	return {
+		allowedProviders: inline.allowedProviders ?? [],
+		allowedModels: inline.allowedModels ?? [],
+		preferredProvider: inline.preferredProvider ?? null,
+		rateLimitPerMinute: inline.rateLimitPerMinute ?? 0,
+		dailyBudgetUsd: inline.dailyBudgetUsd ?? 0,
+		monthlyBudgetUsd: inline.monthlyBudgetUsd ?? 0,
+		cacheTtlSeconds: inline.cacheTtlSeconds ?? null,
+		tracingEnabled: inline.tracingEnabled ?? null
+	};
+}
+
 export const actions: Actions = {
 	create: async (event) => {
 		await requirePermission(event, 'policies:manage');
@@ -19,31 +40,7 @@ export const actions: Actions = {
 		const name = data.get('name')?.toString().trim();
 		if (!name) return fail(400, { message: 'Name is required' });
 
-		const allowedProviders = data.getAll('allowedProviders').map((p) => p.toString());
-		const allowedModels = (data.get('allowedModels')?.toString() ?? '')
-			.split(',')
-			.map((m) => m.trim())
-			.filter(Boolean);
-
-		// blank cache field = inherit the org default (null); a number overrides it
-		const rawCache = data.get('cacheTtlSeconds')?.toString().trim() ?? '';
-		// blank = no preference (defaults to OpenAI when both backends are configured)
-		const preferredProvider = data.get('preferredProvider')?.toString() || null;
-
-		// blank = inherit org default; "true"/"false" force tracing on/off
-		const rawTracing = data.get('tracingEnabled')?.toString() ?? '';
-
-		await createPolicy({
-			name,
-			allowedProviders,
-			allowedModels,
-			preferredProvider,
-			rateLimitPerMinute: Number(data.get('rateLimitPerMinute')) || 0,
-			dailyBudgetUsd: Number(data.get('dailyBudgetUsd')) || 0,
-			monthlyBudgetUsd: Number(data.get('monthlyBudgetUsd')) || 0,
-			cacheTtlSeconds: rawCache === '' ? null : Number(rawCache) || 0,
-			tracingEnabled: rawTracing === '' ? null : rawTracing === 'true'
-		});
+		await createPolicy({ name, ...policyFromForm(data) });
 		return { success: true };
 	},
 	update: async (event) => {
@@ -51,33 +48,10 @@ export const actions: Actions = {
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
 		const name = data.get('name')?.toString().trim();
+		if (!id) return fail(400, { message: 'Missing id' });
 		if (!name) return fail(400, { message: 'Name is required' });
 
-		const allowedProviders = data.getAll('allowedProviders').map((p) => p.toString());
-		const allowedModels = (data.get('allowedModels')?.toString() ?? '')
-			.split(',')
-			.map((m) => m.trim())
-			.filter(Boolean);
-
-		// blank cache field = inherit the org default (null); a number overrides it
-		const rawCache = data.get('cacheTtlSeconds')?.toString().trim() ?? '';
-		// blank = no preference (defaults to OpenAI when both backends are configured)
-		const preferredProvider = data.get('preferredProvider')?.toString() || null;
-
-		// blank = inherit org default; "true"/"false" force tracing on/off
-		const rawTracing = data.get('tracingEnabled')?.toString() ?? '';
-
-		await updatePolicy(id!, {
-			name,
-			allowedProviders,
-			allowedModels,
-			preferredProvider,
-			rateLimitPerMinute: Number(data.get('rateLimitPerMinute')) || 0,
-			dailyBudgetUsd: Number(data.get('dailyBudgetUsd')) || 0,
-			monthlyBudgetUsd: Number(data.get('monthlyBudgetUsd')) || 0,
-			cacheTtlSeconds: rawCache === '' ? null : Number(rawCache) || 0,
-			tracingEnabled: rawTracing === '' ? null : rawTracing === 'true'
-		});
+		await updatePolicy(id, { name, ...policyFromForm(data) });
 		return { success: true };
 	},
 	delete: async (event) => {

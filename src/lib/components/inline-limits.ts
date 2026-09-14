@@ -34,3 +34,33 @@ export const emptyInlineLimits = (): InlineLimitValues => ({
 	cacheTtlSeconds: '',
 	tracingEnabled: ''
 });
+
+/** The inline override columns as they come back on a service/token/preset row. */
+export interface InlineLimitRow {
+	allowedProviders?: string[] | null;
+	allowedModels?: string[] | null;
+	preferredProvider?: string | null;
+	rateLimitPerMinute?: number | null;
+	/** numeric columns round-trip as strings */
+	dailyBudgetUsd?: number | string | null;
+	monthlyBudgetUsd?: number | string | null;
+	cacheTtlSeconds?: number | null;
+	tracingEnabled?: boolean | null;
+}
+
+/** A null column becomes '' (inherit); numeric strings are normalized for display. */
+const numStr = (v: number | string | null | undefined) => (v == null ? '' : String(Number(v)));
+
+/** Map a row's inline override columns to form values for editing. */
+export function inlineLimitsFromRow(row: InlineLimitRow): InlineLimitValues {
+	return {
+		allowedProviders: [...(row.allowedProviders ?? [])],
+		allowedModels: (row.allowedModels ?? []).join(', '),
+		preferredProvider: row.preferredProvider ?? '',
+		rateLimitPerMinute: row.rateLimitPerMinute == null ? '' : String(row.rateLimitPerMinute),
+		dailyBudgetUsd: numStr(row.dailyBudgetUsd),
+		monthlyBudgetUsd: numStr(row.monthlyBudgetUsd),
+		cacheTtlSeconds: row.cacheTtlSeconds == null ? '' : String(row.cacheTtlSeconds),
+		tracingEnabled: row.tracingEnabled == null ? '' : String(row.tracingEnabled)
+	};
+}

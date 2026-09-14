@@ -9,25 +9,8 @@ import {
 	listPolicies,
 	listProviderSecrets
 } from '$lib/server/data';
-import { parseInlineConfig } from '$lib/server/parse-config';
+import { inlineFromForm } from '$lib/server/parse-config';
 import { PROVIDERS } from '$lib/server/providers';
-
-/** Pull the inline limit/access overrides out of a service form submission. */
-function inlineFromForm(data: FormData) {
-	return parseInlineConfig(
-		{
-			allowedProviders: data.getAll('allowedProviders').map((p) => p.toString()),
-			allowedModels: data.get('allowedModels'),
-			preferredProvider: data.get('preferredProvider'),
-			rateLimitPerMinute: data.get('rateLimitPerMinute'),
-			dailyBudgetUsd: data.get('dailyBudgetUsd'),
-			monthlyBudgetUsd: data.get('monthlyBudgetUsd'),
-			cacheTtlSeconds: data.get('cacheTtlSeconds'),
-			tracingEnabled: data.get('tracingEnabled')
-		},
-		{ includeModels: true }
-	);
-}
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
@@ -70,7 +53,7 @@ export const actions: Actions = {
 			description: data.get('description')?.toString() || undefined,
 			policyId: data.get('policyId')?.toString() || null,
 			providerSecretId: data.get('providerSecretId')?.toString() || null,
-			...inlineFromForm(data)
+			...inlineFromForm(data, { includeModels: true })
 		});
 		return { success: true };
 	},
@@ -86,7 +69,7 @@ export const actions: Actions = {
 			description: data.get('description')?.toString() || null,
 			policyId: data.get('policyId')?.toString() || null,
 			providerSecretId: data.get('providerSecretId')?.toString() || null,
-			...inlineFromForm(data)
+			...inlineFromForm(data, { includeModels: true })
 		});
 		return { success: true };
 	},

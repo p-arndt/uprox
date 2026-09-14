@@ -9,7 +9,7 @@
 	import EmptyState from '$lib/components/empty-state.svelte';
 	import ConfirmAction from '$lib/components/confirm-action.svelte';
 	import ServiceForm, { type ServiceFormValues } from '$lib/components/service-form.svelte';
-	import { emptyInlineLimits } from '$lib/components/inline-limits';
+	import { emptyInlineLimits, inlineLimitsFromRow } from '$lib/components/inline-limits';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -44,9 +44,6 @@
 		}
 	});
 
-	// null inline column → '' (inherit) in the form; budgets are numeric strings,
-	// normalized to a plain number for display.
-	const numStr = (v: number | string | null) => (v == null ? '' : String(Number(v)));
 	type ServiceRow = (typeof data.services)[number];
 	function startEdit(s: ServiceRow) {
 		editing = {
@@ -56,14 +53,7 @@
 			description: s.description ?? '',
 			policyId: s.policyId ?? '',
 			providerSecretId: s.providerSecretId ?? '',
-			allowedProviders: s.allowedProviders ?? [],
-			allowedModels: (s.allowedModels ?? []).join(', '),
-			preferredProvider: s.preferredProvider ?? '',
-			rateLimitPerMinute: s.rateLimitPerMinute == null ? '' : String(s.rateLimitPerMinute),
-			dailyBudgetUsd: numStr(s.dailyBudgetUsd),
-			monthlyBudgetUsd: numStr(s.monthlyBudgetUsd),
-			cacheTtlSeconds: s.cacheTtlSeconds == null ? '' : String(s.cacheTtlSeconds),
-			tracingEnabled: s.tracingEnabled == null ? '' : String(s.tracingEnabled)
+			...inlineLimitsFromRow(s)
 		};
 	}
 </script>
