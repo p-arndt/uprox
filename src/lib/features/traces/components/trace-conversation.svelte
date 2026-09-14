@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { requestMessages, responseMessage } from '$lib/trace';
+	import { requestMessages, responseMessage } from '$lib/features/traces/trace';
 
 	let {
 		requestBody,

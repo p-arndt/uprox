@@ -1,7 +1,7 @@
 /** Gateway authentication and the request headers the gateway reads. */
 import type { RequestEvent } from '@sveltejs/kit';
 import { resolveToken, type ResolvedToken } from '$lib/server/tokens';
-import { parseTraceparent, parseTraceMetadata } from '$lib/trace';
+import { parseTraceparent, parseTraceMetadata } from '$lib/features/traces/trace';
 import { gatewayError } from './envelope';
 
 /**

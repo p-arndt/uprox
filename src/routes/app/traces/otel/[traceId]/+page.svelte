@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { prettyJson, waterfallBar } from '$lib/trace';
+	import { prettyJson, waterfallBar } from '$lib/features/traces/trace';
 	import {
 		buildSpanTree,
 		flattenTree,
@@ -8,10 +8,10 @@
 		spanKind,
 		spanDetail,
 		spanKindAccent
-	} from '$lib/otel';
+	} from '$lib/features/traces/otel';
 	import { formatDuration, formatTokens } from '$lib/format';
 	import { toneDot } from '$lib/events';
-	import TraceWaterfall from '$lib/components/trace-waterfall.svelte';
+	import TraceWaterfall from '$lib/features/traces/components/trace-waterfall.svelte';
 	import DetailHeader from '$lib/components/detail-header.svelte';
 	import Network from '@lucide/svelte/icons/network';
 	import PageShell from '$lib/components/page-shell.svelte';

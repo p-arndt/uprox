@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { callSpan, callsWindow, rawResponseBody, waterfallBar } from '$lib/trace';
+import { callSpan, callsWindow, rawResponseBody, waterfallBar } from '$lib/features/traces/trace';
 import { formatDuration } from '$lib/format';
-import { spanKindAccent } from '$lib/otel';
+import { spanKindAccent } from '$lib/features/traces/otel';
 
 describe('callSpan', () => {
 	it('ends at createdAt and starts latency earlier', () => {

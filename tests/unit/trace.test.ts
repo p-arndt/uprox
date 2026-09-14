@@ -10,7 +10,7 @@ import {
 	parseTraceMetadata,
 	parseMetaFilter,
 	prettyJson
-} from '$lib/trace';
+} from '$lib/features/traces/trace';
 
 describe('safeParse', () => {
 	it('parses valid JSON and returns null for invalid/empty', () => {

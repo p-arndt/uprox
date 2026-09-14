@@ -1,6 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { parseOtlpProtobuf, parseOtlpJson } from '$lib/server/otlp/decode';
-import { buildSpanTree, flattenTree, traceWindow, spanDetail, spanKind } from '$lib/otel';
+import {
+	buildSpanTree,
+	flattenTree,
+	traceWindow,
+	spanDetail,
+	spanKind
+} from '$lib/features/traces/otel';
 
 /* ------- a tiny, independent protobuf encoder to exercise the wire decoder ------ */
 
