@@ -6,8 +6,9 @@ import type { BudgetStatus } from '$lib/budget';
 import { getSettings } from '$lib/server/settings';
 
 /**
- * Current spend standing for every service whose policy sets a daily or monthly
- * ceiling — the input to the budget soft-warnings on the overview and usage
+ * Current spend standing for every service with an effective daily or monthly
+ * ceiling (set inline on the service or inherited from its policy) — the input
+ * to the budget soft-warnings on the overview and usage
  * pages. Windows are the same fixed UTC calendar buckets the gateway enforces
  * against (see budget.ts): "daily" since 00:00 UTC, "monthly" since the 1st. The
  * day/month boundaries are computed here and passed as parameters so this read
