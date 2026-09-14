@@ -37,8 +37,64 @@ export default defineConfig(
 		}
 	},
 	{
-		// Override or add rule settings here, such as:
-		// 'svelte/button-has-type': 'error'
-		rules: {}
+		// Size and complexity budgets. Warnings only for now: they point at code to
+		// split into smaller, testable modules without blocking existing files.
+		files: ['src/**/*.{js,ts,svelte}'],
+		ignores: ['src/lib/components/ui/**'],
+		rules: {
+			'max-lines': ['warn', { max: 600, skipBlankLines: true, skipComments: true }],
+			'max-lines-per-function': ['warn', { max: 120, skipBlankLines: true, skipComments: true }],
+			complexity: ['warn', 20],
+			'max-depth': ['warn', 4]
+		}
+	},
+	{
+		// Client code (anything that can end up in the browser bundle) must never
+		// value-import server modules. Type-only imports are erased at build time
+		// and stay allowed.
+		files: [
+			'src/lib/**/*.{js,ts,svelte}',
+			'src/routes/**/*.svelte',
+			'src/routes/**/+page.{js,ts}',
+			'src/routes/**/+layout.{js,ts}',
+			'src/hooks.client.{js,ts}'
+		],
+		ignores: ['src/lib/server/**', 'src/lib/**/*.server.{js,ts}'],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					patterns: [
+						{
+							group: ['$lib/server', '$lib/server/**'],
+							allowTypeImports: true,
+							message:
+								'Client code must not import server modules. Use `import type`, or move shared logic out of $lib/server.'
+						}
+					]
+				}
+			]
+		}
+	},
+	{
+		// Server code must not depend on UI components.
+		files: [
+			'src/lib/server/**/*.{js,ts}',
+			'src/**/*.server.{js,ts}',
+			'src/routes/**/+server.{js,ts}'
+		],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					patterns: [
+						{
+							group: ['$lib/components', '$lib/components/**'],
+							message: 'Server code must not import UI components.'
+						}
+					]
+				}
+			]
+		}
 	}
 );
