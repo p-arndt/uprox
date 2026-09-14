@@ -2,7 +2,7 @@
 import { and, eq, gte, isNull, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { service, policy, auditLog } from '$lib/server/db/schema';
-import { startOfUtcDay, startOfUtcMonth, type BudgetStatus } from '$lib/budget';
+import { startOfUtcDay, startOfUtcMonth, type BudgetStatus } from '$lib/features/budget/budget';
 import { getSettings } from '$lib/server/settings';
 
 /**

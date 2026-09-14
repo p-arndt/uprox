@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
-	import { budgetLevel, budgetRows, type BudgetStatus } from '$lib/budget';
+	import { budgetLevel, budgetRows, type BudgetStatus } from '$lib/features/budget/budget';
 	import { formatUsd } from '$lib/format';
 
 	// Always-on spend-vs-ceiling gauges (cf. the OpenAI "June spend $2.44 / $10.00"

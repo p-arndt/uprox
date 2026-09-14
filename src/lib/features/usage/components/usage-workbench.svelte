@@ -5,10 +5,10 @@
 	import UsageToolbarControls from '$lib/features/usage/components/usage-toolbar-controls.svelte';
 	import UsageAnalysisCard from '$lib/features/usage/components/usage-analysis-card.svelte';
 	import UsageDeepDive from '$lib/features/usage/components/usage-deep-dive.svelte';
-	import BudgetGauge from '$lib/components/budget-gauge.svelte';
+	import BudgetGauge from '$lib/features/budget/components/budget-gauge.svelte';
 	import type { UsageDimension } from '$lib/features/usage/group';
 	import type { DimensionUsageRow, Streamed, UsageAnalysis } from '$lib/features/usage/types';
-	import type { BudgetStatus } from '$lib/budget';
+	import type { BudgetStatus } from '$lib/features/budget/budget';
 	import { latest, type UsageView } from '$lib/features/usage/view.svelte';
 	import type { ResolvedPathname } from '$app/types';
 

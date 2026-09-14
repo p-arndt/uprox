@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Alert from '$lib/components/ui/alert/index.js';
-	import { budgetWarnings, type BudgetStatus } from '$lib/budget';
+	import { budgetWarnings, type BudgetStatus } from '$lib/features/budget/budget';
 	import { formatUsd } from '$lib/format';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 

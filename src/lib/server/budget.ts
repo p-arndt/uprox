@@ -12,7 +12,7 @@
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
-import { startOfUtcDay, startOfUtcMonth } from '$lib/budget';
+import { startOfUtcDay, startOfUtcMonth } from '$lib/features/budget/budget';
 
 export interface BudgetLimits {
 	dailyBudgetUsd: string | number;

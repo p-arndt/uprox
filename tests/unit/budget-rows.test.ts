@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { budgetRows, type BudgetStatus } from '$lib/budget';
+import { budgetRows, type BudgetStatus } from '$lib/features/budget/budget';
 
 const status = (over: Partial<BudgetStatus>): BudgetStatus => ({
 	serviceId: 's1',

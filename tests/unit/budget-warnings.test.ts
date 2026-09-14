@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { budgetLevel, budgetWarnings, BUDGET_WARN_THRESHOLD, type BudgetStatus } from '$lib/budget';
+import {
+	budgetLevel,
+	budgetWarnings,
+	BUDGET_WARN_THRESHOLD,
+	type BudgetStatus
+} from '$lib/features/budget/budget';
 
 const svc = (over: Partial<BudgetStatus> = {}): BudgetStatus => ({
 	serviceId: 's1',

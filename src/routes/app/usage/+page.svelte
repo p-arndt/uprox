@@ -1,5 +1,5 @@
 <script lang="ts">
-	import BudgetAlert from '$lib/components/budget-alert.svelte';
+	import BudgetAlert from '$lib/features/budget/components/budget-alert.svelte';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import UsageWorkbench from '$lib/features/usage/components/usage-workbench.svelte';
 	import { resolve } from '$app/paths';
