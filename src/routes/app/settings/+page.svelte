@@ -1,10 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { enhance } from '$app/forms';
 	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import * as Card from '$lib/components/ui/card/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
@@ -17,25 +14,31 @@
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import DollarSign from '@lucide/svelte/icons/dollar-sign';
 	import PageShell from '$lib/components/page-shell.svelte';
+	import SettingsCard from './settings-card.svelte';
 
 	let { data, form } = $props();
 
+	type Settings = typeof data.settings;
+
+	/** The switch-backed settings, mirrored locally so the Switches can bind. */
+	function togglesFrom(s: Settings) {
+		return {
+			membersCanManageTokens: s.membersCanManageTokens,
+			membersCanManageServices: s.membersCanManageServices,
+			tokensRecopyableDefault: s.tokensRecopyableDefault,
+			budgetAlertsEnabled: s.budgetAlertsEnabled,
+			tracingEnabled: s.tracingEnabled
+		};
+	}
+
 	// Seeded once from server data; the $effect below re-syncs after reloads.
-	let tokensOn = $state(untrack(() => data.settings.membersCanManageTokens));
-	let servicesOn = $state(untrack(() => data.settings.membersCanManageServices));
-	let recopyOn = $state(untrack(() => data.settings.tokensRecopyableDefault));
-	let alertsOn = $state(untrack(() => data.settings.budgetAlertsEnabled));
-	let tracingOn = $state(untrack(() => data.settings.tracingEnabled));
+	let toggles = $state(untrack(() => togglesFrom(data.settings)));
 
 	const canManageSettings = $derived(can(data.role, 'settings:manage', data.memberPermissions));
 
 	// Keep toggles in sync when settings are reloaded (e.g. after invalidateAll).
 	$effect(() => {
-		tokensOn = data.settings.membersCanManageTokens;
-		servicesOn = data.settings.membersCanManageServices;
-		recopyOn = data.settings.tokensRecopyableDefault;
-		alertsOn = data.settings.budgetAlertsEnabled;
-		tracingOn = data.settings.tracingEnabled;
+		toggles = togglesFrom(data.settings);
 	});
 
 	$effect(() => {
@@ -49,308 +52,198 @@
 <PageShell width="narrow">
 	<PageHeader title="Settings" description="Org-wide gateway defaults." />
 
-	<Card.Root>
-		<Card.Header>
-			<div class="flex items-center gap-3">
-				<div class="flex size-9 items-center justify-center rounded-lg border bg-muted">
-					<DatabaseZap class="size-4" />
-				</div>
-				<div>
-					<Card.Title class="text-base">Response cache</Card.Title>
-					<Card.Description>
-						Exact-match cache for chat & embeddings, applied to every service.
-					</Card.Description>
-				</div>
-			</div>
-		</Card.Header>
-		<Card.Content>
-			<form
-				method="post"
-				action="?/updateCache"
-				class="space-y-4"
-				use:enhance={() =>
-					async ({ update }) =>
-						update({ reset: false })}
-			>
-				<div class="space-y-2">
-					<Label for="cacheTtlSeconds">Default cache TTL (seconds)</Label>
-					<Input
-						id="cacheTtlSeconds"
-						name="cacheTtlSeconds"
-						type="number"
-						min="0"
-						value={data.settings.cacheTtlSeconds}
-						class="max-w-xs"
-					/>
-					<p class="text-xs text-muted-foreground">
-						0 disables caching org-wide. Identical requests within the TTL replay the stored
-						response at zero cost (streaming included). A policy can override this per service.
-					</p>
-				</div>
-				<Button type="submit">Save</Button>
-			</form>
-		</Card.Content>
-	</Card.Root>
+	<SettingsCard
+		icon={DatabaseZap}
+		title="Response cache"
+		description="Exact-match cache for chat & embeddings, applied to every service."
+		action="updateCache"
+	>
+		<div class="space-y-2">
+			<Label for="cacheTtlSeconds">Default cache TTL (seconds)</Label>
+			<Input
+				id="cacheTtlSeconds"
+				name="cacheTtlSeconds"
+				type="number"
+				min="0"
+				value={data.settings.cacheTtlSeconds}
+				class="max-w-xs"
+			/>
+			<p class="text-xs text-muted-foreground">
+				0 disables caching org-wide. Identical requests within the TTL replay the stored response at
+				zero cost (streaming included). A policy can override this per service.
+			</p>
+		</div>
+	</SettingsCard>
 
 	{#if canManageSettings}
-		<Card.Root>
-			<Card.Header>
-				<div class="flex items-center gap-3">
-					<div class="flex size-9 items-center justify-center rounded-lg border bg-muted">
-						<Users class="size-4" />
-					</div>
-					<div>
-						<Card.Title class="text-base">Member permissions</Card.Title>
-						<Card.Description>Control what members (not admins/owners) can do.</Card.Description>
-					</div>
+		<SettingsCard
+			icon={Users}
+			title="Member permissions"
+			description="Control what members (not admins/owners) can do."
+			action="updateMemberPermissions"
+		>
+			<input
+				type="hidden"
+				name="membersCanManageTokens"
+				value={String(toggles.membersCanManageTokens)}
+			/>
+			<input
+				type="hidden"
+				name="membersCanManageServices"
+				value={String(toggles.membersCanManageServices)}
+			/>
+
+			<div class="flex items-center justify-between gap-4">
+				<Label for="membersCanManageTokens">Members can create &amp; revoke tokens</Label>
+				<Switch id="membersCanManageTokens" bind:checked={toggles.membersCanManageTokens} />
+			</div>
+			<div class="flex items-center justify-between gap-4">
+				<Label for="membersCanManageServices">Members can create services</Label>
+				<Switch id="membersCanManageServices" bind:checked={toggles.membersCanManageServices} />
+			</div>
+		</SettingsCard>
+
+		<SettingsCard
+			icon={KeyRound}
+			title="Token security"
+			description="How machine tokens are stored at rest."
+			action="updateTokenSecurity"
+		>
+			<input
+				type="hidden"
+				name="tokensRecopyableDefault"
+				value={String(toggles.tokensRecopyableDefault)}
+			/>
+
+			<div class="flex items-center justify-between gap-4">
+				<Label for="tokensRecopyableDefault">Allow re-copying new tokens by default</Label>
+				<Switch id="tokensRecopyableDefault" bind:checked={toggles.tokensRecopyableDefault} />
+			</div>
+			<p class="text-xs text-muted-foreground">
+				When on, the "Allow re-copying later" box is pre-checked when issuing a token, storing its
+				secret encrypted so it can be revealed and copied again. The issuer can still override it
+				per token. Off keeps tokens hash-only by default — shown once, then unrecoverable, which is
+				more secure (a database leak can't expose them). Existing tokens are unaffected.
+			</p>
+		</SettingsCard>
+
+		<SettingsCard
+			icon={DollarSign}
+			title="Instance budget"
+			description="A spend ceiling across every service and token. Enforced on top of per-service and per-token budgets."
+			action="updateInstanceBudget"
+		>
+			<div class="grid max-w-md grid-cols-2 gap-3">
+				<div class="space-y-2">
+					<Label for="dailyBudgetUsd">Daily ceiling (USD)</Label>
+					<Input
+						id="dailyBudgetUsd"
+						name="dailyBudgetUsd"
+						type="number"
+						min="0"
+						step="0.01"
+						placeholder="unlimited"
+						value={data.settings.dailyBudgetUsd ?? ''}
+					/>
 				</div>
-			</Card.Header>
-			<Card.Content>
-				<form
-					method="post"
-					action="?/updateMemberPermissions"
-					class="space-y-4"
-					use:enhance={() =>
-						async ({ update }) =>
-							update({ reset: false })}
-				>
-					<input type="hidden" name="membersCanManageTokens" value={String(tokensOn)} />
-					<input type="hidden" name="membersCanManageServices" value={String(servicesOn)} />
-
-					<div class="flex items-center justify-between gap-4">
-						<Label for="membersCanManageTokens">Members can create &amp; revoke tokens</Label>
-						<Switch id="membersCanManageTokens" bind:checked={tokensOn} />
-					</div>
-					<div class="flex items-center justify-between gap-4">
-						<Label for="membersCanManageServices">Members can create services</Label>
-						<Switch id="membersCanManageServices" bind:checked={servicesOn} />
-					</div>
-
-					<Button type="submit">Save</Button>
-				</form>
-			</Card.Content>
-		</Card.Root>
-
-		<Card.Root>
-			<Card.Header>
-				<div class="flex items-center gap-3">
-					<div class="flex size-9 items-center justify-center rounded-lg border bg-muted">
-						<KeyRound class="size-4" />
-					</div>
-					<div>
-						<Card.Title class="text-base">Token security</Card.Title>
-						<Card.Description>How machine tokens are stored at rest.</Card.Description>
-					</div>
+				<div class="space-y-2">
+					<Label for="monthlyBudgetUsd">Monthly ceiling (USD)</Label>
+					<Input
+						id="monthlyBudgetUsd"
+						name="monthlyBudgetUsd"
+						type="number"
+						min="0"
+						step="0.01"
+						placeholder="unlimited"
+						value={data.settings.monthlyBudgetUsd ?? ''}
+					/>
 				</div>
-			</Card.Header>
-			<Card.Content>
-				<form
-					method="post"
-					action="?/updateTokenSecurity"
-					class="space-y-4"
-					use:enhance={() =>
-						async ({ update }) =>
-							update({ reset: false })}
-				>
-					<input type="hidden" name="tokensRecopyableDefault" value={String(recopyOn)} />
+			</div>
+			<p class="text-xs text-muted-foreground">
+				Summed from the audit log over UTC windows (daily resets at 00:00, monthly on the 1st).
+				Leave blank or 0 for unlimited. Once a window's total reaches the ceiling, further requests
+				are denied with a 402 until the window resets.
+			</p>
+		</SettingsCard>
 
-					<div class="flex items-center justify-between gap-4">
-						<Label for="tokensRecopyableDefault">Allow re-copying new tokens by default</Label>
-						<Switch id="tokensRecopyableDefault" bind:checked={recopyOn} />
-					</div>
-					<p class="text-xs text-muted-foreground">
-						When on, the "Allow re-copying later" box is pre-checked when issuing a token, storing
-						its secret encrypted so it can be revealed and copied again. The issuer can still
-						override it per token. Off keeps tokens hash-only by default — shown once, then
-						unrecoverable, which is more secure (a database leak can't expose them). Existing tokens
-						are unaffected.
-					</p>
+		<SettingsCard
+			icon={BellRing}
+			title="Budget alerts"
+			description="Email owners & admins when a service nears or exceeds its policy budget."
+			action="updateBudgetAlerts"
+		>
+			<input type="hidden" name="budgetAlertsEnabled" value={String(toggles.budgetAlertsEnabled)} />
 
-					<Button type="submit">Save</Button>
-				</form>
-			</Card.Content>
-		</Card.Root>
+			<div class="flex items-center justify-between gap-4">
+				<Label for="budgetAlertsEnabled">Enable budget alerts</Label>
+				<Switch id="budgetAlertsEnabled" bind:checked={toggles.budgetAlertsEnabled} />
+			</div>
 
-		<Card.Root>
-			<Card.Header>
-				<div class="flex items-center gap-3">
-					<div class="flex size-9 items-center justify-center rounded-lg border bg-muted">
-						<DollarSign class="size-4" />
-					</div>
-					<div>
-						<Card.Title class="text-base">Instance budget</Card.Title>
-						<Card.Description>
-							A spend ceiling across every service and token. Enforced on top of per-service and
-							per-token budgets.
-						</Card.Description>
-					</div>
-				</div>
-			</Card.Header>
-			<Card.Content>
-				<form
-					method="post"
-					action="?/updateInstanceBudget"
-					class="space-y-4"
-					use:enhance={() =>
-						async ({ update }) =>
-							update({ reset: false })}
-				>
-					<div class="grid max-w-md grid-cols-2 gap-3">
-						<div class="space-y-2">
-							<Label for="dailyBudgetUsd">Daily ceiling (USD)</Label>
-							<Input
-								id="dailyBudgetUsd"
-								name="dailyBudgetUsd"
-								type="number"
-								min="0"
-								step="0.01"
-								placeholder="unlimited"
-								value={data.settings.dailyBudgetUsd ?? ''}
-							/>
-						</div>
-						<div class="space-y-2">
-							<Label for="monthlyBudgetUsd">Monthly ceiling (USD)</Label>
-							<Input
-								id="monthlyBudgetUsd"
-								name="monthlyBudgetUsd"
-								type="number"
-								min="0"
-								step="0.01"
-								placeholder="unlimited"
-								value={data.settings.monthlyBudgetUsd ?? ''}
-							/>
-						</div>
-					</div>
-					<p class="text-xs text-muted-foreground">
-						Summed from the audit log over UTC windows (daily resets at 00:00, monthly on the 1st).
-						Leave blank or 0 for unlimited. Once a window's total reaches the ceiling, further
-						requests are denied with a 402 until the window resets.
-					</p>
-					<Button type="submit">Save</Button>
-				</form>
-			</Card.Content>
-		</Card.Root>
+			<div class="space-y-2" class:opacity-50={!toggles.budgetAlertsEnabled}>
+				<Label for="budgetAlertThresholdPct">Warn threshold (% of budget)</Label>
+				<Input
+					id="budgetAlertThresholdPct"
+					name="budgetAlertThresholdPct"
+					type="number"
+					min="1"
+					max="100"
+					value={data.settings.budgetAlertThresholdPct}
+					class="max-w-xs"
+					disabled={!toggles.budgetAlertsEnabled}
+				/>
+				<p class="text-xs text-muted-foreground">
+					A service is flagged once its daily or monthly spend reaches this share of the ceiling,
+					and again when it goes over. Each level emails once per window.
+				</p>
+			</div>
 
-		<Card.Root>
-			<Card.Header>
-				<div class="flex items-center gap-3">
-					<div class="flex size-9 items-center justify-center rounded-lg border bg-muted">
-						<BellRing class="size-4" />
-					</div>
-					<div>
-						<Card.Title class="text-base">Budget alerts</Card.Title>
-						<Card.Description>
-							Email owners &amp; admins when a service nears or exceeds its policy budget.
-						</Card.Description>
-					</div>
-				</div>
-			</Card.Header>
-			<Card.Content>
-				<form
-					method="post"
-					action="?/updateBudgetAlerts"
-					class="space-y-4"
-					use:enhance={() =>
-						async ({ update }) =>
-							update({ reset: false })}
-				>
-					<input type="hidden" name="budgetAlertsEnabled" value={String(alertsOn)} />
+			<div class="space-y-2" class:opacity-50={!toggles.budgetAlertsEnabled}>
+				<Label for="budgetAlertEmail">Notification email (optional)</Label>
+				<Input
+					id="budgetAlertEmail"
+					name="budgetAlertEmail"
+					type="email"
+					placeholder="team@example.com"
+					value={data.settings.budgetAlertEmail ?? ''}
+					class="max-w-xs"
+					disabled={!toggles.budgetAlertsEnabled}
+				/>
+				<p class="text-xs text-muted-foreground">
+					Sent in addition to owners &amp; admins. Requires SMTP to be configured; otherwise the
+					in-app banner is the only signal.
+				</p>
+			</div>
+		</SettingsCard>
 
-					<div class="flex items-center justify-between gap-4">
-						<Label for="budgetAlertsEnabled">Enable budget alerts</Label>
-						<Switch id="budgetAlertsEnabled" bind:checked={alertsOn} />
-					</div>
+		<SettingsCard
+			icon={Waypoints}
+			title="Request tracing"
+			description="Capture each request's prompt & response payload for the in-app trace viewer."
+			action="updateTracing"
+		>
+			<input type="hidden" name="tracingEnabled" value={String(toggles.tracingEnabled)} />
 
-					<div class="space-y-2" class:opacity-50={!alertsOn}>
-						<Label for="budgetAlertThresholdPct">Warn threshold (% of budget)</Label>
-						<Input
-							id="budgetAlertThresholdPct"
-							name="budgetAlertThresholdPct"
-							type="number"
-							min="1"
-							max="100"
-							value={data.settings.budgetAlertThresholdPct}
-							class="max-w-xs"
-							disabled={!alertsOn}
-						/>
-						<p class="text-xs text-muted-foreground">
-							A service is flagged once its daily or monthly spend reaches this share of the
-							ceiling, and again when it goes over. Each level emails once per window.
-						</p>
-					</div>
+			<div class="flex items-center justify-between gap-4">
+				<Label for="tracingEnabled">Enable request tracing</Label>
+				<Switch id="tracingEnabled" bind:checked={toggles.tracingEnabled} />
+			</div>
 
-					<div class="space-y-2" class:opacity-50={!alertsOn}>
-						<Label for="budgetAlertEmail">Notification email (optional)</Label>
-						<Input
-							id="budgetAlertEmail"
-							name="budgetAlertEmail"
-							type="email"
-							placeholder="team@example.com"
-							value={data.settings.budgetAlertEmail ?? ''}
-							class="max-w-xs"
-							disabled={!alertsOn}
-						/>
-						<p class="text-xs text-muted-foreground">
-							Sent in addition to owners &amp; admins. Requires SMTP to be configured; otherwise the
-							in-app banner is the only signal.
-						</p>
-					</div>
-
-					<Button type="submit">Save</Button>
-				</form>
-			</Card.Content>
-		</Card.Root>
-
-		<Card.Root>
-			<Card.Header>
-				<div class="flex items-center gap-3">
-					<div class="flex size-9 items-center justify-center rounded-lg border bg-muted">
-						<Waypoints class="size-4" />
-					</div>
-					<div>
-						<Card.Title class="text-base">Request tracing</Card.Title>
-						<Card.Description>
-							Capture each request's prompt &amp; response payload for the in-app trace viewer.
-						</Card.Description>
-					</div>
-				</div>
-			</Card.Header>
-			<Card.Content>
-				<form
-					method="post"
-					action="?/updateTracing"
-					class="space-y-4"
-					use:enhance={() =>
-						async ({ update }) =>
-							update({ reset: false })}
-				>
-					<input type="hidden" name="tracingEnabled" value={String(tracingOn)} />
-
-					<div class="flex items-center justify-between gap-4">
-						<Label for="tracingEnabled">Enable request tracing</Label>
-						<Switch id="tracingEnabled" bind:checked={tracingOn} />
-					</div>
-
-					<div class="space-y-2" class:opacity-50={!tracingOn}>
-						<Label for="tracingRetentionDays">Retention (days)</Label>
-						<Input
-							id="tracingRetentionDays"
-							name="tracingRetentionDays"
-							type="number"
-							min="1"
-							value={data.settings.tracingRetentionDays}
-							class="max-w-xs"
-							disabled={!tracingOn}
-						/>
-						<p class="text-xs text-muted-foreground">
-							Traces older than this are pruned automatically. Payloads can contain sensitive prompt
-							data, so tracing is off by default; a policy can override it per service.
-						</p>
-					</div>
-
-					<Button type="submit">Save</Button>
-				</form>
-			</Card.Content>
-		</Card.Root>
+			<div class="space-y-2" class:opacity-50={!toggles.tracingEnabled}>
+				<Label for="tracingRetentionDays">Retention (days)</Label>
+				<Input
+					id="tracingRetentionDays"
+					name="tracingRetentionDays"
+					type="number"
+					min="1"
+					value={data.settings.tracingRetentionDays}
+					class="max-w-xs"
+					disabled={!toggles.tracingEnabled}
+				/>
+				<p class="text-xs text-muted-foreground">
+					Traces older than this are pruned automatically. Payloads can contain sensitive prompt
+					data, so tracing is off by default; a policy can override it per service.
+				</p>
+			</div>
+		</SettingsCard>
 	{/if}
 </PageShell>

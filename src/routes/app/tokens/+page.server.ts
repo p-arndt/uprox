@@ -13,6 +13,7 @@ import {
 	getSettings
 } from '$lib/server/data';
 import { parseInlineConfig } from '$lib/server/parse-config';
+import { isOn } from '$lib/server/form';
 import { PROVIDERS } from '$lib/server/providers';
 
 export const load: PageServerLoad = async (event) => {
@@ -71,7 +72,7 @@ export const actions: Actions = {
 		const expiresAt = days > 0 ? new Date(Date.now() + days * 86_400_000) : null;
 		// checkbox: present only when ticked. When on, the raw token is stored
 		// encrypted so it can be revealed/copied again later.
-		const recopyable = data.get('recopyable') === 'on' || data.get('recopyable') === 'true';
+		const recopyable = isOn(data.get('recopyable'));
 
 		try {
 			const { plaintext } = await createToken(userId, {
