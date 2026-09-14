@@ -151,7 +151,7 @@
 		<div class="relative h-64 flex-1">
 			<!-- recessive gridlines; the baseline is the only one at full strength -->
 			<div class="pointer-events-none absolute inset-0">
-				{#each scale.ticks as _, i (i)}
+				{#each scale.ticks, i (i)}
 					<div
 						class="absolute right-0 left-0 border-t {i === scale.ticks.length - 1
 							? 'border-border'

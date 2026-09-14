@@ -25,7 +25,7 @@
 		/** window spend across ALL traffic, so the share column is honest past top-N */
 		total: number;
 		/** renders a row's name cell, so each page owns its own drill-down links */
-		rowLabel?: Snippet<[DimensionUsageRow, string]>;
+		rowLabel?: Snippet<[DimensionUsageRow, UsageDimension]>;
 		truncated?: boolean;
 		limit?: number;
 	} = $props();

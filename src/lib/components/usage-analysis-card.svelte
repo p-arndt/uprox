@@ -39,10 +39,12 @@
 	// A request contributes to several meters — and so to several billing lines —
 	// at once, so it can't be attributed to one. On those groupings the requests
 	// metric is dropped rather than shown as a flat zero.
-	const derived = $derived(isDerivedDimension(groupBy));
-	const METRICS = $derived(derived ? ALL_METRICS.filter((m) => m.key !== 'requests') : ALL_METRICS);
+	const derivedDimension = $derived(isDerivedDimension(groupBy));
+	const METRICS = $derived(
+		derivedDimension ? ALL_METRICS.filter((m) => m.key !== 'requests') : ALL_METRICS
+	);
 	$effect(() => {
-		if (derived && metric === 'requests') metric = 'cost';
+		if (derivedDimension && metric === 'requests') metric = 'cost';
 	});
 
 	type ChartType = 'bars' | 'area';
