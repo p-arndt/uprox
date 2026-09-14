@@ -55,6 +55,40 @@ function fractionOf(w: BudgetWindow | null): number {
 	return w.spentUsd / w.budgetUsd;
 }
 
+/** One gauge row: a single capped window of one service. */
+export interface BudgetRow {
+	key: string;
+	serviceName: string;
+	window: 'daily' | 'monthly';
+	spentUsd: number;
+	budgetUsd: number;
+	/** spent / budget — may exceed 1 when over the ceiling */
+	fraction: number;
+}
+
+/**
+ * Flatten standings into one row per window that actually has a ceiling, daily
+ * before monthly within a service. Uncapped windows are skipped.
+ */
+export function budgetRows(statuses: BudgetStatus[]): BudgetRow[] {
+	return statuses.flatMap((s) =>
+		(['daily', 'monthly'] as const).flatMap((window) => {
+			const w = s[window];
+			if (!w || w.budgetUsd <= 0) return [];
+			return [
+				{
+					key: `${s.serviceId}-${window}`,
+					serviceName: s.serviceName,
+					window,
+					spentUsd: w.spentUsd,
+					budgetUsd: w.budgetUsd,
+					fraction: fractionOf(w)
+				}
+			];
+		})
+	);
+}
+
 /**
  * Reduce per-service budget standings to the set worth surfacing. For each
  * service we take whichever window (daily or monthly) is closest to its ceiling

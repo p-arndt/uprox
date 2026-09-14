@@ -25,12 +25,6 @@ export function relativeTime(value: Date | string | null | undefined): string {
 }
 
 /**
- * Format an LLM token count compactly (e.g. 1.2M, 47.3K, 812). LLM usage adds
- * up fast — tens of millions of tokens are routine for a busy service — so the
- * raw "12,485,201" reads as wall-of-digits in tight UI. Falls back to a plain
- * locale string below 10k where precision is still useful.
- */
-/**
  * Every figure in the dashboard is pinned to en-US, matching {@link formatUsd}.
  * The viewer's own locale is deliberately NOT used: these numbers sit inline
  * with USD amounts, and a German or French browser would otherwise render
@@ -39,6 +33,12 @@ export function relativeTime(value: Date | string | null | undefined): string {
  */
 const LOCALE = 'en-US';
 
+/**
+ * Format an LLM token count compactly (e.g. 1.2M, 47.3K, 812). LLM usage adds
+ * up fast — tens of millions of tokens are routine for a busy service — so the
+ * raw "12,485,201" reads as wall-of-digits in tight UI. Falls back to a plain
+ * locale string below 10k where precision is still useful.
+ */
 export function formatTokens(value: number | string | null | undefined): string {
 	const n = typeof value === 'string' ? Number(value) : (value ?? 0);
 	if (!Number.isFinite(n) || n === 0) return '0';

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
-	import { budgetLevel, type BudgetStatus, type BudgetWindow } from '$lib/budget';
+	import { budgetLevel, budgetRows, type BudgetStatus } from '$lib/budget';
 	import { formatUsd } from '$lib/format';
 
 	// Always-on spend-vs-ceiling gauges (cf. the OpenAI "June spend $2.44 / $10.00"
@@ -26,34 +26,7 @@
 		description?: string;
 	} = $props();
 
-	type Row = {
-		key: string;
-		serviceName: string;
-		window: 'daily' | 'monthly';
-		spentUsd: number;
-		budgetUsd: number;
-		fraction: number;
-	};
-
-	function rowsFor(s: BudgetStatus): Row[] {
-		const out: Row[] = [];
-		const add = (window: 'daily' | 'monthly', w: BudgetWindow | null) => {
-			if (!w || w.budgetUsd <= 0) return;
-			out.push({
-				key: `${s.serviceId}-${window}`,
-				serviceName: s.serviceName,
-				window,
-				spentUsd: w.spentUsd,
-				budgetUsd: w.budgetUsd,
-				fraction: w.spentUsd / w.budgetUsd
-			});
-		};
-		add('daily', s.daily);
-		add('monthly', s.monthly);
-		return out;
-	}
-
-	const rows = $derived(statuses.flatMap(rowsFor));
+	const rows = $derived(budgetRows(statuses));
 
 	// Healthy → calm green; approaching → amber; over → destructive, matching the
 	// alert banner's semantics so a service reads the same in both places.

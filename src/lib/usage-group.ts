@@ -190,7 +190,7 @@ export type UsageFilterOptions = Record<UsageDimension, UsageFilterOption[]>;
  * that already appear inside provider-qualified model names such as
  * `us.anthropic.claude-x:1`.
  */
-export const LINE_KEY_SEP = '\u001f';
+const LINE_KEY_SEP = '\u001f';
 
 export interface BillingLineKey {
 	/** the model as recorded, or {@link NULL_VALUE} when no model was ever resolved */
@@ -203,15 +203,4 @@ export interface BillingLineKey {
 
 export function encodeBillingLineKey(k: BillingLineKey): string {
 	return [k.model, k.tier, k.meter].join(LINE_KEY_SEP);
-}
-
-/**
- * The inverse. Returns null for anything that is not a well-formed line key -
- * notably {@link OTHERS_KEY}, which the top-N fold introduces and which has no
- * model, tier or meter of its own.
- */
-export function parseBillingLineKey(key: string): BillingLineKey | null {
-	const parts = key.split(LINE_KEY_SEP);
-	if (parts.length !== 3) return null;
-	return { model: parts[0], tier: parts[1], meter: parts[2] };
 }
