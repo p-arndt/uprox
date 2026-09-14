@@ -9,18 +9,21 @@ import {
 	orgTopMovers,
 	orgModelEfficiency
 } from '$lib/server/data';
+import type { DimensionUsageRow } from '$lib/server/data';
 import {
 	USAGE_RANGES,
 	resolveUsageRange,
 	resolveSeriesBucket,
 	normalizeBucket,
-	shiftRangeBack
+	shiftRangeBack,
+	type ResolvedRange
 } from '$lib/usage-range';
 import {
 	USAGE_DIMENSIONS,
 	normalizeGroupBy,
 	parseFilters,
-	type UsageDimension
+	type UsageDimension,
+	type UsageFilter
 } from '$lib/usage-group';
 import { MAX_SERIES } from '$lib/usage-colors';
 import { readUsageWindow, writeUsageWindow } from '$lib/server/usage-window-pref';
@@ -92,6 +95,21 @@ export async function loadUsageAnalysis(
 	// Filters on disallowed dimensions are dropped for the same reason.
 	const filters = parseFilters(params.getAll('f')).filter((f) => dimensions.includes(f.dim));
 
+	// The breakdown table, the donuts, the filter pickers, the stacked chart's
+	// ranking pass and the movers all read the same by-dimension aggregate. Each
+	// distinct (window, dimension, filters) is queried once, unlimited, and every
+	// consumer slices its own top-N from it; the scope is fixed for this call.
+	const rankings = new Map<string, Promise<DimensionUsageRow[]>>();
+	const ranked = (r: ResolvedRange, dim: UsageDimension, f: UsageFilter[]) => {
+		const key = JSON.stringify([r.start, r.end ?? null, dim, f]);
+		let rows = rankings.get(key);
+		if (!rows) {
+			rows = orgUsageByDimension(r, dim, { ...scope, filters: f });
+			rankings.set(key, rows);
+		}
+		return rows;
+	};
+
 	const [
 		totals,
 		prevTotals,
@@ -109,19 +127,34 @@ export async function loadUsageAnalysis(
 		// previous equal-length window — powers the headline deltas. Filters carry
 		// over, or the comparison would be against a differently-scoped population.
 		orgUsageTotals(prevRange, { ...scope, filters }),
-		orgUsageSeriesGrouped(range, groupBy, { ...scope, unit: bucket, filters, limit: MAX_SERIES }),
-		orgUsageByDimension(range, groupBy, { ...scope, filters, limit: BREAKDOWN_LIMIT }),
+		ranked(range, groupBy, filters).then((rows) =>
+			orgUsageSeriesGrouped(range, groupBy, {
+				...scope,
+				unit: bucket,
+				filters,
+				limit: MAX_SERIES,
+				ranked: rows
+			})
+		),
+		ranked(range, groupBy, filters).then((rows) => rows.slice(0, BREAKDOWN_LIMIT)),
 		Promise.all(
 			donutDims.map(async (dim) => ({
 				dim,
-				rows: await orgUsageByDimension(range, dim, { ...scope, filters, limit: 25 })
+				rows: (await ranked(range, dim, filters)).slice(0, 25)
 			}))
 		),
-		orgUsageFilterOptions(range, dimensions, scope),
+		// pickers are deliberately derived from the unfiltered window
+		orgUsageFilterOptions(range, dimensions, {
+			...scope,
+			loadRanked: (dim) => ranked(range, dim, [])
+		}),
 		orgTokenMeters(range, { ...scope, filters }),
 		// "what changed" is always measured on the grouping the operator picked,
 		// so the answer lines up with the chart directly above it
-		orgTopMovers(range, prevRange, groupBy, { ...scope, filters }),
+		Promise.all([ranked(range, groupBy, filters), ranked(prevRange, groupBy, filters)]).then(
+			([current, previous]) =>
+				orgTopMovers(range, prevRange, groupBy, { ...scope, filters, current, previous })
+		),
 		orgModelEfficiency(range, { ...scope, filters }),
 		// flat series behind the headline sparklines — same window, same filters
 		orgUsageSeries(range, { ...scope, unit, filters }),

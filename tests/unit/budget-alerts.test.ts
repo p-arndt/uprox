@@ -21,10 +21,12 @@ let spend = {
 	dailySpent: 0,
 	monthlySpent: 0
 };
-const currentSpend = vi.fn((..._args: unknown[]) => Promise.resolve(spend));
+const currentSpend = vi.fn<(...args: unknown[]) => Promise<typeof spend>>(() =>
+	Promise.resolve(spend)
+);
 vi.mock('$lib/server/budget', () => ({ currentSpend: (...a: unknown[]) => currentSpend(...a) }));
 
-const sendBudgetAlertEmail = vi.fn((_data: unknown) => Promise.resolve());
+const sendBudgetAlertEmail = vi.fn<(data: unknown) => Promise<void>>(() => Promise.resolve());
 vi.mock('$lib/server/email', () => ({
 	sendBudgetAlertEmail: (data: unknown) => sendBudgetAlertEmail(data)
 }));
