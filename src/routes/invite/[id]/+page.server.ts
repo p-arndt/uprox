@@ -2,41 +2,32 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad, RequestEvent } from './$types';
 import { auth } from '$lib/server/auth';
 import { APIError } from 'better-auth/api';
-import { eq } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import { invitation, user } from '$lib/server/db/schema';
 import {
 	getEnabledProviders,
 	getOidcConfig,
 	isEmailAuthEnabled,
 	safeRedirect
 } from '$lib/server/auth-config';
+import {
+	acceptInvitation,
+	findInvitation,
+	invitationProblem,
+	type InvitationProblem
+} from '$lib/server/members';
 
-/** Fetch our own invitation row by id (the row id doubles as the invite token). */
-async function findInvitation(id: string) {
-	const [row] = await db.select().from(invitation).where(eq(invitation.id, id)).limit(1);
-	return row ?? null;
-}
+const invalidReasons: Record<InvitationProblem, string> = {
+	missing: 'This invitation could not be found.',
+	accepted: 'This invitation has already been accepted.',
+	canceled: 'This invitation has been cancelled.',
+	inactive: 'This invitation is no longer valid.',
+	expired: 'This invitation has expired.'
+};
 
 export const load: PageServerLoad = async (event) => {
 	const inv = await findInvitation(event.params.id);
-
-	if (!inv) {
-		return { invalid: true, reason: 'This invitation could not be found.' };
-	}
-
-	if (inv.status !== 'pending') {
-		const reason =
-			inv.status === 'accepted'
-				? 'This invitation has already been accepted.'
-				: inv.status === 'canceled'
-					? 'This invitation has been cancelled.'
-					: 'This invitation is no longer valid.';
-		return { invalid: true, reason };
-	}
-
-	if (inv.expiresAt && new Date(inv.expiresAt).getTime() < Date.now()) {
-		return { invalid: true, reason: 'This invitation has expired.' };
+	const problem = invitationProblem(inv);
+	if (problem || !inv) {
+		return { invalid: true, reason: invalidReasons[problem ?? 'missing'] };
 	}
 
 	return {
@@ -55,19 +46,19 @@ export const load: PageServerLoad = async (event) => {
 /** Re-validate the invitation server-side; returns it or a fail() response. */
 async function loadValidInvitation(event: RequestEvent) {
 	const inv = await findInvitation(event.params.id);
-	if (!inv || inv.status !== 'pending') {
-		return { error: fail(400, { message: 'This invitation is no longer valid.' }) };
-	}
-	if (inv.expiresAt && new Date(inv.expiresAt).getTime() < Date.now()) {
+	const problem = invitationProblem(inv);
+	if (problem === 'expired') {
 		return { error: fail(400, { message: 'This invitation has expired.' }) };
+	}
+	if (problem || !inv) {
+		return { error: fail(400, { message: 'This invitation is no longer valid.' }) };
 	}
 	return { invitation: inv };
 }
 
 /**
- * Accept the invitation for the signed-in user: set their instance role and
- * mark the invite accepted. Requires a logged-in user whose email matches the
- * invited address. Never downgrades an existing owner.
+ * Accept the invitation for the signed-in user. Requires a logged-in user whose
+ * email matches the invited address.
  */
 async function acceptAndRedirect(event: RequestEvent) {
 	const current = event.locals.user;
@@ -85,20 +76,7 @@ async function acceptAndRedirect(event: RequestEvent) {
 		});
 	}
 
-	// Set the user's instance role to the invited role, but never downgrade an
-	// existing owner (the first account stays the owner).
-	const [row] = await db
-		.select({ role: user.role })
-		.from(user)
-		.where(eq(user.id, current.id))
-		.limit(1);
-	if (row?.role !== 'owner') {
-		await db.update(user).set({ role: inv.role }).where(eq(user.id, current.id));
-	}
-
-	// Mark the invitation accepted so the link can't be reused.
-	await db.update(invitation).set({ status: 'accepted' }).where(eq(invitation.id, inv.id));
-
+	await acceptInvitation(current.id, inv);
 	redirect(303, '/app');
 }
 
