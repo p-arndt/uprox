@@ -8,7 +8,7 @@
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import MailWarning from '@lucide/svelte/icons/mail-warning';
 	import Loader2 from '@lucide/svelte/icons/loader-circle';
-	import OidcSignInForm from '$lib/components/oidc-sign-in-form.svelte';
+	import OidcSignInForm from '$lib/features/auth/components/oidc-sign-in-form.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	let loading = $state(false);
