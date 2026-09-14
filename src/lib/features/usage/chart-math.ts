@@ -4,7 +4,7 @@
  * component only maps these matrices onto elements.
  */
 import type { SeriesBucket } from '$lib/usage-range';
-import { formatCountCompact, formatTokens, formatUsdCompact } from '$lib/format';
+import { formatCountCompact, formatTokens } from '$lib/format';
 import { metricValue, type MetricPoint, type UsageMetric } from './metric';
 
 /**
@@ -163,12 +163,25 @@ export function bucketCenterPct(bucketIdx: number, bucketCount: number): number 
 }
 
 /**
+ * Cost tick text. Ticks are round numbers, so trailing zeroes are dropped and
+ * compact notation starts at $1K to keep the axis narrow ($0, $2.5, $2.5K).
+ */
+export function axisUsd(v: number): string {
+	if (v === 0) return '$0';
+	if (Math.abs(v) >= 1000) {
+		return `$${v.toLocaleString('en-US', { notation: 'compact', maximumFractionDigits: 1 })}`;
+	}
+	const decimals = Math.abs(v) < 0.1 ? 3 : Math.abs(v) < 10 ? 2 : 0;
+	return `$${Number(v.toFixed(decimals)).toLocaleString('en-US')}`;
+}
+
+/**
  * Axis-tick text: the shortest label that still identifies the level, which is
  * why the compact formatters are used rather than the exact headline ones.
  */
 export function axisLabel(v: number, metric: UsageMetric, mode: ChartMode): string {
 	if (mode === 'normalized') return `${Math.round(v)}%`;
-	if (metric === 'cost') return formatUsdCompact(v);
+	if (metric === 'cost') return axisUsd(v);
 	if (metric === 'requests') return formatCountCompact(v);
 	return formatTokens(v);
 }

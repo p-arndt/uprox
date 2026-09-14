@@ -169,7 +169,10 @@ describe('axisLabel', () => {
 	});
 
 	it('uses the en-US compact formatters regardless of metric', () => {
-		expect(axisLabel(0, 'cost', 'absolute')).toBe('$0.00');
+		expect(axisLabel(0, 'cost', 'absolute')).toBe('$0');
+		expect(axisLabel(2.5, 'cost', 'absolute')).toBe('$2.5');
+		expect(axisLabel(0.05, 'cost', 'absolute')).toBe('$0.05');
+		expect(axisLabel(2_500, 'cost', 'absolute')).toBe('$2.5K');
 		expect(axisLabel(25_000, 'cost', 'absolute')).toBe('$25K');
 		expect(axisLabel(2_500, 'requests', 'absolute')).toBe('2,500');
 		expect(axisLabel(25_000, 'requests', 'cumulative')).toBe('25K');
