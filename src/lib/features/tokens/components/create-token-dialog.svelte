@@ -3,7 +3,9 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
-	import TokenForm, { type TokenFormValues } from '$lib/components/token-form.svelte';
+	import TokenForm, {
+		type TokenFormValues
+	} from '$lib/features/tokens/components/token-form.svelte';
 	import { emptyInlineLimits } from '$lib/components/inline-limits';
 	import SelectField from '$lib/components/select-field.svelte';
 	import FormError from '$lib/components/form-error.svelte';

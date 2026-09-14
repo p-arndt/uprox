@@ -6,7 +6,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import ConfirmAction from '$lib/components/confirm-action.svelte';
 	import { relativeTime } from '$lib/format';
-	import { tokenStatus, type Token } from '$lib/tokens';
+	import { tokenStatus, type Token } from '$lib/features/tokens/tokens';
 	import Ban from '@lucide/svelte/icons/ban';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Eye from '@lucide/svelte/icons/eye';

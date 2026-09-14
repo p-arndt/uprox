@@ -6,12 +6,12 @@
 	import PageHeader from '$lib/components/page-header.svelte';
 	import EmptyState from '$lib/components/empty-state.svelte';
 	import StatCard from '$lib/components/stat-card.svelte';
-	import TokenRow from '$lib/components/token-row.svelte';
-	import CreateTokenDialog from '$lib/components/create-token-dialog.svelte';
-	import EditTokenDialog from '$lib/components/edit-token-dialog.svelte';
-	import SecretDialog from '$lib/components/secret-dialog.svelte';
-	import { type TokenFormValues } from '$lib/components/token-form.svelte';
-	import { tokenStats, type RevealedSecret, type Token } from '$lib/tokens';
+	import TokenRow from '$lib/features/tokens/components/token-row.svelte';
+	import CreateTokenDialog from '$lib/features/tokens/components/create-token-dialog.svelte';
+	import EditTokenDialog from '$lib/features/tokens/components/edit-token-dialog.svelte';
+	import SecretDialog from '$lib/features/tokens/components/secret-dialog.svelte';
+	import { type TokenFormValues } from '$lib/features/tokens/components/token-form.svelte';
+	import { tokenStats, type RevealedSecret, type Token } from '$lib/features/tokens/tokens';
 	import { inlineLimitsFromRow } from '$lib/components/inline-limits';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';

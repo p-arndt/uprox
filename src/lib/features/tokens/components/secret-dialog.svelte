@@ -4,7 +4,7 @@
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import EntityDialog from '$lib/components/entity-dialog.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import type { RevealedSecret } from '$lib/tokens';
+	import type { RevealedSecret } from '$lib/features/tokens/tokens';
 	import Copy from '@lucide/svelte/icons/copy';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 
