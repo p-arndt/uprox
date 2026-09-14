@@ -5,7 +5,7 @@
  * tests pin exactly which stages run, with which arguments, and what the client
  * gets back on every branch.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, assert } from 'vitest';
 import type { RequestEvent } from '@sveltejs/kit';
 import type { ResolvedToken } from '$lib/server/tokens';
 import { PROVIDERS } from '$lib/server/providers';
@@ -102,7 +102,7 @@ function upstreamReturns(upstream: Response, text: string) {
 }
 
 function ctxArg(mock: { mock: { calls: unknown[][] } }) {
-	return mock.mock.calls[0][0] as Record<string, unknown>;
+	return mock.mock.calls[0]?.[0] as Record<string, unknown>;
 }
 
 /* -------------------------------- proxyToProvider -------------------------------- */
@@ -135,7 +135,7 @@ describe('characterization — proxyToProvider', () => {
 			model: 'gpt-4o',
 			envelope: openAiEnvelope
 		});
-		expect(vi.mocked(resolveRoutedProvider).mock.calls[0][1]).toBe('azure');
+		expect(vi.mocked(resolveRoutedProvider).mock.calls[0]?.[1]).toBe('azure');
 		expect(checkAccess).not.toHaveBeenCalled();
 	});
 
@@ -143,7 +143,7 @@ describe('characterization — proxyToProvider', () => {
 		const denied = new Response('denied', { status: 403 });
 		vi.mocked(checkAccess).mockResolvedValue(denied);
 		expect(await proxyToProvider(event(), opts())).toBe(denied);
-		expect(vi.mocked(checkAccess).mock.calls[0][1]).toBe(openai);
+		expect(vi.mocked(checkAccess).mock.calls[0]?.[1]).toBe(openai);
 		expect(replayCached).not.toHaveBeenCalled();
 		expect(acquireUpstream).not.toHaveBeenCalled();
 	});
@@ -152,7 +152,9 @@ describe('characterization — proxyToProvider', () => {
 		const hit = new Response('cached');
 		vi.mocked(replayCached).mockResolvedValue(hit);
 		expect(await proxyToProvider(event(), opts({ stream: true }))).toBe(hit);
-		const [, provider, key, stream, ...rest] = vi.mocked(replayCached).mock.calls[0];
+		const call = vi.mocked(replayCached).mock.calls[0];
+		assert(call);
+		const [, provider, key, stream, ...rest] = call;
 		expect(provider).toBe(openai);
 		expect(key).toBe(cacheKeyFor('openai', '/chat/completions', chatBody, 'secret-1'));
 		expect(stream).toBe(true);
@@ -172,7 +174,7 @@ describe('characterization — proxyToProvider', () => {
 		upstreamReturns(new Response(null, { status: 200 }), '{}');
 		const res = await proxyToProvider(event(), opts(o));
 		expect(replayCached).not.toHaveBeenCalled();
-		expect(vi.mocked(recordCompletion).mock.calls[0][1].cache).toBeNull();
+		expect(vi.mocked(recordCompletion).mock.calls[0]?.[1].cache).toBeNull();
 		expect(res.headers.get('x-uprox-cache')).toBeNull();
 	});
 
@@ -196,7 +198,7 @@ describe('characterization — proxyToProvider', () => {
 		const rejection = new Response('402', { status: 402 });
 		vi.mocked(acquireUpstream).mockResolvedValue(rejection);
 		expect(await proxyToProvider(event(), opts())).toBe(rejection);
-		expect(vi.mocked(acquireUpstream).mock.calls[0][1]).toBe(openai);
+		expect(vi.mocked(acquireUpstream).mock.calls[0]?.[1]).toBe(openai);
 		expect(fetchUpstream).not.toHaveBeenCalled();
 	});
 
@@ -208,7 +210,9 @@ describe('characterization — proxyToProvider', () => {
 
 		const res = await proxyToProvider(ev, opts());
 
-		const [, provider, g, url, init] = vi.mocked(fetchUpstream).mock.calls[0];
+		const call = vi.mocked(fetchUpstream).mock.calls[0];
+		assert(call);
+		const [, provider, g, url, init] = call;
 		expect([provider, g, url]).toEqual([
 			openai,
 			grant,
@@ -223,12 +227,12 @@ describe('characterization — proxyToProvider', () => {
 			},
 			body: JSON.stringify(chatBody)
 		});
-		expect(vi.mocked(readUpstreamText).mock.calls[0].slice(1)).toEqual([openai, grant, upstream]);
+		expect(vi.mocked(readUpstreamText).mock.calls[0]?.slice(1)).toEqual([openai, grant, upstream]);
 		const cache = {
 			key: cacheKeyFor('openai', '/chat/completions', chatBody, 'secret-1'),
 			ttlSeconds: 60
 		};
-		expect(vi.mocked(recordCompletion).mock.calls[0][1]).toEqual({
+		expect(vi.mocked(recordCompletion).mock.calls[0]?.[1]).toEqual({
 			provider: openai,
 			statusCode: 201,
 			ok: true,
@@ -250,7 +254,7 @@ describe('characterization — proxyToProvider', () => {
 	it('records an upstream error body with ok:false', async () => {
 		upstreamReturns(new Response(null, { status: 500 }), 'boom');
 		const res = await proxyToProvider(event(), opts({ body: { temperature: 1 } }));
-		expect(vi.mocked(recordCompletion).mock.calls[0][1]).toMatchObject({
+		expect(vi.mocked(recordCompletion).mock.calls[0]?.[1]).toMatchObject({
 			statusCode: 500,
 			ok: false,
 			usage: null,
@@ -296,11 +300,11 @@ describe('characterization — proxyToProvider', () => {
 		const body = { model: 'gpt-4o', stream: true, stream_options: { foo: 1 } };
 		const res = await proxyToProvider(event(), opts({ body, stream: true, wantsUsageChunk: true }));
 		expect(res).toBe(streamResponse);
-		expect(JSON.parse(vi.mocked(fetchUpstream).mock.calls[0][4].body as string)).toEqual({
+		expect(JSON.parse(vi.mocked(fetchUpstream).mock.calls[0]?.[4].body as string)).toEqual({
 			...body,
 			stream_options: { foo: 1, include_usage: true }
 		});
-		expect(vi.mocked(streamWithRecording).mock.calls[0][1]).toEqual({
+		expect(vi.mocked(streamWithRecording).mock.calls[0]?.[1]).toEqual({
 			provider: openai,
 			upstream,
 			source: upstream.body,
@@ -357,14 +361,17 @@ describe('characterization — proxyToProvider', () => {
 			const ev = makeEvent('https://gw.test/v1/chat/completions', { 'openai-beta': 'x' });
 			const res = await proxyToProvider(ev, gOpts({ wantsUsageChunk: true }));
 
-			const [, , , url, init] = vi.mocked(fetchUpstream).mock.calls[0];
+			const call = vi.mocked(fetchUpstream).mock.calls[0];
+			assert(call);
+			const [, , , url, init] = call;
 			expect(url).toBe('https://upstream.test/v1/models/gemini-2.5-flash:generateContent');
 			expect(init).toEqual({
 				method: 'POST',
 				headers: { 'content-type': 'application/json', 'x-goog-api-key': 'up-key' },
 				body: JSON.stringify(toGeminiChatRequest(geminiBody))
 			});
-			const recorded = vi.mocked(recordCompletion).mock.calls[0][1];
+			const recorded = vi.mocked(recordCompletion).mock.calls[0]?.[1];
+			assert(recorded);
 			const translated = JSON.parse(recorded.response);
 			expect(translated.object).toBe('chat.completion');
 			expect(translated.choices[0].message).toEqual({ role: 'assistant', content: 'yo' });
@@ -393,12 +400,15 @@ describe('characterization — proxyToProvider', () => {
 				event(),
 				gOpts({ stream: true, wantsUsageChunk: true, body: { ...geminiBody, stream: true } })
 			);
-			const [, , , url, init] = vi.mocked(fetchUpstream).mock.calls[0];
+			const call = vi.mocked(fetchUpstream).mock.calls[0];
+			assert(call);
+			const [, , , url, init] = call;
 			expect(url).toBe(
 				'https://upstream.test/v1/models/gemini-2.5-flash:streamGenerateContent?alt=sse'
 			);
 			expect(JSON.parse(init.body as string)).not.toHaveProperty('stream_options');
-			const recording = vi.mocked(streamWithRecording).mock.calls[0][1];
+			const recording = vi.mocked(streamWithRecording).mock.calls[0]?.[1];
+			assert(recording);
 			expect(recording.source).toBeInstanceOf(ReadableStream);
 			expect(recording.source).not.toBe(upstream.body);
 			expect(recording.extract).toBe(openAiUsageExtractor);
@@ -445,7 +455,7 @@ describe('characterization — proxyGeminiNative', () => {
 			model: 'gemini-2.5-flash',
 			envelope: geminiEnvelope
 		});
-		expect(vi.mocked(checkAccess).mock.calls[0][1]).toBe(gemini);
+		expect(vi.mocked(checkAccess).mock.calls[0]?.[1]).toBe(gemini);
 		expect(resolveRoutedProvider).not.toHaveBeenCalled();
 	});
 
@@ -459,7 +469,7 @@ describe('characterization — proxyGeminiNative', () => {
 		const hit = new Response('cached');
 		vi.mocked(replayCached).mockResolvedValue(hit);
 		expect(await proxyGeminiNative(event(), opts({ stream: true }))).toBe(hit);
-		expect(vi.mocked(replayCached).mock.calls[0].slice(1)).toEqual([
+		expect(vi.mocked(replayCached).mock.calls[0]?.slice(1)).toEqual([
 			gemini,
 			cacheKeyFor('gemini', '/models/gemini-2.5-flash:generateContent', body, 'secret-1'),
 			true,
@@ -477,7 +487,7 @@ describe('characterization — proxyGeminiNative', () => {
 		upstreamReturns(new Response(null), '{}');
 		const res = await proxyGeminiNative(event(), opts(o));
 		expect(replayCached).not.toHaveBeenCalled();
-		expect(vi.mocked(recordCompletion).mock.calls[0][1].cache).toBeNull();
+		expect(vi.mocked(recordCompletion).mock.calls[0]?.[1].cache).toBeNull();
 		expect(res.headers.get('x-uprox-cache')).toBeNull();
 	});
 
@@ -487,7 +497,7 @@ describe('characterization — proxyGeminiNative', () => {
 			event(),
 			opts({ scope: 'embeddings', method: 'batchEmbedContents', body: { requests: [] } })
 		);
-		expect(vi.mocked(replayCached).mock.calls[0][2]).toBe(
+		expect(vi.mocked(replayCached).mock.calls[0]?.[2]).toBe(
 			cacheKeyFor(
 				'gemini',
 				'/models/gemini-2.5-flash:batchEmbedContents',
@@ -501,7 +511,7 @@ describe('characterization — proxyGeminiNative', () => {
 		const rejection = new Response('402', { status: 402 });
 		vi.mocked(acquireUpstream).mockResolvedValue(rejection);
 		expect(await proxyGeminiNative(event(), opts())).toBe(rejection);
-		expect(vi.mocked(acquireUpstream).mock.calls[0][1]).toBe(gemini);
+		expect(vi.mocked(acquireUpstream).mock.calls[0]?.[1]).toBe(gemini);
 		expect(fetchUpstream).not.toHaveBeenCalled();
 	});
 
@@ -514,7 +524,9 @@ describe('characterization — proxyGeminiNative', () => {
 		upstreamReturns(upstream, text);
 		const res = await proxyGeminiNative(event('?key=uprox-token&alt=json&x=1'), opts());
 
-		const [, provider, g, url, init] = vi.mocked(fetchUpstream).mock.calls[0];
+		const call = vi.mocked(fetchUpstream).mock.calls[0];
+		assert(call);
+		const [, provider, g, url, init] = call;
 		expect([provider, g]).toEqual([gemini, grant]);
 		expect(url).toBe(
 			'https://upstream.test/v1/models/gemini-2.5-flash:generateContent?alt=json&x=1'
@@ -524,7 +536,7 @@ describe('characterization — proxyGeminiNative', () => {
 			headers: { 'content-type': 'application/json', 'x-goog-api-key': 'up-key' },
 			body: JSON.stringify(body)
 		});
-		expect(vi.mocked(recordCompletion).mock.calls[0][1]).toEqual({
+		expect(vi.mocked(recordCompletion).mock.calls[0]?.[1]).toEqual({
 			provider: gemini,
 			statusCode: 200,
 			ok: true,
@@ -549,7 +561,7 @@ describe('characterization — proxyGeminiNative', () => {
 	it('omits the query separator when only `key` was sent', async () => {
 		upstreamReturns(new Response(null), '{}');
 		await proxyGeminiNative(event('?key=uprox-token'), opts({ body: {} }));
-		expect(vi.mocked(fetchUpstream).mock.calls[0][3]).toBe(
+		expect(vi.mocked(fetchUpstream).mock.calls[0]?.[3]).toBe(
 			'https://upstream.test/v1/models/gemini-2.5-flash:generateContent'
 		);
 	});
@@ -561,7 +573,10 @@ describe('characterization — proxyGeminiNative', () => {
 		const res = await proxyGeminiNative(event(), opts({ body: {} }));
 		expect(res.status).toBe(404);
 		expect(res.headers.get('content-type')).toBe('application/json');
-		expect(vi.mocked(recordCompletion).mock.calls[0][1]).toMatchObject({ ok: false, usage: null });
+		expect(vi.mocked(recordCompletion).mock.calls[0]?.[1]).toMatchObject({
+			ok: false,
+			usage: null
+		});
 	});
 
 	it('returns fetch and body-read failures as-is', async () => {
@@ -583,10 +598,10 @@ describe('characterization — proxyGeminiNative', () => {
 			opts({ method: 'streamGenerateContent', stream: true })
 		);
 		expect(res).toBe(streamResponse);
-		expect(vi.mocked(fetchUpstream).mock.calls[0][3]).toBe(
+		expect(vi.mocked(fetchUpstream).mock.calls[0]?.[3]).toBe(
 			'https://upstream.test/v1/models/gemini-2.5-flash:streamGenerateContent?alt=sse'
 		);
-		expect(vi.mocked(streamWithRecording).mock.calls[0][1]).toEqual({
+		expect(vi.mocked(streamWithRecording).mock.calls[0]?.[1]).toEqual({
 			provider: gemini,
 			upstream,
 			source: upstream.body,
@@ -773,7 +788,7 @@ describe('characterization — proxyGeminiModels', () => {
 			)
 		);
 		const res = await proxyGeminiModels(makeEvent('https://gw.test/v1beta/models'), auth, null);
-		expect(fetchMock.mock.calls[0][0]).toBe(`${base}/models`);
+		expect(fetchMock.mock.calls[0]?.[0]).toBe(`${base}/models`);
 		expect(await res.json()).toEqual({
 			models: [{ name: 'models/gemini-2.5-pro' }, { name: 'gemini-bare' }],
 			nextPageToken: 'page-2'

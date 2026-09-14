@@ -3,7 +3,7 @@
  * component so the numbers the chart draws can be tested without a DOM: the
  * component only maps these matrices onto elements.
  */
-import type { SeriesBucket } from '$lib/usage-range';
+import type { SeriesBucket } from '$lib/features/usage/range';
 import { formatCountCompact, formatTokens } from '$lib/format';
 import { metricValue, type MetricPoint, type UsageMetric } from './metric';
 
@@ -116,7 +116,7 @@ export function segmentHeights(
 		row.map((v, b) => {
 			if (v <= 0) return 0;
 			if (mode === 'normalized') {
-				const total = totals[b];
+				const total = totals[b] ?? 0;
 				return total > 0 ? (v / total) * 100 : 0;
 			}
 			return (v / peak) * 100;
@@ -126,7 +126,7 @@ export function segmentHeights(
 
 /** Topmost series with a visible segment in a bucket (it gets the rounded cap), or -1. */
 export function topSegmentIndex(heights: number[][], bucketIdx: number): number {
-	for (let i = heights.length - 1; i >= 0; i--) if ((heights[i][bucketIdx] ?? 0) > 0) return i;
+	for (let i = heights.length - 1; i >= 0; i--) if ((heights[i]?.[bucketIdx] ?? 0) > 0) return i;
 	return -1;
 }
 
@@ -213,7 +213,7 @@ export function hoverRows(
 			return {
 				key: s.key,
 				label: s.label,
-				color: colors[i],
+				color: colors[i] ?? '',
 				value,
 				share: total > 0 ? value / total : 0
 			};

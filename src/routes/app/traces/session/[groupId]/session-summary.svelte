@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import DetailHeader from '$lib/components/detail-header.svelte';
+	import DetailHeader from '$lib/components/layout/detail-header.svelte';
 	import { formatDuration, formatTokens, formatUsd } from '$lib/format';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
 	import SummaryStat from '../../summary-stat.svelte';

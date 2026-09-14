@@ -15,10 +15,10 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { env } from '$env/dynamic/private';
 import { db } from '$lib/server/db';
 import { budgetAlertState, user } from '$lib/server/db/schema';
-import { getSettings } from '$lib/server/data';
+import { getSettings } from '$lib/server/settings';
 import { currentSpend, type BudgetLimits, type BudgetScope } from '$lib/server/budget';
 import { sendBudgetAlertEmail } from '$lib/server/email';
-import { budgetLevel, type BudgetLevel } from '$lib/budget';
+import { budgetLevel, type BudgetLevel } from '$lib/features/budget/budget';
 
 type Level = Exclude<BudgetLevel, 'ok'>;
 const RANK: Record<Level, number> = { warn: 1, over: 2 };

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { assert, describe, expect, it } from 'vitest';
 import {
 	latencyPercentiles,
 	percentileCont,
@@ -16,7 +16,10 @@ function reference(values: number[], p: number): number | null {
 	const pos = p * (sorted.length - 1);
 	const lo = Math.floor(pos);
 	const hi = Math.ceil(pos);
-	return sorted[lo] + (pos - lo) * (sorted[hi] - sorted[lo]);
+	const below = sorted[lo];
+	const above = sorted[hi];
+	assert(below !== undefined && above !== undefined);
+	return below + (pos - lo) * (above - below);
 }
 
 describe('percentileCont', () => {

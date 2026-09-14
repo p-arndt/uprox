@@ -4,7 +4,7 @@
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import ConfirmAction from '$lib/components/confirm-action.svelte';
+	import ConfirmAction from '$lib/components/form/confirm-action.svelte';
 	import { formatDateTime } from '$lib/format';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import type { PageData } from './$types';

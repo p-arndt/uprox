@@ -1,6 +1,8 @@
 <script lang="ts">
-	import EntityDialog from '$lib/components/entity-dialog.svelte';
-	import PolicyForm, { type PolicyFormValues } from '$lib/components/policy-form.svelte';
+	import EntityDialog from '$lib/components/form/entity-dialog.svelte';
+	import PolicyForm, {
+		type PolicyFormValues
+	} from '$lib/features/policies/components/policy-form.svelte';
 
 	let {
 		editing,

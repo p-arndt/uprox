@@ -15,8 +15,8 @@
  * Pending promises are cached, so concurrent requests for the same key share
  * one query; a rejected load is evicted so the next request retries.
  */
-import type { ResolvedRange } from '$lib/usage-range';
-import type { UsageFilter } from '$lib/usage-group';
+import type { ResolvedRange } from '$lib/features/usage/range';
+import type { UsageFilter } from '$lib/features/usage/group';
 
 export const CLOSED_WINDOW_TTL_MS = 10 * 60_000;
 export const ROLLING_WINDOW_TTL_MS = 30_000;

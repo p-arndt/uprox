@@ -1,14 +1,14 @@
 <script lang="ts">
-	import BudgetAlert from '$lib/components/budget-alert.svelte';
+	import BudgetAlert from '$lib/features/budget/components/budget-alert.svelte';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
-	import UsageWorkbench from '$lib/components/usage-workbench.svelte';
+	import UsageWorkbench from '$lib/features/usage/components/usage-workbench.svelte';
 	import { resolve } from '$app/paths';
 	import type { ResolvedPathname } from '$app/types';
-	import { createUsageView } from '$lib/state/usage-view.svelte';
-	import { NULL_VALUE, type UsageDimension } from '$lib/usage-group';
+	import { createUsageView } from '$lib/features/usage/view.svelte';
+	import { NULL_VALUE, type UsageDimension } from '$lib/features/usage/group';
 	import type { DimensionUsageRow } from '$lib/features/usage/types';
-	import PageShell from '$lib/components/page-shell.svelte';
-	import PageHeader from '$lib/components/page-header.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
 
 	let { data } = $props();
 

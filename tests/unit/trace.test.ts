@@ -10,7 +10,7 @@ import {
 	parseTraceMetadata,
 	parseMetaFilter,
 	prettyJson
-} from '$lib/trace';
+} from '$lib/features/traces/trace';
 
 describe('safeParse', () => {
 	it('parses valid JSON and returns null for invalid/empty', () => {
@@ -60,7 +60,7 @@ describe('requestMessages', () => {
 		const msgs = requestMessages(body);
 		expect(msgs).toHaveLength(3);
 		expect(msgs[0]).toMatchObject({ role: 'system', text: 'be terse' });
-		expect(msgs[2].toolCalls).toEqual([{ name: 'get_weather', args: '{"city":"NYC"}' }]);
+		expect(msgs[2]?.toolCalls).toEqual([{ name: 'get_weather', args: '{"city":"NYC"}' }]);
 	});
 
 	it('reads the Responses API string input', () => {
@@ -173,9 +173,9 @@ describe('tool use — requests', () => {
 			]
 		});
 		const msgs = requestMessages(body);
-		expect(msgs[0].toolCalls).toEqual([{ name: 'get_weather', args: '{"city":"Berlin"}' }]);
-		expect(msgs[1].role).toBe('tool');
-		expect(msgs[1].text).toContain('get_weather → {"tempC":21}');
+		expect(msgs[0]?.toolCalls).toEqual([{ name: 'get_weather', args: '{"city":"Berlin"}' }]);
+		expect(msgs[1]?.role).toBe('tool');
+		expect(msgs[1]?.text).toContain('get_weather → {"tempC":21}');
 	});
 });
 

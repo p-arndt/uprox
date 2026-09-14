@@ -2,8 +2,8 @@
 import { and, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
-import type { BucketChoice, ResolvedRange } from '$lib/usage-range';
-import type { UsageFilter } from '$lib/usage-group';
+import type { BucketChoice, ResolvedRange } from '$lib/features/usage/range';
+import type { UsageFilter } from '$lib/features/usage/group';
 import {
 	METER_ORDER,
 	splitMeters,
@@ -14,17 +14,13 @@ import {
 	emptyMeterValues,
 	sumMeterValues,
 	type MeterTokenSums
-} from '$lib/usage-meters';
+} from '$lib/features/usage/meters';
 import { usageConds } from '$lib/server/usage-queries/predicates';
-import type { GroupedSeries, GroupedSeriesResult } from '$lib/server/usage-queries/types';
+import type { GroupedSeries, GroupedSeriesResult } from '$lib/features/usage/types';
 import { METER_SUM_SELECT, meterLabel } from '$lib/server/usage-queries/meter-sql';
 import { ALL_LINES, bucketedMeterCells } from '$lib/server/usage-queries/meter-cells';
 import { loadRateCards, ratesFor } from '$lib/server/usage-queries/rate-cards';
 import type { TokenMeter, TokenMeterBreakdown } from '$lib/features/usage/meter-types';
-
-// The shapes live in the client-safe feature module; re-exported so existing
-// `$lib/server/data` imports keep working.
-export type { TokenMeter, TokenMeterBreakdown };
 
 /**
  * Decompose the window's token volume into its billing meters, with the cost
@@ -126,7 +122,7 @@ export async function orgTokenMetersSeries(
 
 	const series: GroupedSeries[] = METER_ORDER.map((key) => {
 		const points = buckets.map((_, b) => {
-			const cell = cells[b].get(ALL_LINES);
+			const cell = cells[b]?.get(ALL_LINES);
 			return {
 				requests: 0,
 				denied: 0,

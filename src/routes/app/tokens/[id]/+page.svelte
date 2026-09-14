@@ -2,21 +2,21 @@
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import UsageWorkbench from '$lib/components/usage-workbench.svelte';
+	import UsageWorkbench from '$lib/features/usage/components/usage-workbench.svelte';
 	import { resolve } from '$app/paths';
 	import { enhance } from '$app/forms';
-	import { createUsageView } from '$lib/state/usage-view.svelte';
-	import type { UsageDimension } from '$lib/usage-group';
+	import { createUsageView } from '$lib/features/usage/view.svelte';
+	import type { UsageDimension } from '$lib/features/usage/group';
 	import type { DimensionUsageRow } from '$lib/features/usage/types';
 	import { toast } from 'svelte-sonner';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import KeyRound from '@lucide/svelte/icons/key-round';
-	import DetailHeader from '$lib/components/detail-header.svelte';
+	import DetailHeader from '$lib/components/layout/detail-header.svelte';
 	import Eye from '@lucide/svelte/icons/eye';
 	import Copy from '@lucide/svelte/icons/copy';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
 
 	let { data, form } = $props();
 

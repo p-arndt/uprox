@@ -1,6 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { requireOrg } from '$lib/server/org';
-import { orgBudgetStatus, instanceBudgetStatus, getSettings } from '$lib/server/data';
+import { orgBudgetStatus, instanceBudgetStatus } from '$lib/server/budget-status';
+import { getSettings } from '$lib/server/settings';
 import { loadUsageAnalysis, streamed } from '$lib/server/usage-analysis';
 
 export const load: PageServerLoad = async (event) => {

@@ -3,14 +3,20 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { formatDateTime, formatDuration, formatUsd, formatTokens } from '$lib/format';
 	import { eventTone, toneDot } from '$lib/events';
-	import { callSpan, callsWindow, prettyJson, rawResponseBody, waterfallBar } from '$lib/trace';
-	import TraceConversation from '$lib/components/trace-conversation.svelte';
-	import TraceMetadata from '$lib/components/trace-metadata.svelte';
-	import TraceWaterfall from '$lib/components/trace-waterfall.svelte';
-	import RawPayloadTabs from '$lib/components/raw-payload-tabs.svelte';
-	import DetailHeader from '$lib/components/detail-header.svelte';
+	import {
+		callSpan,
+		callsWindow,
+		prettyJson,
+		rawResponseBody,
+		waterfallBar
+	} from '$lib/features/traces/trace';
+	import TraceConversation from '$lib/features/traces/components/trace-conversation.svelte';
+	import TraceMetadata from '$lib/features/traces/components/trace-metadata.svelte';
+	import TraceWaterfall from '$lib/features/traces/components/trace-waterfall.svelte';
+	import RawPayloadTabs from '$lib/features/traces/components/raw-payload-tabs.svelte';
+	import DetailHeader from '$lib/components/layout/detail-header.svelte';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
 	import CallStatus from '../call-status.svelte';
 	import SummaryStat from '../summary-stat.svelte';
 	import { callLabel } from '../session/[groupId]/session';

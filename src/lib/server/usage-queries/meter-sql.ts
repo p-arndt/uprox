@@ -1,8 +1,8 @@
 /** SQL fragments and labels shared by the token meter queries. */
 import { sql } from 'drizzle-orm';
 import { auditLog } from '$lib/server/db/schema';
-import type { MeterKey, MeterTokenSums } from '$lib/usage-meters';
-import { METER_META } from '$lib/usage-colors';
+import type { MeterKey, MeterTokenSums } from '$lib/features/usage/meters';
+import { METER_META } from '$lib/features/usage/colors';
 
 /**
  * Embedding traffic, matched on the model name. Embeddings are metered as their
@@ -12,7 +12,7 @@ import { METER_META } from '$lib/usage-colors';
 export const EMBEDDING_MODEL = sql`${auditLog.model} ilike '%embedding%'`;
 
 /**
- * The six sums every meter view needs, in the shape `$lib/usage-meters` expects.
+ * The six sums every meter view needs, in the shape `$lib/features/usage/meters` expects.
  * Selected identically by each query so the three views can never partition the
  * same window differently.
  */

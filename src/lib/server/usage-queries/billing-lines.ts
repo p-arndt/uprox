@@ -2,8 +2,17 @@
 import { and, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
-import { resolveSeriesBucket, type BucketChoice, type ResolvedRange } from '$lib/usage-range';
-import { NULL_VALUE, OTHERS_KEY, encodeBillingLineKey, type UsageFilter } from '$lib/usage-group';
+import {
+	resolveSeriesBucket,
+	type BucketChoice,
+	type ResolvedRange
+} from '$lib/features/usage/range';
+import {
+	NULL_VALUE,
+	OTHERS_KEY,
+	encodeBillingLineKey,
+	type UsageFilter
+} from '$lib/features/usage/group';
 import {
 	METER_ORDER,
 	splitMeters,
@@ -13,13 +22,13 @@ import {
 	effectiveRatePerMtok,
 	type MeterKey,
 	type MeterTokenSums
-} from '$lib/usage-meters';
+} from '$lib/features/usage/meters';
 import { usageConds } from '$lib/server/usage-queries/predicates';
 import type {
 	DimensionUsageRow,
 	GroupedSeries,
 	GroupedSeriesResult
-} from '$lib/server/usage-queries/types';
+} from '$lib/features/usage/types';
 import { METER_SUM_SELECT, meterShortLabel } from '$lib/server/usage-queries/meter-sql';
 import { bucketedMeterCells } from '$lib/server/usage-queries/meter-cells';
 import { loadRateCards, ratesFor } from '$lib/server/usage-queries/rate-cards';
@@ -173,7 +182,7 @@ export async function orgBillingLineSeries(
 		const points = buckets.map((_, b) => {
 			let costUsd = 0;
 			let tokens = 0;
-			for (const [lineKey, cell] of cells[b]) {
+			for (const [lineKey, cell] of cells[b] ?? []) {
 				const folded = topKeys.has(lineKey) ? lineKey : OTHERS_KEY;
 				if (folded !== key) continue;
 				costUsd += sumMeterValues(cell.costs);

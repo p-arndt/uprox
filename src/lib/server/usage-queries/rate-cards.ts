@@ -6,7 +6,7 @@
  * longest-prefix resolver, so analytics and enforcement can never disagree
  * about which rate card a model is on.
  */
-import type { MeterRates } from '$lib/usage-meters';
+import type { MeterRates } from '$lib/features/usage/meters';
 import { resolvePrice, type ModelPrice } from '$lib/server/providers';
 
 export { getEffectivePriceMap as loadRateCards } from '$lib/server/pricing';

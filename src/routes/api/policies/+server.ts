@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireOrgApi, requirePermission } from '$lib/server/org';
-import { listPolicies, createPolicy } from '$lib/server/data';
+import { listPolicies, createPolicy } from '$lib/server/policies';
 import { apiHandler } from '$lib/server/api/errors';
 import { readJson } from '$lib/server/api/fields';
 import { parsePolicyCreate } from '$lib/server/api/policy-body';

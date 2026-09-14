@@ -2,7 +2,7 @@
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { service, auditLog, requestTrace, traceSpan } from '$lib/server/db/schema';
-import type { MetaFilter } from '$lib/trace';
+import type { MetaFilter } from '$lib/features/traces/trace';
 
 /**
  * List captured request traces for the trace viewer, newest first. Joins the

@@ -2,14 +2,12 @@
 import { and, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
-import type { ResolvedRange } from '$lib/usage-range';
-import type { UsageFilter } from '$lib/usage-group';
+import type { ResolvedRange } from '$lib/features/usage/range';
+import type { UsageFilter } from '$lib/features/usage/group';
 import { usageConds } from '$lib/server/usage-queries/predicates';
 import { latencyHistogram } from '$lib/server/usage-queries/latency';
 import { mapTotalsRow } from '$lib/server/usage-queries/row-mapping';
 import type { UsageTotals } from '$lib/features/usage/types';
-
-export type { UsageTotals };
 
 /**
  * Headline aggregates for the whole org (or one service, with `serviceId`) over

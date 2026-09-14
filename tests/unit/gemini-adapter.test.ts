@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, assert } from 'vitest';
 import {
 	geminiAdapter,
 	toGeminiChatRequest,
@@ -233,6 +233,7 @@ describe('fromGeminiChatResponse', () => {
 			]
 		}) as { choices: { message: Record<string, unknown>; finish_reason: string }[] };
 		const choice = out.choices[0];
+		assert(choice);
 		expect(choice.finish_reason).toBe('tool_calls');
 		expect(choice.message.content).toBeNull();
 		expect(choice.message.tool_calls).toEqual([

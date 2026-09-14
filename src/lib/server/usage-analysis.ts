@@ -2,13 +2,13 @@ import type { RequestEvent } from '@sveltejs/kit';
 import {
 	orgUsageByDimension,
 	orgUsageSeriesGrouped,
-	orgUsageFilterOptions,
-	orgUsageTotals,
-	orgUsageSeries,
-	orgTokenMeters,
-	orgTopMovers,
-	orgModelEfficiency
-} from '$lib/server/data';
+	orgUsageFilterOptions
+} from '$lib/server/usage-queries/by-dimension';
+import { orgUsageTotals } from '$lib/server/usage-queries/totals';
+import { orgUsageSeries } from '$lib/server/usage-queries/series';
+import { orgTokenMeters } from '$lib/server/usage-queries/meters';
+import { orgTopMovers } from '$lib/server/usage-queries/movers';
+import { orgModelEfficiency } from '$lib/server/usage-queries/efficiency';
 import type { DimensionUsageRow, Streamed, UsageAnalysis } from '$lib/features/usage/types';
 import {
 	USAGE_RANGES,
@@ -17,7 +17,7 @@ import {
 	normalizeBucket,
 	shiftRangeBack,
 	type ResolvedRange
-} from '$lib/usage-range';
+} from '$lib/features/usage/range';
 import {
 	USAGE_DIMENSIONS,
 	normalizeGroupBy,
@@ -25,12 +25,10 @@ import {
 	type UsageDimension,
 	type UsageFilter,
 	type UsageFilterOptions
-} from '$lib/usage-group';
-import { MAX_SERIES } from '$lib/usage-colors';
+} from '$lib/features/usage/group';
+import { MAX_SERIES } from '$lib/features/usage/colors';
 import { readUsageWindow, writeUsageWindow } from '$lib/server/usage-window-pref';
 import { cacheWindow, usageCache, usageCacheKey } from '$lib/server/usage-cache';
-
-export type { UsageAnalysis };
 
 const DAY_MS = 86_400_000;
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
@@ -87,7 +85,7 @@ function resolveUsageRequest(event: RequestEvent, dimensions: readonly UsageDime
 	// falls back to the first dimension that IS allowed, rather than 500ing on a
 	// dimension the page can't render.
 	const requested = normalizeGroupBy(params.get('group'));
-	const groupBy = dimensions.includes(requested) ? requested : dimensions[0];
+	const groupBy = dimensions.includes(requested) ? requested : (dimensions[0] ?? requested);
 	// Filters on disallowed dimensions are dropped for the same reason.
 	const filters = parseFilters(params.getAll('f')).filter((f) => dimensions.includes(f.dim));
 

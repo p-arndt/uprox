@@ -15,8 +15,8 @@
 import { and, isNotNull, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
-import type { ResolvedRange } from '$lib/usage-range';
-import type { UsageFilter } from '$lib/usage-group';
+import type { ResolvedRange } from '$lib/features/usage/range';
+import type { UsageFilter } from '$lib/features/usage/group';
 import { usageConds } from '$lib/server/usage-queries/predicates';
 
 /** One histogram bucket: a latency value and how many requests measured it. */
@@ -49,7 +49,7 @@ function valueAt(sorted: readonly LatencyBucket[], idx: number): number {
 		seen += b.count;
 		if (idx < seen) return b.latencyMs;
 	}
-	return sorted[sorted.length - 1].latencyMs;
+	return sorted.at(-1)?.latencyMs ?? 0;
 }
 
 /** The p50/p95 pair the usage UI shows, rounded to whole milliseconds. */

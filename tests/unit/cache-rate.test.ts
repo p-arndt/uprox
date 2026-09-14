@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { cacheRate } from '$lib/cache-rate';
+import { cacheRate } from '$lib/features/usage/cache-rate';
 
 describe('cacheRate', () => {
 	it('computes provider cache reads over cacheable input', () => {

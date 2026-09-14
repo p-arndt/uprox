@@ -2,7 +2,7 @@
  * Derivations for the token-meter card: the composition rows and what the two
  * cache layers avoided.
  */
-import { METER_COLOR, METER_META } from '$lib/usage-colors';
+import { METER_COLOR, METER_META } from '$lib/features/usage/colors';
 
 export interface MeterInput {
 	key: string;

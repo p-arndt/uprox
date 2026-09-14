@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import TraceConversation from '$lib/components/trace-conversation.svelte';
+	import TraceConversation from '$lib/features/traces/components/trace-conversation.svelte';
 	import { formatDuration, formatTokens, formatUsd } from '$lib/format';
 	import CallStatus from '../../call-status.svelte';
 	import { callLabel } from './session';

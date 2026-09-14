@@ -1,7 +1,7 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { requireOrg } from '$lib/server/org';
-import { orgStats } from '$lib/server/data';
+import { orgStats } from '$lib/server/usage-queries/overview';
 
 /**
  * The instance's front door is the cost analysis — that is what an operator opens

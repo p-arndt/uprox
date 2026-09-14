@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import SearchInput from '$lib/components/search-input.svelte';
-	import SelectField from '$lib/components/select-field.svelte';
+	import SearchInput from '$lib/components/form/search-input.svelte';
+	import SelectField from '$lib/components/form/select-field.svelte';
 	import Filter from '@lucide/svelte/icons/filter';
 	import X from '@lucide/svelte/icons/x';
 	import { statusOptions } from './feed-filter';

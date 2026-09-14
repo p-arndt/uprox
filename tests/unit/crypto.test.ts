@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { assert, describe, it, expect } from 'vitest';
 import { encrypt, decrypt, sha256, safeEqualHex } from '$lib/server/crypto';
 
 describe('encrypt / decrypt', () => {
@@ -34,9 +34,10 @@ describe('encrypt / decrypt', () => {
 
 	it('rejects a tampered ciphertext (GCM auth tag mismatch)', () => {
 		const [iv, tag, data] = encrypt('trusted').split('.');
+		assert(data);
 		// flip a byte in the ciphertext segment
 		const flipped = Buffer.from(data, 'base64');
-		flipped[0] ^= 0xff;
+		flipped.writeUInt8(flipped.readUInt8(0) ^ 0xff, 0);
 		const forged = [iv, tag, flipped.toString('base64')].join('.');
 		expect(() => decrypt(forged)).toThrow();
 	});

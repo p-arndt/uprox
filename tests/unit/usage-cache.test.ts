@@ -6,7 +6,7 @@ import {
 	createUsageCache,
 	usageCacheKey
 } from '$lib/server/usage-cache';
-import type { ResolvedRange } from '$lib/usage-range';
+import type { ResolvedRange } from '$lib/features/usage/range';
 
 function clock(start = 1_000_000) {
 	let t = start;

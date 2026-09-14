@@ -4,8 +4,8 @@
 	import type { Pathname } from '$app/types';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import Check from '@lucide/svelte/icons/check';
-	import PageShell from '$lib/components/page-shell.svelte';
-	import PageHeader from '$lib/components/page-header.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
 
 	let { data } = $props();
 

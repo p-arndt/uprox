@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildUsageExportHref, usageRangeLabel } from '$lib/state/usage-view.svelte';
+import { buildUsageExportHref, usageRangeLabel } from '$lib/features/usage/view.svelte';
 
 const ranges = [
 	{ key: '7d', label: 'Last 7 days' },

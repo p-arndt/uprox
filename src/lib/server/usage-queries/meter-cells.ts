@@ -7,8 +7,8 @@ import {
 	type BucketChoice,
 	type ResolvedRange,
 	type SeriesBucket
-} from '$lib/usage-range';
-import { NULL_VALUE, encodeBillingLineKey, type UsageFilter } from '$lib/usage-group';
+} from '$lib/features/usage/range';
+import { NULL_VALUE, encodeBillingLineKey, type UsageFilter } from '$lib/features/usage/group';
 import {
 	METER_ORDER,
 	splitMeters,
@@ -16,7 +16,7 @@ import {
 	allocateCost,
 	emptyMeterValues,
 	type MeterValues
-} from '$lib/usage-meters';
+} from '$lib/features/usage/meters';
 import { BUCKET_STEP } from '$lib/server/usage-queries/buckets';
 import { usageCondsSql } from '$lib/server/usage-queries/predicates';
 import {
@@ -89,16 +89,17 @@ export async function bucketedMeterCells(
 
 	const prices = await loadRateCards();
 	const buckets: string[] = [];
-	const idx = new Map<string, number>();
+	const byBucket = new Map<string, Map<string, MeterCell>>();
 	const cells: Map<string, MeterCell>[] = [];
 
 	for (const r of rows) {
-		if (!idx.has(r.bucket)) {
-			idx.set(r.bucket, buckets.length);
+		let bucket = byBucket.get(r.bucket);
+		if (!bucket) {
+			bucket = new Map();
+			byBucket.set(r.bucket, bucket);
 			buckets.push(r.bucket);
-			cells.push(new Map());
+			cells.push(bucket);
 		}
-		const bucket = cells[idx.get(r.bucket)!];
 		const sums = meterSumsFromRow(r);
 		const tokens = splitMeters(sums);
 		const costs = allocateCost(

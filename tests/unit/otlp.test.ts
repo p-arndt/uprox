@@ -1,6 +1,12 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, assert } from 'vitest';
 import { parseOtlpProtobuf, parseOtlpJson } from '$lib/server/otlp/decode';
-import { buildSpanTree, flattenTree, traceWindow, spanDetail, spanKind } from '$lib/otel';
+import {
+	buildSpanTree,
+	flattenTree,
+	traceWindow,
+	spanDetail,
+	spanKind
+} from '$lib/features/traces/otel';
 
 /* ------- a tiny, independent protobuf encoder to exercise the wire decoder ------ */
 
@@ -55,6 +61,7 @@ describe('parseOtlpProtobuf', () => {
 		const spans = parseOtlpProtobuf(new Uint8Array(req));
 		expect(spans).toHaveLength(1);
 		const s = spans[0];
+		assert(s);
 		expect(s.traceId).toBe('0102030405060708090a0b0c0d0e0f10');
 		expect(s.spanId).toBe('aabbccddeeff1122');
 		expect(s.name).toBe('OpenAI.chat');
@@ -97,12 +104,12 @@ describe('parseOtlpJson', () => {
 		};
 		const spans = parseOtlpJson(payload);
 		expect(spans).toHaveLength(1);
-		expect(spans[0].traceId).toBe('abcdef00000000000000000000000001');
-		expect(spans[0].kind).toBe('INTERNAL');
-		expect(spans[0].status).toBe('ok');
-		expect(spans[0].serviceName).toBe('svc');
-		expect(spans[0].durationMs).toBe(1000);
-		expect(spans[0].attributes['llm.token_count.prompt']).toBe(42);
+		expect(spans[0]?.traceId).toBe('abcdef00000000000000000000000001');
+		expect(spans[0]?.kind).toBe('INTERNAL');
+		expect(spans[0]?.status).toBe('ok');
+		expect(spans[0]?.serviceName).toBe('svc');
+		expect(spans[0]?.durationMs).toBe(1000);
+		expect(spans[0]?.attributes['llm.token_count.prompt']).toBe(42);
 	});
 
 	it('returns [] for a payload with no resourceSpans', () => {
@@ -146,9 +153,9 @@ describe('parseOtlpJson', () => {
 		}).not.toThrow();
 		expect(spans).toHaveLength(1);
 		// the span still decodes; the over-deep attribute is present but truncated
-		expect(spans?.[0].name).toBe('deep');
-		expect(spans?.[0].serviceName).toBe('svc');
-		expect(spans?.[0].attributes).toHaveProperty('deep');
+		expect(spans?.[0]?.name).toBe('deep');
+		expect(spans?.[0]?.serviceName).toBe('svc');
+		expect(spans?.[0]?.attributes).toHaveProperty('deep');
 	});
 });
 
@@ -156,8 +163,11 @@ describe('characterization — parseOtlpProtobuf', () => {
 	const fixed32 = (no: number) => [...tag(no, 5), 1, 2, 3, 4];
 	const bitsOf = (n: number) => new DataView(Float64Array.of(n).buffer).getBigUint64(0, true);
 	const attr = (k: string, v: number[]) => ld(9, keyValue(k, v));
-	const decodeOne = (span: number[]) =>
-		parseOtlpProtobuf(new Uint8Array(ld(1, ld(2, ld(2, span)))))[0];
+	const decodeOne = (span: number[]) => {
+		const [decoded] = parseOtlpProtobuf(new Uint8Array(ld(1, ld(2, ld(2, span)))));
+		assert(decoded);
+		return decoded;
+	};
 
 	it('decodes every AnyValue variant and skips unknown fields and keyless entries', () => {
 		const span = [
@@ -293,7 +303,7 @@ describe('characterization — parseOtlpProtobuf', () => {
 		const req = ld(1, ld(2, [...scope, ...ld(2, spanBytes)]));
 		const spans = parseOtlpProtobuf(new Uint8Array(req));
 		expect(spans).toHaveLength(1);
-		expect(spans[0].name).toBe('after-skip');
+		expect(spans[0]?.name).toBe('after-skip');
 	});
 
 	it('throws on an unsupported wire type in a skipped field', () => {
@@ -468,6 +478,7 @@ describe('characterization — parseOtlpJson', () => {
 				}
 			]
 		});
+		assert(s);
 		expect(s.attributes).toEqual({
 			s: 'v',
 			both: 'wins',
@@ -491,6 +502,7 @@ describe('characterization — parseOtlpJson', () => {
 		const [s] = parseOtlpJson({
 			resourceSpans: [{ scopeSpans: [{ spans: [{ attributes: [{ key: 'deep', value }] }] }] }]
 		});
+		assert(s);
 		let v: unknown = s.attributes.deep;
 		let depth = 0;
 		while (Array.isArray(v)) {
@@ -541,9 +553,9 @@ describe('span tree', () => {
 	it('nests by parent and orders siblings by start time', () => {
 		const roots = buildSpanTree(spans);
 		expect(roots).toHaveLength(1);
-		expect(roots[0].spanId).toBe('a');
+		expect(roots[0]?.spanId).toBe('a');
 		// child2 (t=5) sorts before child1 (t=10)
-		expect(roots[0].children.map((c) => c.spanId)).toEqual(['c', 'b']);
+		expect(roots[0]?.children.map((c) => c.spanId)).toEqual(['c', 'b']);
 	});
 
 	it('flattens depth-first with depth set', () => {
@@ -564,7 +576,7 @@ describe('span tree', () => {
 			}
 		]);
 		expect(roots).toHaveLength(1);
-		expect(roots[0].spanId).toBe('x');
+		expect(roots[0]?.spanId).toBe('x');
 	});
 
 	it('computes the trace window across all spans', () => {

@@ -21,7 +21,7 @@ import {
 	normalizeRangeKey,
 	type BucketChoice,
 	type ResolvedRangeKey
-} from '$lib/usage-range';
+} from '$lib/features/usage/range';
 
 export const USAGE_WINDOW_COOKIE = 'uprox_usage_window';
 

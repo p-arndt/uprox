@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireOrgApi, requirePermission } from '$lib/server/org';
-import { listProviderSecrets, createProviderSecret } from '$lib/server/data';
+import { listProviderSecrets, createProviderSecret } from '$lib/server/provider-secrets';
 import { apiHandler } from '$lib/server/api/errors';
 import { readJson } from '$lib/server/api/fields';
 import { parseProviderCreate } from '$lib/server/api/provider-body';

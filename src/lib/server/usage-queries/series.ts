@@ -2,13 +2,15 @@
 import { sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
-import { resolveSeriesBucket, type BucketChoice, type ResolvedRange } from '$lib/usage-range';
-import type { UsageFilter } from '$lib/usage-group';
+import {
+	resolveSeriesBucket,
+	type BucketChoice,
+	type ResolvedRange
+} from '$lib/features/usage/range';
+import type { UsageFilter } from '$lib/features/usage/group';
 import { BUCKET_STEP } from '$lib/server/usage-queries/buckets';
 import { usageCondsSql } from '$lib/server/usage-queries/predicates';
-import type { UsageSeries, UsageSeriesPoint } from '$lib/features/usage/types';
-
-export type { UsageSeries, UsageSeriesPoint };
+import type { UsageSeries } from '$lib/features/usage/types';
 
 /**
  * Time-series of gateway traffic across the resolved window, bucketed hourly,

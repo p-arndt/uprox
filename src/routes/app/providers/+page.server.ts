@@ -6,8 +6,8 @@ import {
 	createProviderSecret,
 	updateProviderSecret,
 	deleteProviderSecret
-} from '$lib/server/data';
-import { PROVIDERS, PROVIDER_IDS, type ProviderDef } from '$lib/server/providers';
+} from '$lib/server/provider-secrets';
+import { PROVIDERS, getProvider, type ProviderDef } from '$lib/server/providers';
 import { parsePriority } from '$lib/server/form';
 
 /**
@@ -45,7 +45,7 @@ export const load: PageServerLoad = async (event) => {
 	const secrets = await listProviderSecrets();
 	return {
 		secrets,
-		providers: Object.values(PROVIDERS).map((p) => ({
+		providers: Object.values<ProviderDef>(PROVIDERS).map((p) => ({
 			id: p.id,
 			label: p.label,
 			baseUrl: p.baseUrl,
@@ -67,8 +67,8 @@ export const actions: Actions = {
 		const data = await event.request.formData();
 		const provider = data.get('provider')?.toString() ?? '';
 		const baseUrl = data.get('baseUrl')?.toString().trim() || undefined;
-		if (!PROVIDER_IDS.includes(provider)) return fail(400, { message: 'Unknown provider' });
-		const def = PROVIDERS[provider];
+		const def = getProvider(provider);
+		if (!def) return fail(400, { message: 'Unknown provider' });
 		const secret = secretFromForm(def, data);
 		if (!secret && !def.optionalAuth) return fail(400, { message: 'API key is required' });
 		if (def.requiresEndpoint) {

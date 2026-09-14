@@ -1,5 +1,5 @@
 /** Time-bucket helpers shared by the time-series queries. */
-import type { SeriesBucket } from '$lib/usage-range';
+import type { SeriesBucket } from '$lib/features/usage/range';
 
 /** Postgres `date_trunc`/`generate_series` step for each bucket unit. */
 export const BUCKET_STEP: Record<SeriesBucket, string> = {

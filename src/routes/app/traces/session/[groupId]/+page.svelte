@@ -1,9 +1,9 @@
 <script lang="ts">
-	import TraceWaterfall from '$lib/components/trace-waterfall.svelte';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import TraceWaterfall from '$lib/features/traces/components/trace-waterfall.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
 	import { formatDuration } from '$lib/format';
 	import { eventTone, toneDot } from '$lib/events';
-	import { callSpan, callsWindow, waterfallBar } from '$lib/trace';
+	import { callSpan, callsWindow, waterfallBar } from '$lib/features/traces/trace';
 	import SessionSummary from './session-summary.svelte';
 	import SessionViewToggle from './session-view-toggle.svelte';
 	import SessionTranscript from './session-transcript.svelte';

@@ -1,7 +1,7 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { requireOrg } from '$lib/server/org';
-import { getOtelTrace } from '$lib/server/data';
+import { getOtelTrace } from '$lib/server/traces-queries';
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);

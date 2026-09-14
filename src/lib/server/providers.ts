@@ -3,7 +3,7 @@
  * OpenAI-compatible surface, so the gateway can proxy a single request shape.
  */
 import type { GatewayScope } from '$lib/scopes';
-import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/pricing';
+import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/features/pricing/pricing';
 
 export type { GatewayScope };
 
@@ -66,7 +66,7 @@ const OPENAI_MODEL_PREFIXES = [
 	'whisper'
 ];
 
-export const PROVIDERS: Record<string, ProviderDef> = {
+const PROVIDER_DEFS = {
 	openai: {
 		id: 'openai',
 		label: 'OpenAI',
@@ -181,7 +181,10 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 		requiresEndpoint: true,
 		acceptsAnyModel: true
 	}
-};
+} satisfies Record<string, ProviderDef>;
+
+// Known keys resolve to a definite definition; lookups by an arbitrary string may miss.
+export const PROVIDERS: Record<string, ProviderDef> & typeof PROVIDER_DEFS = PROVIDER_DEFS;
 
 /** Whether a provider implements a given gateway capability. */
 export function providerSupports(provider: ProviderDef, capability: GatewayScope): boolean {
@@ -260,6 +263,11 @@ export function authHeaders(provider: ProviderDef, apiKey: string): Record<strin
 }
 
 export const PROVIDER_IDS = Object.keys(PROVIDERS);
+
+/** The provider registered under `id`, or undefined for an unknown (or inherited) key. */
+export function getProvider(id: string): ProviderDef | undefined {
+	return Object.hasOwn(PROVIDERS, id) ? PROVIDERS[id] : undefined;
+}
 
 /** Whether a provider claims a model name by one of its `modelPrefixes`. */
 function matchesByPrefix(def: ProviderDef, model: string): boolean {
@@ -600,7 +608,7 @@ function keysLongestFirst(prices: Record<string, ModelPrice>): string[] {
  */
 export function resolvePrice(prices: Record<string, ModelPrice>, model: string): ModelPrice | null {
 	const m = model.toLowerCase();
-	if (Object.hasOwn(prices, m)) return prices[m];
+	if (Object.hasOwn(prices, m)) return prices[m] ?? null;
 	const key = keysLongestFirst(prices).find((k) => m.startsWith(k));
-	return key ? prices[key] : null;
+	return key ? (prices[key] ?? null) : null;
 }

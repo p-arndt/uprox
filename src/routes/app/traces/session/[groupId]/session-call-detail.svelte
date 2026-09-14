@@ -2,11 +2,11 @@
 	import { resolve } from '$app/paths';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import TraceConversation from '$lib/components/trace-conversation.svelte';
-	import TraceMetadata from '$lib/components/trace-metadata.svelte';
-	import RawPayloadTabs from '$lib/components/raw-payload-tabs.svelte';
+	import TraceConversation from '$lib/features/traces/components/trace-conversation.svelte';
+	import TraceMetadata from '$lib/features/traces/components/trace-metadata.svelte';
+	import RawPayloadTabs from '$lib/features/traces/components/raw-payload-tabs.svelte';
 	import { formatDateTime, formatDuration, formatTokens, formatUsd } from '$lib/format';
-	import { prettyJson, rawResponseBody } from '$lib/trace';
+	import { prettyJson, rawResponseBody } from '$lib/features/traces/trace';
 	import Copy from '@lucide/svelte/icons/copy';
 	import Check from '@lucide/svelte/icons/check';
 	import CallStatus from '../../call-status.svelte';

@@ -4,8 +4,8 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import SelectField from '$lib/components/select-field.svelte';
-	import FormError from '$lib/components/form-error.svelte';
+	import SelectField from '$lib/components/form/select-field.svelte';
+	import FormError from '$lib/components/form/form-error.svelte';
 	import Plus from '@lucide/svelte/icons/plus';
 	import { roleOptions } from './member-roles';
 

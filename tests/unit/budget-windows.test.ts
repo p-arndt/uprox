@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { budgetLevel, startOfUtcDay, startOfUtcMonth } from '$lib/budget';
+import { budgetLevel, startOfUtcDay, startOfUtcMonth } from '$lib/features/budget/budget';
 
 describe('UTC budget windows', () => {
 	it('truncates to the start of the UTC day', () => {

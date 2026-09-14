@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types';
 import { requirePermission } from '$lib/server/org';
-import { deleteProviderSecret } from '$lib/server/data';
+import { deleteProviderSecret } from '$lib/server/provider-secrets';
 import { apiHandler } from '$lib/server/api/errors';
 import { pathId } from '$lib/server/api/fields';
 

@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requirePermission } from '$lib/server/org';
-import { revokeToken, updateToken } from '$lib/server/data';
+import { revokeToken, updateToken } from '$lib/server/tokens-admin';
 import { apiHandler, notFound } from '$lib/server/api/errors';
 import { pathId, readJson } from '$lib/server/api/fields';
 import { parseTokenPatch, tokenResponse } from '$lib/server/api/token-body';

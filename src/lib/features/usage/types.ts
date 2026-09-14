@@ -8,11 +8,11 @@ import type {
 	ResolvedRangeKey,
 	SeriesBucket,
 	UsageRangeOption
-} from '$lib/usage-range';
-import type { UsageDimension, UsageFilter, UsageFilterOptions } from '$lib/usage-group';
+} from '$lib/features/usage/range';
+import type { UsageDimension, UsageFilter, UsageFilterOptions } from '$lib/features/usage/group';
 import type { TokenMeterBreakdown } from './meter-types';
 
-export type { UsageFilterOption, UsageFilterOptions } from '$lib/usage-group';
+export type { UsageFilterOption, UsageFilterOptions } from '$lib/features/usage/group';
 
 export interface UsageTotals {
 	requests: number;

@@ -5,8 +5,8 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import Loader2 from '@lucide/svelte/icons/loader-circle';
-	import AuthShell from '$lib/components/auth-shell.svelte';
-	import OidcSignInForm from '$lib/components/oidc-sign-in-form.svelte';
+	import AuthShell from '$lib/features/auth/components/auth-shell.svelte';
+	import OidcSignInForm from '$lib/features/auth/components/oidc-sign-in-form.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	let loading = $state(false);

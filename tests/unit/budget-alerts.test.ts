@@ -12,7 +12,7 @@ const settings = {
 	budgetAlertThresholdPct: 80,
 	budgetAlertEmail: null as string | null
 };
-vi.mock('$lib/server/data', () => ({ getSettings: () => Promise.resolve(settings) }));
+vi.mock('$lib/server/settings', () => ({ getSettings: () => Promise.resolve(settings) }));
 
 // Controllable realized spend for both windows.
 let spend = {
@@ -74,7 +74,7 @@ describe('budget alert routing by scope', () => {
 
 		expect(currentSpend).toHaveBeenCalledWith('instance', 'instance');
 		expect(sendBudgetAlertEmail).toHaveBeenCalledTimes(1);
-		expect(sendBudgetAlertEmail.mock.calls[0][0]).toMatchObject({
+		expect(sendBudgetAlertEmail.mock.calls[0]?.[0]).toMatchObject({
 			subject: 'Instance',
 			window: 'daily',
 			level: 'over'
@@ -94,7 +94,7 @@ describe('budget alert routing by scope', () => {
 		});
 
 		expect(currentSpend).toHaveBeenCalledWith('service', 'svc-1');
-		expect(sendBudgetAlertEmail.mock.calls[0][0]).toMatchObject({
+		expect(sendBudgetAlertEmail.mock.calls[0]?.[0]).toMatchObject({
 			subject: 'support-agent',
 			window: 'monthly',
 			level: 'warn'

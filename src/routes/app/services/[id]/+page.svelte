@@ -1,14 +1,14 @@
 <script lang="ts">
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import UsageWorkbench from '$lib/components/usage-workbench.svelte';
+	import UsageWorkbench from '$lib/features/usage/components/usage-workbench.svelte';
 	import { resolve } from '$app/paths';
-	import { createUsageView } from '$lib/state/usage-view.svelte';
-	import { NULL_VALUE, type UsageDimension } from '$lib/usage-group';
+	import { createUsageView } from '$lib/features/usage/view.svelte';
+	import { NULL_VALUE, type UsageDimension } from '$lib/features/usage/group';
 	import type { DimensionUsageRow } from '$lib/features/usage/types';
 	import { relativeTime } from '$lib/format';
 	import Boxes from '@lucide/svelte/icons/boxes';
-	import DetailHeader from '$lib/components/detail-header.svelte';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import DetailHeader from '$lib/components/layout/detail-header.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
 
 	let { data } = $props();
 
