@@ -27,6 +27,7 @@ import { checkRateLimit } from '$lib/server/ratelimit';
 import { checkBudget, reserve } from '$lib/server/budget';
 import { maybeSendBudgetAlert, maybeSendInstanceBudgetAlert } from '$lib/server/budget-alerts';
 import { cacheKeyFor, getCached, putCached, isDeterministicRequest } from '$lib/server/cache';
+import { estimateCost } from '$lib/server/pricing';
 
 /** OpenAI-style error envelope, so OpenAI SDK clients parse it correctly. */
 export function gatewayError(status: number, message: string, type = 'invalid_request_error') {
@@ -643,7 +644,6 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 		void (async () => {
 			try {
 				const { usage, raw, complete } = await drainSse(costBranch, openAiUsageExtractor);
-				const { estimateCost } = await import('$lib/server/providers');
 				const { costUsd: cost, tier } = usage
 					? await estimateCost(
 							sendModel,
@@ -719,7 +719,6 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	try {
 		const parsed = JSON.parse(text) as { usage?: unknown };
 		const usage = normalizeUsage(parsed.usage);
-		const { estimateCost } = await import('$lib/server/providers');
 		inputTokens = usage?.input ?? null;
 		outputTokens = usage?.output ?? null;
 		cachedTokens = usage?.cacheRead ?? null;
@@ -1022,7 +1021,6 @@ export async function proxyMultipartToProvider(
 		if (usage) {
 			inputTokens = usage.input;
 			outputTokens = usage.output;
-			const { estimateCost } = await import('$lib/server/providers');
 			({ costUsd: cost, tier } = await estimateCost(
 				model,
 				usage.input ?? undefined,
@@ -1308,7 +1306,6 @@ export async function proxyGeminiNative(
 		void (async () => {
 			try {
 				const { usage, raw, complete } = await drainSse(costBranch, geminiUsageExtractor);
-				const { estimateCost } = await import('$lib/server/providers');
 				const { costUsd: cost, tier } = usage
 					? await estimateCost(
 							model,
@@ -1376,7 +1373,6 @@ export async function proxyGeminiNative(
 	let outputTokens: number | null = null;
 	try {
 		const usage = geminiNativeUsage(JSON.parse(text));
-		const { estimateCost } = await import('$lib/server/providers');
 		inputTokens = usage?.input ?? null;
 		outputTokens = usage?.output ?? null;
 		cachedTokens = usage?.cacheRead ?? null;
