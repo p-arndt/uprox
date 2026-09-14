@@ -40,15 +40,15 @@ export default defineConfig(
 		}
 	},
 	{
-		// Size and complexity budgets. Warnings only for now: they point at code to
-		// split into smaller, testable modules without blocking existing files.
+		// Size and complexity budgets. Errors: split the code into smaller, testable
+		// modules instead of raising the limits.
 		files: ['src/**/*.{js,ts,svelte}'],
 		ignores: ['src/lib/components/ui/**'],
 		rules: {
-			'max-lines': ['warn', { max: 600, skipBlankLines: true, skipComments: true }],
-			'max-lines-per-function': ['warn', { max: 120, skipBlankLines: true, skipComments: true }],
-			complexity: ['warn', 20],
-			'max-depth': ['warn', 4]
+			'max-lines': ['error', { max: 600, skipBlankLines: true, skipComments: true }],
+			'max-lines-per-function': ['error', { max: 120, skipBlankLines: true, skipComments: true }],
+			complexity: ['error', 20],
+			'max-depth': ['error', 4]
 		}
 	},
 	{

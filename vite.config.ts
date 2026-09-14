@@ -11,7 +11,9 @@ export default defineConfig({
 			provider: 'v8',
 			include: ['src/lib/**/*.ts', 'src/hooks.server.ts'],
 			exclude: ['src/lib/components/ui/**', 'src/lib/server/db/**', '**/*.d.ts'],
-			reporter: ['text', 'lcov']
+			reporter: ['text', 'lcov'],
+			// Floors just below the measured coverage so it can only go up.
+			thresholds: { lines: 60, statements: 60, functions: 58, branches: 54 }
 		},
 		projects: [
 			{
