@@ -54,7 +54,7 @@ export interface UsageView {
 	setGroupBy(dim: UsageDimension): void;
 	setFilters(filters: UsageFilter[]): void;
 	refresh(): Promise<void>;
-	exportHref(exportPath: string, shape: UsageExportShape): string;
+	exportHref(exportPath: ResolvedPathname, shape: UsageExportShape): ResolvedPathname;
 }
 
 export function createUsageView(opts: {
@@ -113,7 +113,7 @@ export function createUsageView(opts: {
 			}
 		},
 		exportHref(exportPath, shape) {
-			return buildUsageExportHref(exportPath, current(), shape);
+			return buildUsageExportHref(exportPath, current(), shape) as ResolvedPathname;
 		}
 	};
 }

@@ -6,6 +6,7 @@
 	import UsageRangePicker from '$lib/components/usage-range-picker.svelte';
 	import UsageWorkbench from '$lib/components/usage-workbench.svelte';
 	import { resolve } from '$app/paths';
+	import type { ResolvedPathname } from '$app/types';
 	import { createUsageView } from '$lib/state/usage-view.svelte';
 	import { NULL_VALUE, type UsageDimension } from '$lib/usage-group';
 	import type { DimensionUsageRow } from '$lib/server/data';
@@ -17,7 +18,7 @@
 	let { data } = $props();
 
 	const view = createUsageView({ data: () => data, basePath: () => resolve('/app/usage') });
-	const exportPath = resolve('/app/usage/export');
+	const exportPath: ResolvedPathname = resolve('/app/usage/export');
 </script>
 
 {#snippet rowLabel(row: DimensionUsageRow, dim: UsageDimension)}
