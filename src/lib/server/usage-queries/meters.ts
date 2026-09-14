@@ -20,7 +20,7 @@ import { usageConds } from '$lib/server/usage-queries/predicates';
 import type { GroupedSeries, GroupedSeriesResult } from '$lib/server/usage-queries/types';
 import { METER_SUM_SELECT, meterLabel } from '$lib/server/usage-queries/meter-sql';
 import { ALL_LINES, bucketedMeterCells } from '$lib/server/usage-queries/meter-cells';
-import { listModelPrices, ratesFor } from '$lib/server/usage-queries/rate-cards';
+import { loadRateCards, ratesFor } from '$lib/server/usage-queries/rate-cards';
 
 /**
  * One consumption meter — uprox's answer to an Azure "meter", the sub-line a
@@ -90,7 +90,7 @@ export async function orgTokenMeters(
 		.where(and(...conds))
 		.groupBy(auditLog.model, auditLog.contextTier);
 
-	const prices = await listModelPrices();
+	const prices = await loadRateCards();
 
 	const tokens = emptyMeterValues();
 	const costs = emptyMeterValues();

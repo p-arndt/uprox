@@ -22,7 +22,7 @@ import type {
 } from '$lib/server/usage-queries/types';
 import { METER_SUM_SELECT, meterShortLabel } from '$lib/server/usage-queries/meter-sql';
 import { bucketedMeterCells } from '$lib/server/usage-queries/meter-cells';
-import { listModelPrices, ratesFor } from '$lib/server/usage-queries/rate-cards';
+import { loadRateCards, ratesFor } from '$lib/server/usage-queries/rate-cards';
 
 /**
  * The window's spend as a list of rate-card lines: one row per
@@ -55,7 +55,7 @@ export async function orgBillingLines(
 		.where(and(...conds))
 		.groupBy(auditLog.model, auditLog.contextTier);
 
-	const prices = await listModelPrices();
+	const prices = await loadRateCards();
 	const lines: DimensionUsageRow[] = [];
 
 	for (const r of rows) {
