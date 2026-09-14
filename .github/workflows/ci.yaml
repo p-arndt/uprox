@@ -41,14 +41,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # Disabled: svelte-check and typescript-eslint do not support the installed
-      # TypeScript 7 yet (svelte-check needs TS 6 side by side with --tsgo, and
-      # typescript-eslint has no TS 7 support). Re-enable once the toolchain
-      # catches up.
-      # - name: Type check
-      #   run: pnpm check
-      # - name: Lint
-      #   run: pnpm lint
+      - name: Type check
+        run: pnpm check
+
+      - name: Lint
+        run: pnpm lint
 
       - name: Unit tests
         run: pnpm test:unit --run
