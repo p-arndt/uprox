@@ -1778,6 +1778,12 @@ export async function orgUsageSeriesGrouped(
 		/** narrow to one service / token, for the detail pages */
 		serviceId?: string;
 		tokenId?: string;
+		/**
+		 * The unlimited {@link orgUsageByDimension} ranking for the same range,
+		 * dimension, filters and scope, when the caller already has it — skips
+		 * the ranking pass.
+		 */
+		ranked?: DimensionUsageRow[];
 	} = {}
 ): Promise<GroupedSeriesResult> {
 	if (dim === 'line') {
@@ -1807,11 +1813,13 @@ export async function orgUsageSeriesGrouped(
 		sql``
 	);
 
-	const ranked = await orgUsageByDimension(range, dim, {
-		filters: opts.filters,
-		serviceId: opts.serviceId,
-		tokenId: opts.tokenId
-	});
+	const ranked =
+		opts.ranked ??
+		(await orgUsageByDimension(range, dim, {
+			filters: opts.filters,
+			serviceId: opts.serviceId,
+			tokenId: opts.tokenId
+		}));
 	const top = ranked.slice(0, limit);
 	const hasOthers = ranked.length > top.length;
 
@@ -1928,7 +1936,16 @@ export async function orgUsageSeriesGrouped(
 export async function orgUsageFilterOptions(
 	range: ResolvedRange,
 	dims: readonly UsageDimension[],
-	opts: { limit?: number; serviceId?: string; tokenId?: string } = {}
+	opts: {
+		limit?: number;
+		serviceId?: string;
+		tokenId?: string;
+		/**
+		 * Supplies the unfiltered, unlimited ranking for a dimension (same range and
+		 * scope) when the caller already computes it; sliced to `limit` here.
+		 */
+		loadRanked?: (dim: UsageDimension) => Promise<DimensionUsageRow[]>;
+	} = {}
 ): Promise<UsageFilterOptions> {
 	const limit = opts.limit ?? 100;
 	const entries = await Promise.all(
@@ -1937,11 +1954,13 @@ export async function orgUsageFilterOptions(
 			// filtered on — and running its (expensive) aggregate just to populate a
 			// picker nobody can open would be pure waste.
 			if (!FILTERABLE_DIMENSIONS.includes(dim)) return [dim, []] as const;
-			const rows = await orgUsageByDimension(range, dim, {
-				limit,
-				serviceId: opts.serviceId,
-				tokenId: opts.tokenId
-			});
+			const rows = opts.loadRanked
+				? (await opts.loadRanked(dim)).slice(0, limit)
+				: await orgUsageByDimension(range, dim, {
+						limit,
+						serviceId: opts.serviceId,
+						tokenId: opts.tokenId
+					});
 			const options: UsageFilterOption[] = rows.map((r) => ({
 				value: r.key,
 				label: r.label,
@@ -1980,11 +1999,20 @@ export async function orgTopMovers(
 	range: ResolvedRange,
 	prevRange: ResolvedRange,
 	dim: UsageDimension,
-	opts: { filters?: UsageFilter[]; serviceId?: string; tokenId?: string; limit?: number } = {}
+	opts: {
+		filters?: UsageFilter[];
+		serviceId?: string;
+		tokenId?: string;
+		limit?: number;
+		/** precomputed unlimited rankings for `range` / `prevRange`, when available */
+		current?: DimensionUsageRow[];
+		previous?: DimensionUsageRow[];
+	} = {}
 ): Promise<UsageMover[]> {
+	const byDim = { filters: opts.filters, serviceId: opts.serviceId, tokenId: opts.tokenId };
 	const [current, previous] = await Promise.all([
-		orgUsageByDimension(range, dim, opts),
-		orgUsageByDimension(prevRange, dim, opts)
+		opts.current ?? orgUsageByDimension(range, dim, byDim),
+		opts.previous ?? orgUsageByDimension(prevRange, dim, byDim)
 	]);
 
 	const prevByKey = new Map(previous.map((r) => [r.key, r]));
@@ -2456,13 +2484,17 @@ export async function orgBillingLineSeries(
 		limit?: number;
 		serviceId?: string;
 		tokenId?: string;
+		/** the unlimited {@link orgBillingLines} ranking, when already computed */
+		ranked?: DimensionUsageRow[];
 	} = {}
 ): Promise<GroupedSeriesResult> {
-	const ranked = await orgBillingLines(range, {
-		filters: opts.filters,
-		serviceId: opts.serviceId,
-		tokenId: opts.tokenId
-	});
+	const ranked =
+		opts.ranked ??
+		(await orgBillingLines(range, {
+			filters: opts.filters,
+			serviceId: opts.serviceId,
+			tokenId: opts.tokenId
+		}));
 	const top = ranked.slice(0, opts.limit ?? 8);
 	const topKeys = new Set(top.map((r) => r.key));
 	const hasOthers = ranked.length > top.length;
