@@ -30,7 +30,7 @@
 		bucketHref: (key: string) => ResolvedPathname;
 	} = $props();
 
-	let metric = $state<UsageMetric>('cost');
+	let pickedMetric = $state<UsageMetric>('cost');
 	const ALL_METRICS: { key: UsageMetric; label: string }[] = [
 		{ key: 'cost', label: 'Spend' },
 		{ key: 'requests', label: 'Requests' },
@@ -43,9 +43,9 @@
 	const METRICS = $derived(
 		derivedDimension ? ALL_METRICS.filter((m) => m.key !== 'requests') : ALL_METRICS
 	);
-	$effect(() => {
-		if (derivedDimension && metric === 'requests') metric = 'cost';
-	});
+	const metric = $derived<UsageMetric>(
+		derivedDimension && pickedMetric === 'requests' ? 'cost' : pickedMetric
+	);
 
 	type ChartType = 'bars' | 'area';
 	let chartType = $state<ChartType>('bars');
@@ -57,10 +57,9 @@
 	// Series toggled off from the legend. Owned here so the chart and the legend
 	// share one source of truth; reset whenever the grouping changes, since the
 	// keys of the old dimension mean nothing to the new one.
-	let hidden = $state<string[]>([]);
-	$effect(() => {
-		groupBy;
-		hidden = [];
+	let hidden = $derived.by<string[]>(() => {
+		void groupBy;
+		return [];
 	});
 
 	function setMode(target: Exclude<ChartMode, 'absolute'>, on: boolean) {
@@ -101,7 +100,7 @@
 				{#each METRICS as m (m.key)}
 					<button
 						type="button"
-						onclick={() => (metric = m.key)}
+						onclick={() => (pickedMetric = m.key)}
 						class="rounded-md px-3 py-1 text-sm font-medium transition-colors {m.key === metric
 							? 'bg-accent text-accent-foreground'
 							: 'text-muted-foreground hover:text-foreground'}"
@@ -174,7 +173,9 @@
 		/>
 
 		{#if grouped.series.length > 1}
-			<UsageLegend series={grouped.series} dim={groupBy} {metric} bind:highlighted bind:hidden />
+			<UsageLegend series={grouped.series} dim={groupBy} {metric} bind:highlighted
+				bind:hidden={() => hidden, (v) => (hidden = v)}
+			/>
 		{/if}
 
 		{#if grouped.hasOthers}

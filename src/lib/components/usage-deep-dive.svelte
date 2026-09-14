@@ -44,16 +44,14 @@
 		].filter((t) => t.show)
 	);
 
-	let active = $state('breakdown');
+	let picked = $state('breakdown');
 	// The grouping can remove the tab that's open (movers and composition are
 	// derived per-dimension), which would otherwise leave the bar with nothing
-	// selected and a blank panel below it.
-	$effect(() => {
-		if (!tabs.some((t) => t.key === active)) active = 'breakdown';
-	});
+	// selected and a blank panel below it; fall back to the breakdown then.
+	const active = $derived(tabs.some((t) => t.key === picked) ? picked : 'breakdown');
 </script>
 
-<Tabs.Root bind:value={active} class="min-w-0 gap-4">
+<Tabs.Root bind:value={() => active, (v) => (picked = v)} class="min-w-0 gap-4">
 	<Tabs.List class="max-w-full overflow-x-auto">
 		{#each tabs as t (t.key)}
 			<Tabs.Trigger value={t.key} class="whitespace-nowrap">{t.label}</Tabs.Trigger>

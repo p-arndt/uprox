@@ -47,7 +47,12 @@
 	// Inline editing is row-local: the pencil swaps this row's price cells for
 	// number inputs. Works for custom rows (update) and default rows (override
 	// via create); the provider is carried through unchanged.
-	let editing = $state(false);
+	// Leaving edit mode on a tier switch avoids carrying one card's drafts into
+	// the other's inputs, so `editing` resets whenever the tier changes.
+	let editing = $derived.by(() => {
+		void tier;
+		return false;
+	});
 	let draftIn = $state('');
 	let draftOut = $state('');
 	let draftCacheRead = $state('');
@@ -62,13 +67,6 @@
 		draftCacheWrite = str(shown.cacheWrite);
 		editing = true;
 	}
-
-	// Leaving edit mode on a tier switch avoids carrying one card's drafts into
-	// the other's inputs.
-	$effect(() => {
-		tier;
-		editing = false;
-	});
 
 	// HTML forms can't wrap table cells, so the inputs associate with the actions-cell
 	// form by id.
