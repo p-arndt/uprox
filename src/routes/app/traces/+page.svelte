@@ -10,22 +10,18 @@
 	import PageHeader from '$lib/components/page-header.svelte';
 	import EmptyState from '$lib/components/empty-state.svelte';
 	import SearchInput from '$lib/components/search-input.svelte';
-	import { formatDateTime, relativeTime, formatUsd, formatTokens } from '$lib/format';
-	import { eventTone, toneDot, toneText } from '$lib/events';
+	import { formatDateTime, formatDuration, relativeTime } from '$lib/format';
+	import { eventTone } from '$lib/events';
+	import TraceFeedRow from './trace-feed-row.svelte';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
 	import Search from '@lucide/svelte/icons/search';
 	import X from '@lucide/svelte/icons/x';
 	import Filter from '@lucide/svelte/icons/filter';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
-	import Layers from '@lucide/svelte/icons/layers';
 	import Network from '@lucide/svelte/icons/network';
 	import PageShell from '$lib/components/page-shell.svelte';
 
 	let { data } = $props();
-
-	const fmtDur = (ms: number) =>
-		ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`;
-	const shortId = (s: string) => (s.length > 14 ? `${s.slice(0, 10)}…` : s);
 
 	let query = $state('');
 	let status = $state('all');
@@ -152,10 +148,7 @@
 						{#each data.otelTraces as tr (tr.traceId)}
 							<Table.Row
 								class="group cursor-pointer"
-								onclick={() =>
-									(window.location.href = resolve('/app/traces/otel/[traceId]', {
-										traceId: tr.traceId
-									}))}
+								onclick={() => goto(resolve('/app/traces/otel/[traceId]', { traceId: tr.traceId }))}
 							>
 								<Table.Cell class="whitespace-nowrap text-muted-foreground">
 									<span class="text-xs" title={formatDateTime(tr.startedAt)}>
@@ -175,7 +168,7 @@
 									{tr.spanCount}
 								</Table.Cell>
 								<Table.Cell class="text-right text-muted-foreground tabular-nums">
-									{fmtDur(tr.durationMs)}
+									{formatDuration(tr.durationMs)}
 								</Table.Cell>
 								<Table.Cell class="text-right">
 									<ArrowRight
@@ -269,103 +262,7 @@
 					</Table.Header>
 					<Table.Body>
 						{#each filtered as it (itemKey(it))}
-							{@const tone = itemTone(it)}
-							{#if it.kind === 'session'}
-								<Table.Row
-									class="group cursor-pointer"
-									onclick={() =>
-										(window.location.href = resolve('/app/traces/session/[groupId]', {
-											groupId: it.groupId ?? ''
-										}))}
-								>
-									<Table.Cell class="whitespace-nowrap text-muted-foreground">
-										<span class="block text-xs" title={formatDateTime(it.at)}
-											>{relativeTime(it.at)}</span
-										>
-										<span class="block text-[10px] text-muted-foreground/60">
-											{formatDateTime(it.at)}
-										</span>
-									</Table.Cell>
-									<Table.Cell>
-										<span class="flex items-center gap-1.5 whitespace-nowrap">
-											<span class="size-1.5 rounded-full {toneDot[tone]}" aria-hidden="true"></span>
-											<span class="flex items-center gap-1 text-xs font-medium {toneText[tone]}">
-												<Layers class="size-3" /> session
-											</span>
-											<span class="text-xs text-muted-foreground">· {it.calls} calls</span>
-										</span>
-									</Table.Cell>
-									<Table.Cell class="font-mono text-xs text-muted-foreground">
-										<span title={it.groupId ?? ''}>{it.groupId ? shortId(it.groupId) : '—'}</span>
-									</Table.Cell>
-									<Table.Cell class="text-muted-foreground">{it.serviceName ?? '—'}</Table.Cell>
-									<Table.Cell class="max-w-[220px]">
-										<span class="block truncate font-mono text-xs text-muted-foreground">
-											{(it.models ?? []).join(', ') || '—'}
-										</span>
-									</Table.Cell>
-									<Table.Cell class="text-right text-muted-foreground tabular-nums">
-										{formatTokens(it.inputTokens)} → {formatTokens(it.outputTokens)}
-									</Table.Cell>
-									<Table.Cell class="text-right text-muted-foreground tabular-nums">
-										{Number(it.costUsd) ? formatUsd(it.costUsd) : '—'}
-									</Table.Cell>
-									<Table.Cell class="text-right text-muted-foreground tabular-nums">—</Table.Cell>
-									<Table.Cell class="text-right">
-										<ArrowRight
-											class="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-										/>
-									</Table.Cell>
-								</Table.Row>
-							{:else}
-								<Table.Row
-									class="group cursor-pointer"
-									onclick={() =>
-										(window.location.href = resolve('/app/traces/[id]', { id: it.id }))}
-								>
-									<Table.Cell class="whitespace-nowrap text-muted-foreground">
-										<span class="block text-xs" title={formatDateTime(it.at)}
-											>{relativeTime(it.at)}</span
-										>
-										<span class="block text-[10px] text-muted-foreground/60">
-											{formatDateTime(it.at)}
-										</span>
-									</Table.Cell>
-									<Table.Cell>
-										<span class="flex items-center gap-1.5 whitespace-nowrap">
-											<span class="size-1.5 rounded-full {toneDot[tone]}" aria-hidden="true"></span>
-											<span class="text-xs font-medium {toneText[tone]}">
-												{it.status}{it.statusCode ? ` ${it.statusCode}` : ''}
-											</span>
-										</span>
-									</Table.Cell>
-									<Table.Cell class="font-mono text-xs text-muted-foreground">
-										<span title={it.id}>{shortId(it.id)}</span>
-									</Table.Cell>
-									<Table.Cell class="text-muted-foreground">{it.serviceName ?? '—'}</Table.Cell>
-									<Table.Cell class="font-mono text-xs text-muted-foreground"
-										>{it.model ?? '—'}</Table.Cell
-									>
-									<Table.Cell class="text-right text-muted-foreground tabular-nums">
-										{#if it.inputTokens != null || it.outputTokens != null}
-											{formatTokens(it.inputTokens)} → {formatTokens(it.outputTokens)}
-										{:else}
-											—
-										{/if}
-									</Table.Cell>
-									<Table.Cell class="text-right text-muted-foreground tabular-nums">
-										{it.costUsd ? formatUsd(it.costUsd) : '—'}
-									</Table.Cell>
-									<Table.Cell class="text-right text-muted-foreground tabular-nums">
-										{it.latencyMs != null ? `${it.latencyMs}ms` : '—'}
-									</Table.Cell>
-									<Table.Cell class="text-right">
-										<ArrowRight
-											class="size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100"
-										/>
-									</Table.Cell>
-								</Table.Row>
-							{/if}
+							<TraceFeedRow item={it} tone={itemTone(it)} />
 						{/each}
 					</Table.Body>
 				</Table.Root>

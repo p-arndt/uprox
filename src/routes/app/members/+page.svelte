@@ -34,8 +34,9 @@
 
 	// The inline role select writes the new value into its hidden field, then
 	// submits the row form to persist the change.
-	function submitRole(formId: string, role: string) {
-		const form = document.getElementById(formId) as HTMLFormElement | null;
+	const roleForms: Record<string, HTMLFormElement> = {};
+	function submitRole(memberId: string, role: string) {
+		const form = roleForms[memberId];
 		if (!form) return;
 		(form.elements.namedItem('role') as HTMLInputElement).value = role;
 		form.requestSubmit();
@@ -133,86 +134,90 @@
 	</PageHeader>
 
 	<!-- members -->
-	<div class="rounded-xl border">
-		<Table.Root>
-			<Table.Header>
-				<Table.Row>
-					<Table.Head>Name</Table.Head>
-					<Table.Head>Email</Table.Head>
-					<Table.Head>Role</Table.Head>
-					<Table.Head>Joined</Table.Head>
-					<Table.Head class="w-10"></Table.Head>
-				</Table.Row>
-			</Table.Header>
-			<Table.Body>
-				{#each data.members as m (m.id)}
-					{@const isSelf = m.userId === data.currentUserId}
+	{#if data.members.length === 0}
+		<EmptyState icon={Users} title="No members yet" />
+	{:else}
+		<div class="rounded-xl border">
+			<Table.Root>
+				<Table.Header>
 					<Table.Row>
-						<Table.Cell class="font-medium">
-							{m.name}
-							{#if isSelf}<span class="text-xs text-muted-foreground">(you)</span>{/if}
-						</Table.Cell>
-						<Table.Cell class="text-muted-foreground">{m.email}</Table.Cell>
-						<Table.Cell>
-							{#if canManage && !isSelf && m.role !== 'owner'}
-								<form
-									method="post"
-									action="?/changeRole"
-									id={`role-form-${m.id}`}
-									use:enhance={() =>
-										async ({ update }) =>
-											update()}
-								>
-									<input type="hidden" name="memberId" value={m.id} />
-									<input type="hidden" name="role" value={m.role} />
-									<Select.Root
-										type="single"
-										value={m.role}
-										onValueChange={(v) => submitRole(`role-form-${m.id}`, v)}
-									>
-										<Select.Trigger class="h-8 w-28">{roleLabel(m.role)}</Select.Trigger>
-										<Select.Content>
-											{#each roleOptions as o (o.value)}
-												<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
-											{/each}
-										</Select.Content>
-									</Select.Root>
-								</form>
-							{:else}
-								<Badge variant={roleVariant(m.role)}>{m.role}</Badge>
-							{/if}
-						</Table.Cell>
-						<Table.Cell class="text-muted-foreground">{formatDateTime(m.createdAt)}</Table.Cell>
-						<Table.Cell>
-							{#if canManage && !isSelf && m.role !== 'owner'}
-								<ConfirmAction
-									action="?/remove"
-									title={`Remove ${m.name}?`}
-									description="They immediately lose access to this workspace. You can re-invite them later."
-									actionLabel="Remove member"
-								>
-									{#snippet trigger({ props })}
-										<Button
-											{...props}
-											variant="ghost"
-											size="icon"
-											class="size-8 text-muted-foreground hover:text-destructive"
-											title="Remove member"
-										>
-											<Trash2 class="size-4" />
-										</Button>
-									{/snippet}
-									{#snippet fields()}
-										<input type="hidden" name="memberIdOrEmail" value={m.id} />
-									{/snippet}
-								</ConfirmAction>
-							{/if}
-						</Table.Cell>
+						<Table.Head>Name</Table.Head>
+						<Table.Head>Email</Table.Head>
+						<Table.Head>Role</Table.Head>
+						<Table.Head>Joined</Table.Head>
+						<Table.Head class="w-10"></Table.Head>
 					</Table.Row>
-				{/each}
-			</Table.Body>
-		</Table.Root>
-	</div>
+				</Table.Header>
+				<Table.Body>
+					{#each data.members as m (m.id)}
+						{@const isSelf = m.userId === data.currentUserId}
+						<Table.Row>
+							<Table.Cell class="font-medium">
+								{m.name}
+								{#if isSelf}<span class="text-xs text-muted-foreground">(you)</span>{/if}
+							</Table.Cell>
+							<Table.Cell class="text-muted-foreground">{m.email}</Table.Cell>
+							<Table.Cell>
+								{#if canManage && !isSelf && m.role !== 'owner'}
+									<form
+										method="post"
+										action="?/changeRole"
+										bind:this={roleForms[m.id]}
+										use:enhance={() =>
+											async ({ update }) =>
+												update()}
+									>
+										<input type="hidden" name="memberId" value={m.id} />
+										<input type="hidden" name="role" value={m.role} />
+										<Select.Root
+											type="single"
+											value={m.role}
+											onValueChange={(v) => submitRole(m.id, v)}
+										>
+											<Select.Trigger class="h-8 w-28">{roleLabel(m.role)}</Select.Trigger>
+											<Select.Content>
+												{#each roleOptions as o (o.value)}
+													<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+												{/each}
+											</Select.Content>
+										</Select.Root>
+									</form>
+								{:else}
+									<Badge variant={roleVariant(m.role)}>{m.role}</Badge>
+								{/if}
+							</Table.Cell>
+							<Table.Cell class="text-muted-foreground">{formatDateTime(m.createdAt)}</Table.Cell>
+							<Table.Cell>
+								{#if canManage && !isSelf && m.role !== 'owner'}
+									<ConfirmAction
+										action="?/remove"
+										title={`Remove ${m.name}?`}
+										description="They immediately lose access to this workspace. You can re-invite them later."
+										actionLabel="Remove member"
+									>
+										{#snippet trigger({ props })}
+											<Button
+												{...props}
+												variant="ghost"
+												size="icon"
+												class="size-8 text-muted-foreground hover:text-destructive"
+												title="Remove member"
+											>
+												<Trash2 class="size-4" />
+											</Button>
+										{/snippet}
+										{#snippet fields()}
+											<input type="hidden" name="memberIdOrEmail" value={m.id} />
+										{/snippet}
+									</ConfirmAction>
+								{/if}
+							</Table.Cell>
+						</Table.Row>
+					{/each}
+				</Table.Body>
+			</Table.Root>
+		</div>
+	{/if}
 
 	<!-- pending invitations -->
 	{#if data.invitations.length > 0}
@@ -283,9 +288,5 @@
 				</Table.Root>
 			</div>
 		</div>
-	{/if}
-
-	{#if data.members.length === 0}
-		<EmptyState icon={Users} title="No members yet" />
 	{/if}
 </PageShell>

@@ -115,3 +115,9 @@ export function formatUsdRate(rate: number | null | undefined): string {
 	if (rate === 0) return '$0';
 	return rate < 1 ? `$${rate.toFixed(3)}` : `$${rate.toFixed(2)}`;
 }
+
+/** A duration in ms: "850ms" below a second, "1.25s" above, "—" when unknown. */
+export function formatDuration(ms: number | null | undefined): string {
+	if (ms == null) return '—';
+	return ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`;
+}

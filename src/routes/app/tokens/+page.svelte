@@ -12,6 +12,7 @@
 	import SecretDialog from '$lib/components/secret-dialog.svelte';
 	import { type TokenFormValues } from '$lib/components/token-form.svelte';
 	import { tokenStats, type RevealedSecret, type Token } from '$lib/tokens';
+	import { inlineLimitsFromRow } from '$lib/components/inline-limits';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import KeyRound from '@lucide/svelte/icons/key-round';
@@ -26,23 +27,17 @@
 
 	const canManage = $derived(can(data.role, 'tokens:manage', data.memberPermissions));
 
-	// When the create action returns a fresh secret, reveal it once.
+	// Surface action results: a fresh secret from create is revealed once (and the
+	// create dialog closes), a re-copy reveal shows the stored secret again, and a
+	// successful update closes the edit dialog and refreshes the list.
 	$effect(() => {
 		if (form?.created) {
 			secret = form.created;
 			createOpen = false;
 		}
-	});
-
-	// A re-copy reveal returns the stored secret again.
-	$effect(() => {
 		if (form?.revealed) {
 			secret = { ...form.revealed, recopyable: true };
 		}
-	});
-
-	// Close the edit dialog once an update succeeds.
-	$effect(() => {
 		if (form?.success) {
 			editing = null;
 			invalidateAll();
@@ -59,10 +54,6 @@
 		showRevoked ? data.tokens : data.tokens.filter((t) => !t.revokedAt)
 	);
 
-	// null inline column → '' (inherit) in the form; budgets are stored as numeric
-	// strings, normalized to a plain number for display.
-	const numStr = (v: number | string | null) => (v == null ? '' : String(Number(v)));
-
 	function startEdit(t: Token) {
 		editing = {
 			id: t.id,
@@ -70,14 +61,7 @@
 			serviceId: t.serviceId,
 			scopes: [...t.scopes],
 			policyId: t.policyId ?? '',
-			allowedProviders: t.allowedProviders ?? [],
-			allowedModels: t.allowedModels.join(', '),
-			preferredProvider: t.preferredProvider ?? '',
-			rateLimitPerMinute: t.rateLimitPerMinute == null ? '' : String(t.rateLimitPerMinute),
-			dailyBudgetUsd: numStr(t.dailyBudgetUsd),
-			monthlyBudgetUsd: numStr(t.monthlyBudgetUsd),
-			cacheTtlSeconds: t.cacheTtlSeconds == null ? '' : String(t.cacheTtlSeconds),
-			tracingEnabled: t.tracingEnabled == null ? '' : String(t.tracingEnabled)
+			...inlineLimitsFromRow(t)
 		};
 	}
 </script>

@@ -8,6 +8,7 @@
 	import EmptyState from '$lib/components/empty-state.svelte';
 	import ConfirmAction from '$lib/components/confirm-action.svelte';
 	import PolicyForm, { type PolicyFormValues } from '$lib/components/policy-form.svelte';
+	import { inlineLimitsFromRow } from '$lib/components/inline-limits';
 	import { can } from '$lib/permissions';
 	import ShieldHalf from '@lucide/svelte/icons/shield-half';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -18,15 +19,7 @@
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
 	import PageShell from '$lib/components/page-shell.svelte';
-
-	const fmtBudget = (daily: string | number, monthly: string | number) => {
-		const d = Number(daily);
-		const m = Number(monthly);
-		const parts: string[] = [];
-		if (d > 0) parts.push(`$${d}/day`);
-		if (m > 0) parts.push(`$${m}/mo`);
-		return parts.length ? parts.join(' · ') : 'No budget';
-	};
+	import { formatBudget } from './budget-label';
 
 	let { data, form } = $props();
 	let open = $state(false);
@@ -119,14 +112,9 @@
 										(editing = {
 											id: p.id,
 											name: p.name,
-											allowedProviders: [...p.allowedProviders],
-											allowedModels: p.allowedModels.join(', '),
-											preferredProvider: p.preferredProvider ?? '',
-											rateLimitPerMinute: p.rateLimitPerMinute,
-											dailyBudgetUsd: String(Number(p.dailyBudgetUsd)),
-											monthlyBudgetUsd: String(Number(p.monthlyBudgetUsd)),
-											cacheTtlSeconds: p.cacheTtlSeconds == null ? '' : String(p.cacheTtlSeconds),
-											tracingEnabled: p.tracingEnabled == null ? '' : String(p.tracingEnabled)
+											...inlineLimitsFromRow(p),
+											// a preset's rate limit is always set (0 = unlimited)
+											rateLimitPerMinute: p.rateLimitPerMinute
 										})}
 								>
 									<Pencil class="size-4" />
@@ -186,7 +174,7 @@
 							</span>
 							<span class="flex items-center gap-1.5">
 								<Wallet class="size-3.5" />
-								{fmtBudget(p.dailyBudgetUsd, p.monthlyBudgetUsd)}
+								{formatBudget(p.dailyBudgetUsd, p.monthlyBudgetUsd)}
 							</span>
 							<span class="flex items-center gap-1.5">
 								<DatabaseZap class="size-3.5" />

@@ -409,3 +409,62 @@ export function prettyJson(text: string | null | undefined): string {
 	const parsed = safeParse(text);
 	return parsed == null ? text : JSON.stringify(parsed, null, 2);
 }
+
+/** The raw response payload for display: SSE streams verbatim, JSON pretty-printed. */
+export function rawResponseBody(
+	body: string | null | undefined,
+	format: string | null | undefined
+): string {
+	return format === 'sse' ? (body ?? '') : prettyJson(body);
+}
+
+/** A time range in epoch ms. */
+export interface TimeWindow {
+	start: number;
+	end: number;
+}
+
+/** The shape of a gateway call the waterfall needs. */
+export interface TimedCall {
+	createdAt: string | Date;
+	latencyMs?: number | null;
+}
+
+/**
+ * A gateway call's span. The proxy only records completion time and latency, so
+ * the call is laid out as end = createdAt, start = end − latency.
+ */
+export function callSpan(call: TimedCall): TimeWindow {
+	const end = new Date(call.createdAt).getTime();
+	return { start: end - (call.latencyMs ?? 0), end };
+}
+
+/** The window covering every call; `{ start: 0, end: 0 }` when there are none. */
+export function callsWindow(calls: TimedCall[]): TimeWindow {
+	if (calls.length === 0) return { start: 0, end: 0 };
+	let start = Infinity;
+	let end = -Infinity;
+	for (const c of calls) {
+		const s = callSpan(c);
+		start = Math.min(start, s.start);
+		end = Math.max(end, s.end);
+	}
+	return { start, end };
+}
+
+/**
+ * Position of a waterfall bar as percentages of the window. The width never
+ * drops below `minWidthPct` so instant spans stay visible.
+ */
+export function waterfallBar(
+	startMs: number,
+	durationMs: number,
+	win: TimeWindow,
+	minWidthPct: number
+): { left: number; width: number } {
+	const total = Math.max(1, win.end - win.start);
+	return {
+		left: ((startMs - win.start) / total) * 100,
+		width: Math.max(minWidthPct, (durationMs / total) * 100)
+	};
+}

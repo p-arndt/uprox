@@ -2,6 +2,7 @@ import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
 import { getSettings, updateSettings } from '$lib/server/data';
+import { isOn, parseOptionalPrice } from '$lib/server/form';
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
@@ -22,7 +23,6 @@ export const actions: Actions = {
 	updateMemberPermissions: async (event) => {
 		await requirePermission(event, 'settings:manage');
 		const data = await event.request.formData();
-		const isOn = (v: FormDataEntryValue | null) => v === 'on' || v === 'true';
 		const membersCanManageTokens = isOn(data.get('membersCanManageTokens'));
 		const membersCanManageServices = isOn(data.get('membersCanManageServices'));
 		await updateSettings({
@@ -34,7 +34,6 @@ export const actions: Actions = {
 	updateTokenSecurity: async (event) => {
 		await requirePermission(event, 'settings:manage');
 		const data = await event.request.formData();
-		const isOn = (v: FormDataEntryValue | null) => v === 'on' || v === 'true';
 		await updateSettings({
 			tokensRecopyableDefault: isOn(data.get('tokensRecopyableDefault'))
 		});
@@ -44,24 +43,17 @@ export const actions: Actions = {
 		await requirePermission(event, 'settings:manage');
 		const data = await event.request.formData();
 		// blank = clear (unlimited); otherwise must be a non-negative number
-		const parse = (v: FormDataEntryValue | null) => {
-			const s = String(v ?? '').trim();
-			if (s === '') return null;
-			const n = Number(s);
-			return Number.isFinite(n) && n >= 0 ? n : NaN;
-		};
-		const daily = parse(data.get('dailyBudgetUsd'));
-		const monthly = parse(data.get('monthlyBudgetUsd'));
-		if (Number.isNaN(daily) || Number.isNaN(monthly)) {
+		const daily = parseOptionalPrice(data.get('dailyBudgetUsd'));
+		const monthly = parseOptionalPrice(data.get('monthlyBudgetUsd'));
+		if (daily === null || monthly === null) {
 			return fail(400, { message: 'Budgets must be non-negative numbers' });
 		}
-		await updateSettings({ dailyBudgetUsd: daily, monthlyBudgetUsd: monthly });
+		await updateSettings({ dailyBudgetUsd: daily ?? null, monthlyBudgetUsd: monthly ?? null });
 		return { success: true };
 	},
 	updateBudgetAlerts: async (event) => {
 		await requirePermission(event, 'settings:manage');
 		const data = await event.request.formData();
-		const isOn = (v: FormDataEntryValue | null) => v === 'on' || v === 'true';
 		const enabled = isOn(data.get('budgetAlertsEnabled'));
 		const pct = Number(data.get('budgetAlertThresholdPct'));
 		if (enabled && (!Number.isFinite(pct) || pct < 1 || pct > 100)) {
@@ -81,7 +73,6 @@ export const actions: Actions = {
 	updateTracing: async (event) => {
 		await requirePermission(event, 'settings:manage');
 		const data = await event.request.formData();
-		const isOn = (v: FormDataEntryValue | null) => v === 'on' || v === 'true';
 		const enabled = isOn(data.get('tracingEnabled'));
 		const days = Number(data.get('tracingRetentionDays'));
 		if (enabled && (!Number.isFinite(days) || days < 1)) {

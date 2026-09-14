@@ -81,3 +81,59 @@ export function inferProviderId(model: string): string | null {
 	if (m.startsWith('gpt') || /^o\d/.test(m)) return 'openai';
 	return null;
 }
+
+/** The tab key for prices whose provider is neither set nor inferable. */
+export const OTHER_PROVIDER_KEY = '__other';
+
+/** A provider as offered in the pricing page's filters. */
+export interface ProviderOption {
+	id: string;
+	label: string;
+}
+
+/** Tag every price with its provider (explicit, else inferred from the model name). */
+export function tagPriceProviders<T extends { model: string; provider?: string | null }>(
+	prices: T[],
+	providers: ProviderOption[]
+): (T & { providerKey: string; providerLabel: string })[] {
+	const labels = new Map(providers.map((p) => [p.id, p.label] as const));
+	return prices.map((p) => {
+		const id = p.provider || inferProviderId(p.model);
+		return {
+			...p,
+			providerKey: id ?? OTHER_PROVIDER_KEY,
+			providerLabel: id ? (labels.get(id) ?? id) : 'Other'
+		};
+	});
+}
+
+export interface ProviderTab {
+	key: string;
+	label: string;
+	count: number;
+}
+
+/**
+ * One filter tab per provider that actually has models, in declared provider
+ * order, unknown providers after them and "Other" last, each with its count.
+ */
+export function providerTabs(
+	rows: { providerKey: string }[],
+	providers: ProviderOption[]
+): ProviderTab[] {
+	const labels = new Map(providers.map((p) => [p.id, p.label] as const));
+	const counts = new Map<string, number>();
+	for (const r of rows) counts.set(r.providerKey, (counts.get(r.providerKey) ?? 0) + 1);
+	const order = providers.map((p) => p.id);
+	const rank = (key: string) => {
+		const i = key === OTHER_PROVIDER_KEY ? order.length : order.indexOf(key);
+		return i === -1 ? order.length : i;
+	};
+	return [...counts.keys()]
+		.sort((a, b) => rank(a) - rank(b))
+		.map((key) => ({
+			key,
+			label: key === OTHER_PROVIDER_KEY ? 'Other' : (labels.get(key) ?? key),
+			count: counts.get(key) ?? 0
+		}));
+}

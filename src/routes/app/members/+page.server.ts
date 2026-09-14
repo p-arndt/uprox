@@ -1,19 +1,17 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { and, eq } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import { user, invitation } from '$lib/server/db/schema';
 import { requireOrg, requirePermission } from '$lib/server/org';
-import { listMembers, listPendingInvitations } from '$lib/server/members';
+import {
+	changeMemberRole,
+	createInvitation,
+	listMembers,
+	listPendingInvitations,
+	normalizeRole,
+	removeMember,
+	revokeInvitation
+} from '$lib/server/members';
 import { sendInvitationEmail } from '$lib/server/email';
 import { env } from '$env/dynamic/private';
-
-const ROLES = ['admin', 'member'] as const;
-type AssignableRole = (typeof ROLES)[number];
-
-function normalizeRole(value: string | undefined): AssignableRole {
-	return value === 'admin' ? 'admin' : 'member';
-}
 
 export const load: PageServerLoad = async (event) => {
 	const { userId } = await requireOrg(event);
@@ -34,36 +32,14 @@ export const actions: Actions = {
 		const role = normalizeRole(data.get('role')?.toString());
 		if (!email) return fail(400, { message: 'Email is required' });
 
-		// Reject if the address already belongs to a user or has a pending invite.
-		const [existingUser] = await db
-			.select({ id: user.id })
-			.from(user)
-			.where(eq(user.email, email))
-			.limit(1);
-		if (existingUser) {
-			return fail(400, { message: 'A user with that email already exists' });
-		}
-		const [existingInvite] = await db
-			.select({ id: invitation.id })
-			.from(invitation)
-			.where(and(eq(invitation.email, email), eq(invitation.status, 'pending')))
-			.limit(1);
-		if (existingInvite) {
-			return fail(400, { message: 'There is already a pending invitation for that email' });
-		}
-
-		// 7-day expiry, matching the previous invitation lifetime.
-		const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-		const [inv] = await db
-			.insert(invitation)
-			.values({ email, role, inviterId: ctx.userId, expiresAt, status: 'pending' })
-			.returning();
+		const result = await createInvitation({ email, role, inviterId: ctx.userId });
+		if ('error' in result) return fail(result.error.status, { message: result.error.message });
 
 		// Best-effort email. When SMTP isn't configured the helper no-ops and the
 		// dashboard surfaces a copy-able link in the pending list instead.
 		await sendInvitationEmail({
 			to: email,
-			inviteUrl: `${event.url.origin}/invite/${inv.id}`,
+			inviteUrl: `${event.url.origin}/invite/${result.invitation.id}`,
 			orgName: env.ORG_NAME?.trim() || 'uprox',
 			inviterName: event.locals.user?.name,
 			role
@@ -84,17 +60,8 @@ export const actions: Actions = {
 			return fail(400, { message: 'You cannot change your own role' });
 		}
 
-		// The first account must stay owner; the owner role is immutable even for admins.
-		const [target] = await db
-			.select({ role: user.role })
-			.from(user)
-			.where(eq(user.id, memberId))
-			.limit(1);
-		if (target?.role === 'owner') {
-			return fail(403, { message: 'The owner role cannot be changed.' });
-		}
-
-		await db.update(user).set({ role }).where(eq(user.id, memberId));
+		const err = await changeMemberRole(memberId, role);
+		if (err) return fail(err.status, { message: err.message });
 		return { success: true };
 	},
 
@@ -109,18 +76,8 @@ export const actions: Actions = {
 			return fail(400, { message: 'You cannot remove yourself' });
 		}
 
-		// The first account must stay owner; the owner can never be removed.
-		const [target] = await db
-			.select({ role: user.role })
-			.from(user)
-			.where(eq(user.id, memberIdOrEmail))
-			.limit(1);
-		if (target?.role === 'owner') {
-			return fail(403, { message: 'The owner cannot be removed.' });
-		}
-
-		// Deleting the user cascades their sessions and accounts.
-		await db.delete(user).where(eq(user.id, memberIdOrEmail));
+		const err = await removeMember(memberIdOrEmail);
+		if (err) return fail(err.status, { message: err.message });
 		return { success: true };
 	},
 
@@ -130,7 +87,7 @@ export const actions: Actions = {
 		const invitationId = data.get('invitationId')?.toString();
 		if (!invitationId) return fail(400, { message: 'Missing invitation' });
 
-		await db.update(invitation).set({ status: 'canceled' }).where(eq(invitation.id, invitationId));
+		await revokeInvitation(invitationId);
 		return { success: true };
 	}
 };

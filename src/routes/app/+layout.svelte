@@ -8,21 +8,12 @@
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
-	import Boxes from '@lucide/svelte/icons/boxes';
-	import ChartColumn from '@lucide/svelte/icons/chart-column';
-	import Coins from '@lucide/svelte/icons/coins';
-	import KeyRound from '@lucide/svelte/icons/key-round';
 	import LogOut from '@lucide/svelte/icons/log-out';
-	import Plug from '@lucide/svelte/icons/plug';
-	import ScrollText from '@lucide/svelte/icons/scroll-text';
 	import Search from '@lucide/svelte/icons/search';
-	import Settings from '@lucide/svelte/icons/settings';
-	import ShieldHalf from '@lucide/svelte/icons/shield-half';
-	import Users from '@lucide/svelte/icons/users';
-	import Waypoints from '@lucide/svelte/icons/waypoints';
 	import Sun from '@lucide/svelte/icons/sun';
 	import Moon from '@lucide/svelte/icons/moon';
 	import { toggleMode } from 'mode-watcher';
+	import { NAV_ITEMS, NAV_SECTIONS as sections, isNavActive, navItemFor } from '$lib/nav';
 
 	let { data, children } = $props();
 
@@ -40,54 +31,9 @@
 		goto(href);
 	}
 
-	type NavItem = { href: ResolvedPathname; label: string; icon: typeof Boxes; exact?: boolean };
-	type NavSection = { label: string; items: NavItem[] };
-
-	const sections: NavSection[] = [
-		{
-			label: 'Monitor',
-			items: [
-				{ href: '/app/usage', label: 'Cost analysis', icon: ChartColumn },
-				{ href: '/app/traces', label: 'Traces', icon: Waypoints }
-			]
-		},
-		{
-			label: 'Gateway',
-			items: [
-				{ href: '/app/services', label: 'Services', icon: Boxes },
-				{ href: '/app/tokens', label: 'Machine Tokens', icon: KeyRound }
-			]
-		},
-		{
-			label: 'Providers',
-			items: [{ href: '/app/providers', label: 'Providers', icon: Plug }]
-		},
-		{
-			label: 'Governance',
-			items: [
-				{ href: '/app/policies', label: 'Presets', icon: ShieldHalf },
-				{ href: '/app/pricing', label: 'Model Prices', icon: Coins },
-				{ href: '/app/audit', label: 'Audit Log', icon: ScrollText }
-			]
-		},
-		{
-			label: 'Workspace',
-			items: [
-				{ href: '/app/members', label: 'Members', icon: Users },
-				{ href: '/app/settings', label: 'Settings', icon: Settings }
-			]
-		}
-	];
-
-	const nav: NavItem[] = sections.flatMap((s) => s.items);
-
-	function isActive(href: ResolvedPathname, exact?: boolean) {
-		return exact ? page.url.pathname === href : page.url.pathname.startsWith(href);
-	}
-
 	// The nav entry the current URL sits under. On a detail page this is the
 	// *list* it belongs to, which is what the breadcrumb should link back up to.
-	const section = $derived(nav.find((n) => isActive(n.href, n.exact)));
+	const section = $derived(navItemFor(page.url.pathname, NAV_ITEMS));
 	const current = $derived(section?.label ?? 'Overview');
 	// Detail pages return a `crumb` from their load (the entity's own name). Its
 	// presence is what distinguishes "on the list" from "one level below it", so
@@ -150,7 +96,7 @@
 							{#each section.items as item (item.href)}
 								<Sidebar.MenuItem>
 									<Sidebar.MenuButton
-										isActive={isActive(item.href, item.exact)}
+										isActive={isNavActive(page.url.pathname, item)}
 										tooltipContent={item.label}
 									>
 										{#snippet child({ props })}

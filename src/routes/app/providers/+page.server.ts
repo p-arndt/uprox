@@ -8,12 +8,7 @@ import {
 	deleteProviderSecret
 } from '$lib/server/data';
 import { PROVIDERS, PROVIDER_IDS, type ProviderDef } from '$lib/server/providers';
-
-/** Parse a priority form field to a finite integer, defaulting to 0. */
-function parsePriority(raw: FormDataEntryValue | null): number {
-	const n = Number.parseInt(raw?.toString() ?? '', 10);
-	return Number.isFinite(n) ? n : 0;
-}
+import { parsePriority } from '$lib/server/form';
 
 /**
  * Validate a per-org endpoint URL, returning an error message or null. Endpoints
