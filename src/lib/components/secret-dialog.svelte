@@ -2,6 +2,7 @@
 	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import EntityDialog from '$lib/components/entity-dialog.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import type { RevealedSecret } from '$lib/tokens';
 	import Copy from '@lucide/svelte/icons/copy';
@@ -29,25 +30,23 @@
 	}
 </script>
 
-<Dialog.Root
+{#snippet description()}
+	{#if secret?.recopyable}
+		The full secret for <span class="font-medium text-foreground">{secret?.name}</span>. You can
+		reveal it again any time from this page.
+	{:else}
+		Copy <span class="font-medium text-foreground">{secret?.name}</span> now. You won't be able to
+		see it again.
+	{/if}
+{/snippet}
+
+<EntityDialog
 	open={secret !== null}
-	onOpenChange={(v) => {
-		if (!v) onClose();
-	}}
+	{onClose}
+	title={secret?.recopyable ? 'Token secret' : 'Token created'}
+	{description}
+	class="sm:max-w-lg"
 >
-	<Dialog.Content class="sm:max-w-lg">
-		<Dialog.Header>
-			<Dialog.Title>{secret?.recopyable ? 'Token secret' : 'Token created'}</Dialog.Title>
-			<Dialog.Description>
-				{#if secret?.recopyable}
-					The full secret for <span class="font-medium text-foreground">{secret?.name}</span>. You
-					can reveal it again any time from this page.
-				{:else}
-					Copy <span class="font-medium text-foreground">{secret?.name}</span> now. You won't be able
-					to see it again.
-				{/if}
-			</Dialog.Description>
-		</Dialog.Header>
 		<div
 			class="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
 		>
@@ -93,5 +92,4 @@
 		<Dialog.Footer>
 			<Button onclick={onClose}>Done</Button>
 		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+</EntityDialog>

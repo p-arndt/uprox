@@ -1,11 +1,12 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import TokenForm, { type TokenFormValues } from '$lib/components/token-form.svelte';
 	import { emptyInlineLimits } from '$lib/components/inline-limits';
+	import SelectField from '$lib/components/select-field.svelte';
+	import FormError from '$lib/components/form-error.svelte';
 
 	let {
 		open = $bindable(false),
@@ -72,16 +73,12 @@
 			{#snippet bottomFields()}
 				<div class="space-y-2">
 					<Label for="expiresInDays">Expires</Label>
-					<Select.Root type="single" name="expiresInDays" bind:value={expiresInDays}>
-						<Select.Trigger id="expiresInDays" class="w-full">
-							{expiryOptions.find((o) => o.value === expiresInDays)?.label}
-						</Select.Trigger>
-						<Select.Content>
-							{#each expiryOptions as o (o.value)}
-								<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
+					<SelectField
+						id="expiresInDays"
+						name="expiresInDays"
+						bind:value={expiresInDays}
+						options={expiryOptions}
+					/>
 				</div>
 				<input type="hidden" name="recopyable" value={String(recopyable)} />
 				<div class="space-y-1.5 rounded-lg border p-3">
@@ -94,9 +91,7 @@
 						keeps it hash-only — shown once, then unrecoverable (more secure).
 					</p>
 				</div>
-				{#if message}
-					<p class="text-sm text-destructive">{message}</p>
-				{/if}
+				<FormError {message} />
 			{/snippet}
 		</TokenForm>
 	</Dialog.Content>
