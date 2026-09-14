@@ -2,10 +2,12 @@
  * Upstream provider registry. Every provider here speaks (or has) an
  * OpenAI-compatible surface, so the gateway can proxy a single request shape.
  */
-import type { Capability } from '$lib/scopes';
+import type { GatewayScope } from '$lib/scopes';
 import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/pricing';
 
-export type { Capability };
+export type { GatewayScope };
+/** @deprecated Use {@link GatewayScope}; re-exported for the gateway modules that still import it. */
+export type { Capability } from '$lib/scopes';
 
 export interface ProviderDef {
 	id: string;
@@ -19,7 +21,7 @@ export interface ProviderDef {
 	/** model-name prefixes used to route a request to this provider */
 	modelPrefixes: string[];
 	/** gateway endpoints this provider's upstream actually implements */
-	capabilities: Capability[];
+	capabilities: GatewayScope[];
 	/**
 	 * How the upstream authenticates. 'bearer' sends `Authorization: Bearer <key>`
 	 * (OpenAI, Anthropic); 'api-key' sends an `api-key: <key>` header (Azure);
@@ -184,7 +186,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 };
 
 /** Whether a provider implements a given gateway capability. */
-export function providerSupports(provider: ProviderDef, capability: Capability): boolean {
+export function providerSupports(provider: ProviderDef, capability: GatewayScope): boolean {
 	return provider.capabilities.includes(capability);
 }
 
