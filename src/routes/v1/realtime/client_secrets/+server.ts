@@ -1,14 +1,11 @@
 import type { RequestHandler } from './$types';
 import { authenticateGateway, proxyToProvider, gatewayError } from '$lib/server/gateway';
+import { isRecord } from '$lib/server/json';
 
 // Routing fallback when the request carries no model (a transcription-type
 // session may omit it). Only picks the provider — the body is forwarded
 // unchanged, so the upstream still sees exactly what the client sent.
 const ROUTING_FALLBACK_MODEL = 'gpt-realtime';
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-	return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 /**
  * Mint an ephemeral Realtime **client secret** (`POST /v1/realtime/client_secrets`).

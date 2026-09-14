@@ -13,10 +13,8 @@
  */
 import type { ProviderAdapter, AdapterModel } from './types';
 import type { Capability } from '$lib/scopes';
+import { isRecord } from '$lib/server/json';
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-	return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 function num(v: unknown): number | null {
 	return typeof v === 'number' ? v : null;
 }

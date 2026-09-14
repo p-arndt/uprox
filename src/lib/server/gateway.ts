@@ -28,14 +28,11 @@ import { checkBudget, reserve } from '$lib/server/budget';
 import { maybeSendBudgetAlert, maybeSendInstanceBudgetAlert } from '$lib/server/budget-alerts';
 import { cacheKeyFor, getCached, putCached, isDeterministicRequest } from '$lib/server/cache';
 import { estimateCost } from '$lib/server/pricing';
+import { isRecord } from '$lib/server/json';
 
 /** OpenAI-style error envelope, so OpenAI SDK clients parse it correctly. */
 export function gatewayError(status: number, message: string, type = 'invalid_request_error') {
 	return json({ error: { message, type, code: null, param: null } }, { status });
-}
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-	return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
 /**

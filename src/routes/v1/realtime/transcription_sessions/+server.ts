@@ -1,13 +1,10 @@
 import type { RequestHandler } from './$types';
 import { authenticateGateway, proxyToProvider, gatewayError } from '$lib/server/gateway';
+import { isRecord } from '$lib/server/json';
 
 // A transcription session's model lives under input_audio_transcription.model,
 // and may be omitted entirely; this fallback only selects the provider.
 const ROUTING_FALLBACK_MODEL = 'gpt-realtime';
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-	return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 /**
  * Legacy Realtime **transcription** ephemeral-token endpoint

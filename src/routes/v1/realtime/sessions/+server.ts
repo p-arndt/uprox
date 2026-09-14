@@ -1,11 +1,8 @@
 import type { RequestHandler } from './$types';
 import { authenticateGateway, proxyToProvider, gatewayError } from '$lib/server/gateway';
+import { isRecord } from '$lib/server/json';
 
 const ROUTING_FALLBACK_MODEL = 'gpt-realtime';
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-	return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 /**
  * Legacy Realtime ephemeral-token endpoint (`POST /v1/realtime/sessions`),
