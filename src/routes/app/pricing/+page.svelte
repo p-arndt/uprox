@@ -1,29 +1,22 @@
 <script lang="ts">
-	import * as Table from '$lib/components/ui/table/index.js';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import PageHeader from '$lib/components/page-header.svelte';
+	import PageShell from '$lib/components/page-shell.svelte';
 	import EmptyState from '$lib/components/empty-state.svelte';
-	import SearchInput from '$lib/components/search-input.svelte';
-	import PriceRow from '$lib/components/price-row.svelte';
 	import AddModelDialog from '$lib/components/add-model-dialog.svelte';
 	import { createTableState } from '$lib/state/table.svelte';
 	import {
 		providerTabs,
 		tagPriceProviders,
 		tierValues,
-		LONG_CONTEXT_MIN_PROMPT_TOKENS,
 		OTHER_PROVIDER_KEY,
 		type PriceTier
 	} from '$lib/pricing';
 	import { can } from '$lib/permissions';
 	import Coins from '@lucide/svelte/icons/coins';
-	import Search from '@lucide/svelte/icons/search';
 	import Plus from '@lucide/svelte/icons/plus';
-	import ArrowUp from '@lucide/svelte/icons/arrow-up';
-	import ArrowDown from '@lucide/svelte/icons/arrow-down';
-	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import PricingToolbar from './pricing-toolbar.svelte';
+	import PricingTable from './pricing-table.svelte';
 
 	let { data, form } = $props();
 
@@ -62,8 +55,6 @@
 
 	const customCount = $derived(data.prices.filter((p) => p.source === 'custom').length);
 	const longCount = $derived(data.prices.filter((p) => p.longInputPerMtok !== null).length);
-	const longThresholdLabel = `${Math.round(LONG_CONTEXT_MIN_PROMPT_TOKENS / 1000)}k`;
-	const showProviderCol = $derived(providerFilter === 'all');
 	const canManage = $derived(can(data.role, 'pricing:manage', data.memberPermissions));
 
 	let addOpen = $state(false);
@@ -71,25 +62,6 @@
 		providerFilter !== 'all' && providerFilter !== OTHER_PROVIDER_KEY ? providerFilter : ''
 	);
 </script>
-
-{#snippet sortHead(label: string, key: string, align: 'left' | 'right')}
-	<button
-		type="button"
-		onclick={() => table.toggleSort(key)}
-		class="inline-flex items-center gap-1 hover:text-foreground {align === 'right'
-			? 'flex-row-reverse'
-			: ''} {table.sortKey === key ? 'text-foreground' : ''}"
-	>
-		{label}
-		{#if table.sortKey === key}
-			{#if table.sortDir === 'asc'}<ArrowUp class="size-3.5" />{:else}<ArrowDown
-					class="size-3.5"
-				/>{/if}
-		{:else}
-			<ChevronsUpDown class="size-3.5 opacity-40" />
-		{/if}
-	</button>
-{/snippet}
 
 <PageShell width="default">
 	<PageHeader title="Model Prices">
@@ -114,96 +86,22 @@
 			description="Add a model to start tracking its cost."
 		/>
 	{:else}
-		<div class="flex flex-wrap items-center justify-between gap-3">
-			<Tabs.Root bind:value={providerFilter} class="min-w-0">
-				<Tabs.List class="max-w-full overflow-x-auto">
-					<Tabs.Trigger value="all">
-						All
-						<span class="ml-1.5 text-xs text-muted-foreground">{rows.length}</span>
-					</Tabs.Trigger>
-					{#each tabs as t (t.key)}
-						<Tabs.Trigger value={t.key}>
-							{t.label}
-							<span class="ml-1.5 text-xs text-muted-foreground">{t.count}</span>
-						</Tabs.Trigger>
-					{/each}
-				</Tabs.List>
-			</Tabs.Root>
-
-			<div class="flex flex-wrap items-center gap-3">
-				<Tabs.Root bind:value={tier} class="min-w-0">
-					<Tabs.List class="max-w-full overflow-x-auto">
-						<Tabs.Trigger value="standard">Short context</Tabs.Trigger>
-						<Tabs.Trigger value="long">
-							Long context
-							<span class="ml-1.5 text-xs text-muted-foreground">{longCount}</span>
-						</Tabs.Trigger>
-					</Tabs.List>
-				</Tabs.Root>
-
-				<SearchInput
-					bind:value={table.query}
-					placeholder="Search models…"
-					class="w-full max-w-xs sm:w-64"
-					ariaLabel="Search models"
-				/>
-			</div>
-		</div>
-
-		{#if tier === 'long'}
-			<p class="text-xs text-muted-foreground">
-				Long-context rates bill the whole request — input, cache traffic and output — once its
-				prompt reaches {longThresholdLabel} tokens. Models showing “—” have a single rate card and always
-				bill the short-context prices.
-			</p>
-		{/if}
-
-		<div class="rounded-xl border">
-			<Table.Root>
-				<Table.Header>
-					<Table.Row class="hover:bg-transparent">
-						<Table.Head>{@render sortHead('Model', 'model', 'left')}</Table.Head>
-						{#if showProviderCol}
-							<Table.Head>Provider</Table.Head>
-						{/if}
-						<Table.Head class="text-right">
-							{@render sortHead('Input / 1M', 'input', 'right')}
-						</Table.Head>
-						<Table.Head class="text-right">
-							{@render sortHead('Output / 1M', 'output', 'right')}
-						</Table.Head>
-						<Table.Head class="text-right">
-							{@render sortHead('Cache read / 1M', 'cacheRead', 'right')}
-						</Table.Head>
-						<Table.Head class="text-right">
-							{@render sortHead('Cache write / 1M', 'cacheWrite', 'right')}
-						</Table.Head>
-						<Table.Head class="w-[1%]">Source</Table.Head>
-						<Table.Head class="w-[1%]"></Table.Head>
-					</Table.Row>
-				</Table.Header>
-				<Table.Body>
-					{#each table.visible as p (p.model)}
-						<PriceRow price={p} showProvider={showProviderCol} {canManage} {tier} />
-					{/each}
-				</Table.Body>
-			</Table.Root>
-
-			{#if table.visible.length === 0}
-				<div class="flex flex-col items-center justify-center py-12">
-					<Search class="size-6 text-muted-foreground" />
-					<p class="mt-2 text-sm text-muted-foreground">
-						No models match {table.query ? `“${table.query}”` : 'this filter'}.
-					</p>
-				</div>
-			{/if}
-		</div>
-
-		<p class="text-xs text-muted-foreground">
-			Showing {table.visible.length} of {rows.length} models{customCount > 0
-				? ` · ${customCount} custom`
-				: ''}.
-		</p>
+		<PricingToolbar
+			bind:providerFilter
+			bind:tier
+			bind:query={table.query}
+			{tabs}
+			total={rows.length}
+			{longCount}
+		/>
+		<PricingTable
+			{table}
+			total={rows.length}
+			{customCount}
+			{tier}
+			showProvider={providerFilter === 'all'}
+			{canManage}
+		/>
 	{/if}
 </PageShell>
 
