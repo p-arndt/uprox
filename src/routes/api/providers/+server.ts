@@ -2,35 +2,18 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireOrgApi, requirePermission } from '$lib/server/org';
 import { listProviderSecrets, createProviderSecret } from '$lib/server/data';
-import { PROVIDER_IDS, PROVIDERS } from '$lib/server/providers';
+import { apiHandler } from '$lib/server/api/errors';
+import { readJson } from '$lib/server/api/fields';
+import { parseProviderCreate } from '$lib/server/api/provider-body';
 
-export const GET: RequestHandler = async (event) => {
+export const GET: RequestHandler = apiHandler(async (event) => {
 	await requireOrgApi(event);
 	return json(await listProviderSecrets());
-};
+});
 
-export const POST: RequestHandler = async (event) => {
+export const POST: RequestHandler = apiHandler(async (event) => {
 	const { userId } = await requirePermission(event, 'providers:manage');
-	const body = await event.request.json();
-	if (!body?.provider || !body?.secret) {
-		return json({ error: 'provider and secret are required' }, { status: 400 });
-	}
-	if (!PROVIDER_IDS.includes(body.provider)) {
-		return json({ error: `unknown provider "${body.provider}"` }, { status: 400 });
-	}
-	const baseUrl = body.baseUrl?.toString().trim() || undefined;
-	if (PROVIDERS[body.provider].requiresEndpoint && !baseUrl) {
-		return json(
-			{ error: `${PROVIDERS[body.provider].label} requires a baseUrl endpoint` },
-			{ status: 400 }
-		);
-	}
-	const row = await createProviderSecret(userId, {
-		provider: body.provider,
-		secret: body.secret,
-		label: body.label,
-		baseUrl,
-		priority: typeof body.priority === 'number' ? body.priority : undefined
-	});
-	return json(row, { status: 201 });
-};
+	const input = parseProviderCreate(await readJson(event.request));
+	// returns `{ id, provider }` only: the secret is never echoed back
+	return json(await createProviderSecret(userId, input), { status: 201 });
+});

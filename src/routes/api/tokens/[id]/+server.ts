@@ -2,31 +2,26 @@ import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requirePermission } from '$lib/server/org';
 import { revokeToken, updateToken } from '$lib/server/data';
-import { parseInlineConfig } from '$lib/server/parse-config';
+import { apiHandler, notFound } from '$lib/server/api/errors';
+import { pathId, readJson } from '$lib/server/api/fields';
+import { parseTokenPatch, tokenResponse } from '$lib/server/api/token-body';
 
 // Edit a live token's access controls + inline limits (name, scopes, model
-// allowlist, preset, and any per-token overrides).
-export const PATCH: RequestHandler = async (event) => {
+// allowlist, preset, and any per-token overrides). Revoked tokens are a 404.
+export const PATCH: RequestHandler = apiHandler(async (event) => {
 	await requirePermission(event, 'tokens:manage');
-	const body = await event.request.json();
-	// token keeps its own allowedModels handling (non-null), so exclude it here
-	const patch: Parameters<typeof updateToken>[1] = parseInlineConfig(body ?? {});
-	if (typeof body?.name === 'string') patch.name = body.name.trim();
-	if (Array.isArray(body?.scopes)) patch.scopes = body.scopes.map((s: unknown) => String(s));
-	if (Array.isArray(body?.allowedModels)) {
-		patch.allowedModels = body.allowedModels.map((m: unknown) => String(m));
-	}
-	// explicit null clears the override (revert to inheriting the preset/service)
-	if (body?.policyId !== undefined) patch.policyId = body.policyId || null;
-	const row = await updateToken(event.params.id, patch);
-	if (!row) return json({ error: 'Not found' }, { status: 404 });
-	return json({ id: row.id });
-};
+	const id = pathId(event.params.id);
+	const patch = parseTokenPatch(await readJson(event.request));
+	const row = await updateToken(id, patch);
+	if (!row) throw notFound();
+	return json(tokenResponse(row));
+});
 
-// Revoke (soft-delete) a machine token.
-export const DELETE: RequestHandler = async (event) => {
+// Revoke (soft-delete) a machine token. Unlike the other DELETE routes this
+// answers 200 with `{ id, revokedAt }`, which existing clients rely on.
+export const DELETE: RequestHandler = apiHandler(async (event) => {
 	await requirePermission(event, 'tokens:manage');
-	const row = await revokeToken(event.params.id);
-	if (!row) return json({ error: 'Not found' }, { status: 404 });
+	const row = await revokeToken(pathId(event.params.id));
+	if (!row) throw notFound();
 	return json({ id: row.id, revokedAt: row.revokedAt });
-};
+});
