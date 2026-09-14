@@ -10,7 +10,7 @@ import type {
 	UsageRangeOption
 } from '$lib/usage-range';
 import type { UsageDimension, UsageFilter, UsageFilterOptions } from '$lib/usage-group';
-import type { TokenMeterBreakdown } from '$lib/server/usage-queries/meters';
+import type { TokenMeterBreakdown } from './meter-types';
 
 export type { UsageFilterOption, UsageFilterOptions } from '$lib/usage-group';
 

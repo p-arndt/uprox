@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
-	import type { TokenMeterBreakdown } from '$lib/server/data';
+	import type { TokenMeterBreakdown } from '$lib/features/usage/meter-types';
 	import { formatTokens, formatUsd, formatPct } from '$lib/format';
 	import { METER_COLOR } from '$lib/usage-colors';
 	import { cacheSavings, meterRows } from '$lib/features/usage/token-meters';
