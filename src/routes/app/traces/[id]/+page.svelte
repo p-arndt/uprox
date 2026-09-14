@@ -2,7 +2,7 @@
 	import { resolve } from '$app/paths';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { formatDateTime, formatDuration, formatUsd, formatTokens } from '$lib/format';
-	import { eventTone, toneDot, toneText } from '$lib/events';
+	import { eventTone, toneDot } from '$lib/events';
 	import { callSpan, callsWindow, prettyJson, rawResponseBody, waterfallBar } from '$lib/trace';
 	import TraceConversation from '$lib/components/trace-conversation.svelte';
 	import TraceMetadata from '$lib/components/trace-metadata.svelte';
@@ -11,10 +11,12 @@
 	import DetailHeader from '$lib/components/detail-header.svelte';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
 	import PageShell from '$lib/components/page-shell.svelte';
+	import CallStatus from '../call-status.svelte';
+	import SummaryStat from '../summary-stat.svelte';
+	import { callLabel } from '../session/[groupId]/session';
 
 	let { data } = $props();
 	const t = $derived(data.trace);
-	const tone = $derived(eventTone(t.status));
 
 	const rawRequest = $derived(prettyJson(t.requestBody));
 	const rawResponse = $derived(rawResponseBody(t.responseBody, t.format));
@@ -28,7 +30,6 @@
 	const win = $derived(callsWindow(showSession ? spans : []));
 
 	const spanBar = (s: Span) => waterfallBar(callSpan(s).start, s.latencyMs ?? 0, win, 1.5);
-	const spanLabel = (s: Span) => s.model || s.action?.replace(/^gateway\./, '') || 'request';
 </script>
 
 <PageShell width="default">
@@ -36,12 +37,7 @@
 	<div class="space-y-3">
 		<DetailHeader icon={Waypoints} eyebrow="Trace" title={t.model ?? 'request'} mono>
 			{#snippet badges()}
-				<span class="flex items-center gap-1.5">
-					<span class="size-1.5 rounded-full {toneDot[tone]}" aria-hidden="true"></span>
-					<span class="text-xs font-medium {toneText[tone]}">
-						{t.status}{t.statusCode ? ` ${t.statusCode}` : ''}
-					</span>
-				</span>
+				<CallStatus status={t.status} statusCode={t.statusCode} />
 				{#if t.provider}<Badge variant="secondary">{t.provider}</Badge>{/if}
 				{#if t.format === 'sse'}<Badge variant="outline">streamed</Badge>{/if}
 			{/snippet}
@@ -51,24 +47,16 @@
 		</DetailHeader>
 
 		<div class="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
-			<div>
-				<div class="text-xs text-muted-foreground">Service</div>
-				<div class="truncate">{t.serviceName ?? '—'}</div>
-			</div>
-			<div>
-				<div class="text-xs text-muted-foreground">Tokens (in → out)</div>
-				<div class="tabular-nums">
-					{formatTokens(t.inputTokens)} → {formatTokens(t.outputTokens)}
-				</div>
-			</div>
-			<div>
-				<div class="text-xs text-muted-foreground">Cost</div>
-				<div class="tabular-nums">{t.costUsd ? formatUsd(t.costUsd) : '—'}</div>
-			</div>
-			<div>
-				<div class="text-xs text-muted-foreground">Latency</div>
-				<div class="tabular-nums">{t.latencyMs != null ? `${t.latencyMs}ms` : '—'}</div>
-			</div>
+			<SummaryStat label="Service" class="truncate">{t.serviceName ?? '—'}</SummaryStat>
+			<SummaryStat label="Tokens (in → out)" class="tabular-nums">
+				{formatTokens(t.inputTokens)} → {formatTokens(t.outputTokens)}
+			</SummaryStat>
+			<SummaryStat label="Cost" class="tabular-nums">
+				{t.costUsd ? formatUsd(t.costUsd) : '—'}
+			</SummaryStat>
+			<SummaryStat label="Latency" class="tabular-nums">
+				{t.latencyMs != null ? `${t.latencyMs}ms` : '—'}
+			</SummaryStat>
 		</div>
 		<TraceMetadata metadata={t.metadata} />
 	</div>
@@ -119,7 +107,7 @@
 								? 'font-semibold text-foreground'
 								: 'text-muted-foreground'}"
 						>
-							{spanLabel(s)}
+							{callLabel(s)}
 						</span>
 					</span>
 				{/snippet}
