@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import type { UsageMover } from '$lib/server/data';
+	import type { UsageMover } from '$lib/features/usage/types';
 	import { dimensionLabel, type UsageDimension } from '$lib/usage-group';
 	import { formatUsd } from '$lib/format';
 	import TrendingUp from '@lucide/svelte/icons/trending-up';

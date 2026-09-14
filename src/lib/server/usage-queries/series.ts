@@ -2,31 +2,13 @@
 import { sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
-import {
-	resolveSeriesBucket,
-	type BucketChoice,
-	type ResolvedRange,
-	type SeriesBucket
-} from '$lib/usage-range';
+import { resolveSeriesBucket, type BucketChoice, type ResolvedRange } from '$lib/usage-range';
 import type { UsageFilter } from '$lib/usage-group';
 import { BUCKET_STEP } from '$lib/server/usage-queries/buckets';
 import { usageCondsSql } from '$lib/server/usage-queries/predicates';
+import type { UsageSeries, UsageSeriesPoint } from '$lib/features/usage/types';
 
-export interface UsageSeriesPoint {
-	/** UTC-aligned bucket start, ISO-8601 with a trailing Z (e.g. 2026-06-03T00:00:00Z) */
-	bucket: string;
-	requests: number;
-	denied: number;
-	costUsd: number;
-	inputTokens: number;
-	outputTokens: number;
-}
-
-export interface UsageSeries {
-	/** bucket granularity used for the window (see resolveSeriesBucket) */
-	unit: SeriesBucket;
-	points: UsageSeriesPoint[];
-}
+export type { UsageSeries, UsageSeriesPoint };
 
 /**
  * Time-series of gateway traffic across the resolved window, bucketed hourly,

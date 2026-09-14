@@ -8,7 +8,7 @@
 	import { enhance } from '$app/forms';
 	import { createUsageView } from '$lib/state/usage-view.svelte';
 	import type { UsageDimension } from '$lib/usage-group';
-	import type { DimensionUsageRow } from '$lib/server/data';
+	import type { DimensionUsageRow } from '$lib/features/usage/types';
 	import { toast } from 'svelte-sonner';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';

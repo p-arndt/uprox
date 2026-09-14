@@ -6,7 +6,7 @@
 	import { resolve } from '$app/paths';
 	import { createUsageView } from '$lib/state/usage-view.svelte';
 	import { NULL_VALUE, type UsageDimension } from '$lib/usage-group';
-	import type { DimensionUsageRow } from '$lib/server/data';
+	import type { DimensionUsageRow } from '$lib/features/usage/types';
 	import { relativeTime } from '$lib/format';
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import DetailHeader from '$lib/components/detail-header.svelte';

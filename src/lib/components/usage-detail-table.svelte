@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import type { DimensionUsageRow } from '$lib/server/data';
+	import type { DimensionUsageRow } from '$lib/features/usage/types';
 	import { colorForSeries } from '$lib/usage-colors';
 	import { isDerivedDimension, type UsageDimension } from '$lib/usage-group';
 	import { formatUsd, formatTokens, formatCount, formatUsdRate } from '$lib/format';

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
-	import type { ModelEfficiency } from '$lib/server/data';
+	import type { ModelEfficiency } from '$lib/features/usage/types';
 	import { formatUsd, formatTokens, formatCount, formatPct } from '$lib/format';
 	import { priceExtreme, priceExtremes } from '$lib/features/usage/efficiency';
 	import { createTableState } from '$lib/state/table.svelte';

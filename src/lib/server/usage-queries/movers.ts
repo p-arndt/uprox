@@ -1,20 +1,10 @@
 /** Period-over-period spend movers. */
 import type { ResolvedRange } from '$lib/usage-range';
 import type { UsageDimension, UsageFilter } from '$lib/usage-group';
-import type { DimensionUsageRow } from '$lib/server/usage-queries/types';
+import type { DimensionUsageRow, UsageMover } from '$lib/features/usage/types';
 import { orgUsageByDimension } from '$lib/server/usage-queries/by-dimension';
 
-export interface UsageMover {
-	key: string;
-	label: string;
-	currentUsd: number;
-	previousUsd: number;
-	deltaUsd: number;
-	/** null when there's no prior baseline to divide by (a new series) */
-	deltaPct: number | null;
-	isNew: boolean;
-	isGone: boolean;
-}
+export type { UsageMover };
 
 /**
  * The series whose spend moved most between the selected window and the

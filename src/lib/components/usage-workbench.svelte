@@ -7,8 +7,8 @@
 	import UsageDeepDive from '$lib/components/usage-deep-dive.svelte';
 	import BudgetGauge from '$lib/components/budget-gauge.svelte';
 	import type { UsageDimension, UsageFilter } from '$lib/usage-group';
-	import type { UsageAnalysis } from '$lib/server/usage-analysis';
-	import type { DimensionUsageRow } from '$lib/server/data';
+	import type { UsageAnalysis } from '$lib/features/usage/types';
+	import type { DimensionUsageRow } from '$lib/features/usage/types';
 	import type { BudgetStatus } from '$lib/budget';
 	import type { ResolvedPathname } from '$app/types';
 

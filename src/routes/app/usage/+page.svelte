@@ -9,7 +9,7 @@
 	import type { ResolvedPathname } from '$app/types';
 	import { createUsageView } from '$lib/state/usage-view.svelte';
 	import { NULL_VALUE, type UsageDimension } from '$lib/usage-group';
-	import type { DimensionUsageRow } from '$lib/server/data';
+	import type { DimensionUsageRow } from '$lib/features/usage/types';
 	import Download from '@lucide/svelte/icons/download';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import PageShell from '$lib/components/page-shell.svelte';

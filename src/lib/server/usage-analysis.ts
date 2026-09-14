@@ -9,7 +9,7 @@ import {
 	orgTopMovers,
 	orgModelEfficiency
 } from '$lib/server/data';
-import type { DimensionUsageRow } from '$lib/server/data';
+import type { DimensionUsageRow, UsageAnalysis } from '$lib/features/usage/types';
 import {
 	USAGE_RANGES,
 	resolveUsageRange,
@@ -55,7 +55,7 @@ export async function loadUsageAnalysis(
 		/** donut panels; defaults to the first three allowed dimensions */
 		donutDims?: readonly UsageDimension[];
 	} = {}
-) {
+): Promise<UsageAnalysis> {
 	const params = event.url.searchParams;
 	// Every window control navigates with an explicit ?range=, so a URL without
 	// one is a fresh entry to the page (sidebar, bookmark, new tab) rather than a
@@ -187,4 +187,4 @@ export async function loadUsageAnalysis(
 	};
 }
 
-export type UsageAnalysis = Awaited<ReturnType<typeof loadUsageAnalysis>>;
+export type { UsageAnalysis };

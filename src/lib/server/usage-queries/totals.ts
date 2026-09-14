@@ -5,26 +5,9 @@ import { auditLog } from '$lib/server/db/schema';
 import type { ResolvedRange } from '$lib/usage-range';
 import type { UsageFilter } from '$lib/usage-group';
 import { usageConds } from '$lib/server/usage-queries/predicates';
+import type { UsageTotals } from '$lib/features/usage/types';
 
-export interface UsageTotals {
-	requests: number;
-	costUsd: number;
-	/** requests the upstream/gateway answered with an error status */
-	errors: number;
-	/** requests blocked by policy/budget before reaching upstream */
-	denied: number;
-	/** median upstream latency in ms over the window, or null when unmeasured */
-	latencyP50: number | null;
-	/** 95th-percentile upstream latency in ms, or null when unmeasured */
-	latencyP95: number | null;
-	inputTokens: number;
-	outputTokens: number;
-	savedInputTokens: number;
-	providerCachedTokens: number;
-	/** subset of input/output tokens attributable to embedding models */
-	embeddingInputTokens: number;
-	embeddingOutputTokens: number;
-}
+export type { UsageTotals };
 
 /**
  * Headline aggregates for the whole org (or one service, with `serviceId`) over

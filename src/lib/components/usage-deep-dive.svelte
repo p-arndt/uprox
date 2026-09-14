@@ -8,8 +8,8 @@
 	import UsageModelEfficiency from '$lib/components/usage-model-efficiency.svelte';
 	import UsageTokenMeters from '$lib/components/usage-token-meters.svelte';
 	import { dimensionLabel, type UsageDimension } from '$lib/usage-group';
-	import type { UsageAnalysis } from '$lib/server/usage-analysis';
-	import type { DimensionUsageRow } from '$lib/server/data';
+	import type { UsageAnalysis } from '$lib/features/usage/types';
+	import type { DimensionUsageRow } from '$lib/features/usage/types';
 
 	// Everything below the chart, behind one tab bar.
 	//

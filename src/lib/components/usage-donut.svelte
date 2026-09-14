@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { DimensionUsageRow } from '$lib/server/data';
+	import type { DimensionUsageRow } from '$lib/features/usage/types';
 	import { formatMetric, type UsageMetric } from '$lib/features/usage/metric';
 	import {
 		DONUT_CIRCUMFERENCE,

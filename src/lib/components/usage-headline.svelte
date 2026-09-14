@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import DeltaPill from '$lib/components/delta-pill.svelte';
 	import Sparkline from '$lib/components/sparkline.svelte';
-	import type { UsageTotals, UsageSeries } from '$lib/server/data';
+	import type { UsageTotals, UsageSeries } from '$lib/features/usage/types';
 	import { headlineCells } from '$lib/features/usage/headline';
 
 	// One summary band, not two rows of assorted cards. Spend, volume and health

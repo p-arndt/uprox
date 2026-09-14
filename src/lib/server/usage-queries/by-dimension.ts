@@ -23,7 +23,7 @@ import type {
 	DimensionUsageRow,
 	GroupedSeries,
 	GroupedSeriesResult
-} from '$lib/server/usage-queries/types';
+} from '$lib/features/usage/types';
 import { meterLabel } from '$lib/server/usage-queries/meter-sql';
 import { orgTokenMeters, orgTokenMetersSeries } from '$lib/server/usage-queries/meters';
 import { orgBillingLines, orgBillingLineSeries } from '$lib/server/usage-queries/billing-lines';
