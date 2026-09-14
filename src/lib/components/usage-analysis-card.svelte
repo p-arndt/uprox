@@ -8,6 +8,8 @@
 	import { BUCKET_OPTIONS } from '$lib/usage-range';
 	import { dimensionLabel, isDerivedDimension, type UsageDimension } from '$lib/usage-group';
 	import type { GroupedSeriesResult } from '$lib/server/data';
+	import type { UsageMetric } from '$lib/features/usage/metric';
+	import type { ChartMode } from '$lib/features/usage/chart-math';
 	import type { ResolvedPathname } from '$app/types';
 	import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
 
@@ -28,9 +30,8 @@
 		bucketHref: (key: string) => ResolvedPathname;
 	} = $props();
 
-	type Metric = 'cost' | 'requests' | 'tokens';
-	let metric = $state<Metric>('cost');
-	const ALL_METRICS: { key: Metric; label: string }[] = [
+	let metric = $state<UsageMetric>('cost');
+	const ALL_METRICS: { key: UsageMetric; label: string }[] = [
 		{ key: 'cost', label: 'Spend' },
 		{ key: 'requests', label: 'Requests' },
 		{ key: 'tokens', label: 'Tokens' }
@@ -46,8 +47,10 @@
 
 	type ChartType = 'bars' | 'area';
 	let chartType = $state<ChartType>('bars');
-	let normalized = $state(false);
-	let cumulative = $state(false);
+	// Normalized and cumulative are mutually exclusive — a running total rescaled
+	// to 100% per bucket is a chart of nothing — so they are one mode, and
+	// turning one switch on implicitly turns the other off.
+	let mode = $state<ChartMode>('absolute');
 	let highlighted = $state<string | null>(null);
 	// Series toggled off from the legend. Owned here so the chart and the legend
 	// share one source of truth; reset whenever the grouping changes, since the
@@ -58,15 +61,9 @@
 		hidden = [];
 	});
 
-	// Normalized and cumulative are mutually exclusive: a running total rescaled
-	// to 100% per bucket is a chart of nothing. Turning one on clears the other.
-	function setNormalized(v: boolean) {
-		normalized = v;
-		if (v) cumulative = false;
-	}
-	function setCumulative(v: boolean) {
-		cumulative = v;
-		if (v) normalized = false;
+	function setMode(target: Exclude<ChartMode, 'absolute'>, on: boolean) {
+		if (on) mode = target;
+		else if (mode === target) mode = 'absolute';
 	}
 
 	const UNIT_ADVERB: Record<string, string> = {
@@ -78,13 +75,13 @@
 
 	const metricLabel = $derived(METRICS.find((m) => m.key === metric)?.label ?? 'Spend');
 	const shape = $derived(
-		normalized
+		mode === 'normalized'
 			? '100% stacked'
-			: cumulative
+			: mode === 'cumulative'
 				? 'accumulated'
 				: (UNIT_ADVERB[grouped.unit] ?? grouped.unit)
 	);
-	const optionsActive = $derived(chartType !== 'bars' || normalized || cumulative);
+	const optionsActive = $derived(chartType !== 'bars' || mode !== 'absolute');
 </script>
 
 <Card.Root>
@@ -143,8 +140,8 @@
 						<Switch
 							id="accumulated"
 							size="sm"
-							checked={cumulative}
-							onCheckedChange={setCumulative}
+							checked={mode === 'cumulative'}
+							onCheckedChange={(v) => setMode('cumulative', v)}
 						/>
 					</div>
 					<div class="flex items-center justify-between">
@@ -152,8 +149,8 @@
 						<Switch
 							id="normalized"
 							size="sm"
-							checked={normalized}
-							onCheckedChange={setNormalized}
+							checked={mode === 'normalized'}
+							onCheckedChange={(v) => setMode('normalized', v)}
 						/>
 					</div>
 				</Popover.Content>
@@ -169,8 +166,7 @@
 			dim={groupBy}
 			{metric}
 			type={chartType}
-			{normalized}
-			{cumulative}
+			{mode}
 			{highlighted}
 			{hidden}
 		/>
