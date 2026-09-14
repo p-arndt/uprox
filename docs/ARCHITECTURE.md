@@ -111,7 +111,6 @@ and nesting depth 4. A warning means: split before adding more.
   on SQL.
 - **E2E** needs a running Postgres (`pnpm db:start`) and a Chromium install
   (`pnpm test:e2e:install`). It uses a dedicated `uprox_test` database.
-- Coverage: `pnpm test:unit --run --coverage` (text + `coverage/lcov.info`).
 
 ## Database and analytics performance
 
