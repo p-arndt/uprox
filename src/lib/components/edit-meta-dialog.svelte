@@ -7,6 +7,7 @@
 	import EntityDialog from '$lib/components/entity-dialog.svelte';
 	import FormError from '$lib/components/form-error.svelte';
 	import { endpointPlaceholder } from '$lib/components/form-options';
+	import type { ProviderMetaDraft } from '$lib/providers';
 
 	let {
 		editingMeta,
@@ -14,14 +15,7 @@
 		onClose
 	}: {
 		/** the secret whose label / endpoint / priority is being edited, or null when closed */
-		editingMeta: {
-			id: string;
-			provider: string;
-			label: string;
-			requiresEndpoint: boolean;
-			baseUrl: string;
-			priority: number;
-		} | null;
+		editingMeta: ProviderMetaDraft | null;
 		message?: string;
 		onClose: () => void;
 	} = $props();

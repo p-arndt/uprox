@@ -7,6 +7,7 @@
 	import EntityDialog from '$lib/components/entity-dialog.svelte';
 	import FormError from '$lib/components/form-error.svelte';
 	import { endpointPlaceholder } from '$lib/components/form-options';
+	import type { ProviderKeyDraft } from '$lib/providers';
 
 	let {
 		adding,
@@ -14,12 +15,7 @@
 		onClose
 	}: {
 		/** the provider being added to, or null when the dialog is closed */
-		adding: {
-			provider: string;
-			label: string;
-			requiresEndpoint: boolean;
-			authScheme: string;
-		} | null;
+		adding: ProviderKeyDraft | null;
 		message?: string;
 		onClose: () => void;
 	} = $props();

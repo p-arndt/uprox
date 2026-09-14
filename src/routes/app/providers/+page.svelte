@@ -96,9 +96,8 @@
 					{:else}
 						{#each secrets as s (s.id)}
 							<ProviderSecretRow
-								{s}
-								label={p.label}
-								requiresEndpoint={p.requiresEndpoint}
+								secret={s}
+								provider={p}
 								showPriority={secrets.length > 1}
 								{canManage}
 								onRotate={() =>

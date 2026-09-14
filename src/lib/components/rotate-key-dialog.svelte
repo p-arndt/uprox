@@ -6,6 +6,7 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import EntityDialog from '$lib/components/entity-dialog.svelte';
 	import FormError from '$lib/components/form-error.svelte';
+	import type { RotateKeyDraft } from '$lib/providers';
 
 	let {
 		rotating,
@@ -13,12 +14,7 @@
 		onClose
 	}: {
 		/** the secret being rotated, or null when the dialog is closed */
-		rotating: {
-			id: string;
-			label: string;
-			provider: string;
-			authScheme: string;
-		} | null;
+		rotating: RotateKeyDraft | null;
 		message?: string;
 		onClose: () => void;
 	} = $props();
