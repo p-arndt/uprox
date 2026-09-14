@@ -6,8 +6,6 @@ import type { GatewayScope } from '$lib/scopes';
 import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/pricing';
 
 export type { GatewayScope };
-/** @deprecated Use {@link GatewayScope}; re-exported for the gateway modules that still import it. */
-export type { Capability } from '$lib/scopes';
 
 export interface ProviderDef {
 	id: string;
