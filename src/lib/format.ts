@@ -103,3 +103,9 @@ export function formatUsdCompact(value: number | string | null | undefined): str
 	}
 	return formatUsd(n);
 }
+
+/** A duration in ms: "850ms" below a second, "1.25s" above, "—" when unknown. */
+export function formatDuration(ms: number | null | undefined): string {
+	if (ms == null) return '—';
+	return ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`;
+}

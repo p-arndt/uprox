@@ -124,3 +124,19 @@ export function spanDetail(s: SpanLike): SpanDetail {
 		tokensOut: num(a['llm.token_count.completion'])
 	};
 }
+
+/** OpenInference span kind → accent colour for the tree node label. */
+export const SPAN_KIND_ACCENT: Record<string, string> = {
+	LLM: 'text-emerald-600 dark:text-emerald-400',
+	RETRIEVER: 'text-sky-600 dark:text-sky-400',
+	EMBEDDING: 'text-violet-600 dark:text-violet-400',
+	RERANKER: 'text-amber-600 dark:text-amber-400',
+	TOOL: 'text-orange-600 dark:text-orange-400',
+	AGENT: 'text-pink-600 dark:text-pink-400',
+	CHAIN: 'text-muted-foreground'
+};
+
+/** The accent class for a span kind, muted for unknown kinds. */
+export function spanKindAccent(kind: string): string {
+	return SPAN_KIND_ACCENT[kind] ?? 'text-muted-foreground';
+}
