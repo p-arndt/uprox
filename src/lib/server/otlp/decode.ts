@@ -7,6 +7,7 @@
  *
  * Only the fields the trace viewer renders are read; everything else is skipped.
  */
+import { isRecord } from '$lib/server/json';
 
 export interface ParsedSpan {
 	traceId: string;
@@ -309,10 +310,6 @@ export function parseOtlpProtobuf(buf: Uint8Array): ParsedSpan[] {
 }
 
 /* --------------------------------- JSON ---------------------------------- */
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-	return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 /** Read an OTLP/JSON `AnyValue` object (`{ stringValue }`, `{ intValue }`, …). */
 function jsonAnyValue(v: unknown, depth = 0): unknown {
