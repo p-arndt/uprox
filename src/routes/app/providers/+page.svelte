@@ -7,7 +7,12 @@
 	import ProviderKeyDialog from '$lib/components/provider-key-dialog.svelte';
 	import RotateKeyDialog from '$lib/components/rotate-key-dialog.svelte';
 	import EditMetaDialog from '$lib/components/edit-meta-dialog.svelte';
-	import type { ProviderSecret } from '$lib/providers';
+	import type {
+		ProviderKeyDraft,
+		ProviderMetaDraft,
+		ProviderSecret,
+		RotateKeyDraft
+	} from '$lib/providers';
 	import { can } from '$lib/permissions';
 	import Plug from '@lucide/svelte/icons/plug';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -16,30 +21,11 @@
 	let { data, form } = $props();
 
 	// add a new key (per provider)
-	let adding = $state<{
-		provider: string;
-		label: string;
-		requiresEndpoint: boolean;
-		authScheme: string;
-		optionalAuth: boolean;
-	} | null>(null);
+	let adding = $state<ProviderKeyDraft | null>(null);
 	// rotate an existing key
-	let rotating = $state<{
-		id: string;
-		label: string;
-		provider: string;
-		authScheme: string;
-		optionalAuth: boolean;
-	} | null>(null);
+	let rotating = $state<RotateKeyDraft | null>(null);
 	// edit label / endpoint / priority of an existing secret
-	let editingMeta = $state<{
-		id: string;
-		provider: string;
-		label: string;
-		requiresEndpoint: boolean;
-		baseUrl: string;
-		priority: number;
-	} | null>(null);
+	let editingMeta = $state<ProviderMetaDraft | null>(null);
 
 	// secrets grouped by provider, preserving the load order (priority desc)
 	const byProvider = $derived(

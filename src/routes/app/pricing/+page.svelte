@@ -9,9 +9,11 @@
 	import AddModelDialog from '$lib/components/add-model-dialog.svelte';
 	import { createTableState } from '$lib/state/table.svelte';
 	import {
-		inferProviderId,
+		providerTabs,
+		tagPriceProviders,
 		tierValues,
 		LONG_CONTEXT_MIN_PROMPT_TOKENS,
+		OTHER_PROVIDER_KEY,
 		type PriceTier
 	} from '$lib/pricing';
 	import { can } from '$lib/permissions';
@@ -25,39 +27,10 @@
 
 	let { data, form } = $props();
 
-	const OTHER_KEY = '__other';
-
-	const providerLabel = $derived(new Map(data.providers.map((p) => [p.id, p.label] as const)));
-
 	/** Every price tagged with its provider (explicit, else inferred from name). */
-	const rows = $derived(
-		data.prices.map((p) => {
-			const id = p.provider || inferProviderId(p.model);
-			return {
-				...p,
-				providerKey: id ?? OTHER_KEY,
-				providerLabel: id ? (providerLabel.get(id) ?? id) : 'Other'
-			};
-		})
-	);
-
-	// One filter tab per provider that actually has models, in declared order,
-	// with "Other" last. Each carries its count for an at-a-glance badge.
-	const tabs = $derived.by(() => {
-		const counts = new Map<string, number>();
-		for (const r of rows) counts.set(r.providerKey, (counts.get(r.providerKey) ?? 0) + 1);
-		const order = data.providers.map((p) => p.id);
-		const keys = [...counts.keys()].sort((a, b) => {
-			const ra = a === OTHER_KEY ? order.length : order.indexOf(a);
-			const rb = b === OTHER_KEY ? order.length : order.indexOf(b);
-			return (ra === -1 ? order.length : ra) - (rb === -1 ? order.length : rb);
-		});
-		return keys.map((key) => ({
-			key,
-			label: key === OTHER_KEY ? 'Other' : (providerLabel.get(key) ?? key),
-			count: counts.get(key) ?? 0
-		}));
-	});
+	const rows = $derived(tagPriceProviders(data.prices, data.providers));
+	// One filter tab per provider that actually has models, "Other" last.
+	const tabs = $derived(providerTabs(rows, data.providers));
 
 	let providerFilter = $state('all');
 	// Which rate card the four price columns show. Long context is what a request
@@ -95,7 +68,7 @@
 
 	let addOpen = $state(false);
 	const addProvider = $derived(
-		providerFilter !== 'all' && providerFilter !== OTHER_KEY ? providerFilter : ''
+		providerFilter !== 'all' && providerFilter !== OTHER_PROVIDER_KEY ? providerFilter : ''
 	);
 </script>
 

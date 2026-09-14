@@ -21,3 +21,31 @@ export function endpointHost(url: string | null): string | null {
 		return url;
 	}
 }
+
+/** The provider a new key is being added to (the add-key dialog's payload). */
+export interface ProviderKeyDraft {
+	provider: string;
+	label: string;
+	requiresEndpoint: boolean;
+	authScheme: string;
+	optionalAuth: boolean;
+}
+
+/** The secret whose key is being rotated (the rotate-key dialog's payload). */
+export interface RotateKeyDraft {
+	id: string;
+	label: string;
+	provider: string;
+	authScheme: string;
+	optionalAuth: boolean;
+}
+
+/** The secret whose label / endpoint / priority is being edited. */
+export interface ProviderMetaDraft {
+	id: string;
+	provider: string;
+	label: string;
+	requiresEndpoint: boolean;
+	baseUrl: string;
+	priority: number;
+}

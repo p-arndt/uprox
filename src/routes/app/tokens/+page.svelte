@@ -27,23 +27,17 @@
 
 	const canManage = $derived(can(data.role, 'tokens:manage', data.memberPermissions));
 
-	// When the create action returns a fresh secret, reveal it once.
+	// Surface action results: a fresh secret from create is revealed once (and the
+	// create dialog closes), a re-copy reveal shows the stored secret again, and a
+	// successful update closes the edit dialog and refreshes the list.
 	$effect(() => {
 		if (form?.created) {
 			secret = form.created;
 			createOpen = false;
 		}
-	});
-
-	// A re-copy reveal returns the stored secret again.
-	$effect(() => {
 		if (form?.revealed) {
 			secret = { ...form.revealed, recopyable: true };
 		}
-	});
-
-	// Close the edit dialog once an update succeeds.
-	$effect(() => {
 		if (form?.success) {
 			editing = null;
 			invalidateAll();

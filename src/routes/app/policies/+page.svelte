@@ -19,15 +19,7 @@
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
 	import PageShell from '$lib/components/page-shell.svelte';
-
-	const fmtBudget = (daily: string | number, monthly: string | number) => {
-		const d = Number(daily);
-		const m = Number(monthly);
-		const parts: string[] = [];
-		if (d > 0) parts.push(`$${d}/day`);
-		if (m > 0) parts.push(`$${m}/mo`);
-		return parts.length ? parts.join(' · ') : 'No budget';
-	};
+	import { formatBudget } from './budget-label';
 
 	let { data, form } = $props();
 	let open = $state(false);
@@ -182,7 +174,7 @@
 							</span>
 							<span class="flex items-center gap-1.5">
 								<Wallet class="size-3.5" />
-								{fmtBudget(p.dailyBudgetUsd, p.monthlyBudgetUsd)}
+								{formatBudget(p.dailyBudgetUsd, p.monthlyBudgetUsd)}
 							</span>
 							<span class="flex items-center gap-1.5">
 								<DatabaseZap class="size-3.5" />
