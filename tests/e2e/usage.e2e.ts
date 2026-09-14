@@ -41,6 +41,7 @@ test.beforeAll(async ({ browser }) => {
 			])}
 			returning id
 		`;
+		if (!alpha || !beta) throw new Error('seeding the usage services returned no rows');
 		alphaId = alpha.id;
 
 		const now = Date.now();
