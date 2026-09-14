@@ -22,7 +22,17 @@ export type { UsageTotals };
  */
 export async function orgUsageTotals(
 	range: ResolvedRange,
-	opts: { serviceId?: string; tokenId?: string; filters?: UsageFilter[] } = {}
+	opts: {
+		serviceId?: string;
+		tokenId?: string;
+		filters?: UsageFilter[];
+		/**
+		 * Set false to skip the latency percentiles (returned as null) when the
+		 * caller doesn't show them, e.g. the previous-period comparison, which
+		 * only feeds the spend, request and token deltas.
+		 */
+		latency?: boolean;
+	} = {}
 ): Promise<UsageTotals> {
 	const embedding = sql`${auditLog.model} ilike '%embedding%'`;
 	const [[row], histogram] = await Promise.all([
@@ -43,7 +53,7 @@ export async function orgUsageTotals(
 			.where(and(...usageConds(range, opts.serviceId, opts.tokenId, opts.filters))),
 		// percentiles over the rows that actually recorded a latency (cache hits
 		// and denials don't), so the figure reflects real upstream round-trips
-		latencyHistogram(range, opts)
+		opts.latency === false ? Promise.resolve([]) : latencyHistogram(range, opts)
 	]);
 
 	return {
