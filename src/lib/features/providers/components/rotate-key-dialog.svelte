@@ -6,7 +6,7 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import EntityDialog from '$lib/components/entity-dialog.svelte';
 	import FormError from '$lib/components/form-error.svelte';
-	import type { RotateKeyDraft } from '$lib/providers';
+	import type { RotateKeyDraft } from '$lib/features/providers/providers';
 
 	let {
 		rotating,

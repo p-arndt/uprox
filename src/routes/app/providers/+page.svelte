@@ -3,16 +3,16 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { invalidateAll } from '$app/navigation';
 	import PageHeader from '$lib/components/page-header.svelte';
-	import ProviderSecretRow from '$lib/components/provider-secret-row.svelte';
-	import ProviderKeyDialog from '$lib/components/provider-key-dialog.svelte';
-	import RotateKeyDialog from '$lib/components/rotate-key-dialog.svelte';
-	import EditMetaDialog from '$lib/components/edit-meta-dialog.svelte';
+	import ProviderSecretRow from '$lib/features/providers/components/provider-secret-row.svelte';
+	import ProviderKeyDialog from '$lib/features/providers/components/provider-key-dialog.svelte';
+	import RotateKeyDialog from '$lib/features/providers/components/rotate-key-dialog.svelte';
+	import EditMetaDialog from '$lib/features/providers/components/edit-meta-dialog.svelte';
 	import type {
 		ProviderKeyDraft,
 		ProviderMetaDraft,
 		ProviderSecret,
 		RotateKeyDraft
-	} from '$lib/providers';
+	} from '$lib/features/providers/providers';
 	import { can } from '$lib/permissions';
 	import Plug from '@lucide/svelte/icons/plug';
 	import Plus from '@lucide/svelte/icons/plus';

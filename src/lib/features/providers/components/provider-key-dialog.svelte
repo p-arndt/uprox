@@ -7,7 +7,7 @@
 	import EntityDialog from '$lib/components/entity-dialog.svelte';
 	import FormError from '$lib/components/form-error.svelte';
 	import { endpointPlaceholder } from '$lib/components/form-options';
-	import type { ProviderKeyDraft } from '$lib/providers';
+	import type { ProviderKeyDraft } from '$lib/features/providers/providers';
 
 	let {
 		adding,
