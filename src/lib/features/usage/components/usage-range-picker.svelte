@@ -4,7 +4,7 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { parseDate, type DateValue } from '@internationalized/date';
 	import type { ResolvedPathname } from '$app/types';
-	import type { UsageUrlOverrides } from '$lib/usage-url';
+	import type { UsageUrlOverrides } from '$lib/features/usage/url';
 	import CalendarIcon from '@lucide/svelte/icons/calendar';
 	import Check from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';

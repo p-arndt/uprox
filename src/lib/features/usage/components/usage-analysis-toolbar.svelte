@@ -1,14 +1,14 @@
 <script lang="ts">
-	import UsageGroupByPicker from '$lib/components/usage-group-by-picker.svelte';
-	import UsageFilterPicker from '$lib/components/usage-filter-picker.svelte';
-	import UsageFilterPills from '$lib/components/usage-filter-pills.svelte';
+	import UsageGroupByPicker from '$lib/features/usage/components/usage-group-by-picker.svelte';
+	import UsageFilterPicker from '$lib/features/usage/components/usage-filter-picker.svelte';
+	import UsageFilterPills from '$lib/features/usage/components/usage-filter-pills.svelte';
 	import {
 		USAGE_DIMENSIONS,
 		FILTERABLE_DIMENSIONS,
 		type UsageDimension,
 		type UsageFilter,
 		type UsageFilterOptions
-	} from '$lib/usage-group';
+	} from '$lib/features/usage/group';
 
 	// "Group by" + "Add filter", both as fixed-width dropdowns so the command row
 	// keeps its shape no matter how many dimensions a page allows. Both live in

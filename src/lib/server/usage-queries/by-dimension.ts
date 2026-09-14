@@ -2,7 +2,11 @@
 import { sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
-import { resolveSeriesBucket, type BucketChoice, type ResolvedRange } from '$lib/usage-range';
+import {
+	resolveSeriesBucket,
+	type BucketChoice,
+	type ResolvedRange
+} from '$lib/features/usage/range';
 import {
 	NULL_VALUE,
 	OTHERS_KEY,
@@ -11,7 +15,7 @@ import {
 	type UsageFilter,
 	type UsageFilterOption,
 	type UsageFilterOptions
-} from '$lib/usage-group';
+} from '$lib/features/usage/group';
 import { BUCKET_STEP } from '$lib/server/usage-queries/buckets';
 import {
 	type SqlDimension,

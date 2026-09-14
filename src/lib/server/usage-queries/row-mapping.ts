@@ -3,7 +3,7 @@
  * back as numbers, numeric strings (`numeric`, `bigint`) or NULL; these helpers
  * normalise them in one place, which keeps the query functions about SQL.
  */
-import { cacheRate } from '$lib/cache-rate';
+import { cacheRate } from '$lib/features/usage/cache-rate';
 import type { GroupedSeries, UsageTotals } from '$lib/features/usage/types';
 import { latencyPercentiles, type LatencyBucket } from '$lib/server/usage-queries/latency';
 

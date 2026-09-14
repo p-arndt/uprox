@@ -2,7 +2,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { service, machineToken, auditLog } from '$lib/server/db/schema';
-import type { ResolvedRange } from '$lib/usage-range';
+import type { ResolvedRange } from '$lib/features/usage/range';
 import { usageConds } from '$lib/server/usage-queries/predicates';
 
 export interface ModelUsage {

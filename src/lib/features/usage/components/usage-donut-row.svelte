@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
-	import UsageDonut from '$lib/components/usage-donut.svelte';
-	import { dimensionLabel, type UsageDimension } from '$lib/usage-group';
+	import UsageDonut from '$lib/features/usage/components/usage-donut.svelte';
+	import { dimensionLabel, type UsageDimension } from '$lib/features/usage/group';
 	import type { DimensionUsageRow } from '$lib/features/usage/types';
 	import type { UsageMetric } from '$lib/features/usage/metric';
 

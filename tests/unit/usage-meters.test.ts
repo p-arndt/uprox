@@ -10,7 +10,7 @@ import {
 	METER_ORDER,
 	type MeterRates,
 	type MeterTokenSums
-} from '$lib/usage-meters';
+} from '$lib/features/usage/meters';
 
 /**
  * These are the figures an operator reconciles an invoice against, so the

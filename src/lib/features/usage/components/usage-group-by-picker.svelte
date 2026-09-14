@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { dimensionLabel, type UsageDimension } from '$lib/usage-group';
+	import { dimensionLabel, type UsageDimension } from '$lib/features/usage/group';
 	import Layers from '@lucide/svelte/icons/layers';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import Check from '@lucide/svelte/icons/check';

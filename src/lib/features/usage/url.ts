@@ -13,7 +13,7 @@ import {
 	serializeFilters,
 	type UsageDimension,
 	type UsageFilter
-} from '$lib/usage-group';
+} from '$lib/features/usage/group';
 
 /** The window params a usage page round-trips through the query string. */
 export interface UsageUrlState {

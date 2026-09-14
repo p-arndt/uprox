@@ -7,8 +7,8 @@ import {
 	type BucketChoice,
 	type ResolvedRange,
 	type SeriesBucket
-} from '$lib/usage-range';
-import { NULL_VALUE, encodeBillingLineKey, type UsageFilter } from '$lib/usage-group';
+} from '$lib/features/usage/range';
+import { NULL_VALUE, encodeBillingLineKey, type UsageFilter } from '$lib/features/usage/group';
 import {
 	METER_ORDER,
 	splitMeters,
@@ -16,7 +16,7 @@ import {
 	allocateCost,
 	emptyMeterValues,
 	type MeterValues
-} from '$lib/usage-meters';
+} from '$lib/features/usage/meters';
 import { BUCKET_STEP } from '$lib/server/usage-queries/buckets';
 import { usageCondsSql } from '$lib/server/usage-queries/predicates';
 import {

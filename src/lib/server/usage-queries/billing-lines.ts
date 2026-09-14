@@ -2,8 +2,17 @@
 import { and, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
-import { resolveSeriesBucket, type BucketChoice, type ResolvedRange } from '$lib/usage-range';
-import { NULL_VALUE, OTHERS_KEY, encodeBillingLineKey, type UsageFilter } from '$lib/usage-group';
+import {
+	resolveSeriesBucket,
+	type BucketChoice,
+	type ResolvedRange
+} from '$lib/features/usage/range';
+import {
+	NULL_VALUE,
+	OTHERS_KEY,
+	encodeBillingLineKey,
+	type UsageFilter
+} from '$lib/features/usage/group';
 import {
 	METER_ORDER,
 	splitMeters,
@@ -13,7 +22,7 @@ import {
 	effectiveRatePerMtok,
 	type MeterKey,
 	type MeterTokenSums
-} from '$lib/usage-meters';
+} from '$lib/features/usage/meters';
 import { usageConds } from '$lib/server/usage-queries/predicates';
 import type {
 	DimensionUsageRow,

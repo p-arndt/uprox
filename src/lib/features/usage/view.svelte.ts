@@ -12,8 +12,12 @@
 import { goto, replaceState } from '$app/navigation';
 import { page } from '$app/state';
 import type { ResolvedPathname } from '$app/types';
-import { buildUsageHref, type UsageUrlOverrides, type UsageUrlState } from '$lib/usage-url';
-import type { UsageDimension, UsageFilter } from '$lib/usage-group';
+import {
+	buildUsageHref,
+	type UsageUrlOverrides,
+	type UsageUrlState
+} from '$lib/features/usage/url';
+import type { UsageDimension, UsageFilter } from '$lib/features/usage/group';
 
 /** The slice of a usage page's load data the controller reads. */
 export interface UsageViewData {

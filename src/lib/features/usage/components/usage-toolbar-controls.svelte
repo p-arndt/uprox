@@ -1,12 +1,12 @@
 <script lang="ts">
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import UsageRangePicker from '$lib/components/usage-range-picker.svelte';
-	import UsageAnalysisToolbar from '$lib/components/usage-analysis-toolbar.svelte';
+	import UsageRangePicker from '$lib/features/usage/components/usage-range-picker.svelte';
+	import UsageAnalysisToolbar from '$lib/features/usage/components/usage-analysis-toolbar.svelte';
 	import type { UsageAnalysis } from '$lib/features/usage/types';
-	import type { UsageFilterOptions } from '$lib/usage-group';
+	import type { UsageFilterOptions } from '$lib/features/usage/group';
 	import type { ResolvedPathname } from '$app/types';
-	import { latest, type UsageView } from '$lib/state/usage-view.svelte';
+	import { latest, type UsageView } from '$lib/features/usage/view.svelte';
 	import Download from '@lucide/svelte/icons/download';
 	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 

@@ -6,7 +6,7 @@
 		type UsageDimension,
 		type UsageFilter,
 		type UsageFilterOptions
-	} from '$lib/usage-group';
+	} from '$lib/features/usage/group';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import X from '@lucide/svelte/icons/x';
 

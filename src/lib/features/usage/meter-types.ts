@@ -3,12 +3,12 @@
  * renders. Client-safe (types only), so components can import them without
  * reaching into `$lib/server`.
  */
-import type { MeterKey } from '$lib/usage-meters';
+import type { MeterKey } from '$lib/features/usage/meters';
 
 /**
  * One consumption meter — uprox's answer to an Azure "meter", the sub-line a
  * resource's cost decomposes into. The vocabulary and the arithmetic live in
- * `$lib/usage-meters`; the server query only supplies the sums.
+ * `$lib/features/usage/meters`; the server query only supplies the sums.
  */
 export interface TokenMeter {
 	key: MeterKey;

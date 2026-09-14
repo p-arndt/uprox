@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { DimensionUsageRow } from '$lib/features/usage/types';
-	import { colorForSeries } from '$lib/usage-colors';
-	import { isDerivedDimension, type UsageDimension } from '$lib/usage-group';
+	import { colorForSeries } from '$lib/features/usage/colors';
+	import { isDerivedDimension, type UsageDimension } from '$lib/features/usage/group';
 	import { formatUsd, formatTokens, formatCount, formatUsdRate } from '$lib/format';
 	import { createTableState } from '$lib/state/table.svelte';
 	import SortableHeader from '$lib/components/sortable-header.svelte';

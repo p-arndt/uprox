@@ -10,7 +10,7 @@
 		type UsageDimension,
 		type UsageFilter,
 		type UsageFilterOptions
-	} from '$lib/usage-group';
+	} from '$lib/features/usage/group';
 	import ListFilter from '@lucide/svelte/icons/list-filter';
 	import Check from '@lucide/svelte/icons/check';
 

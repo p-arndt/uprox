@@ -2,8 +2,8 @@
 import { and, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
-import type { BucketChoice, ResolvedRange } from '$lib/usage-range';
-import type { UsageFilter } from '$lib/usage-group';
+import type { BucketChoice, ResolvedRange } from '$lib/features/usage/range';
+import type { UsageFilter } from '$lib/features/usage/group';
 import {
 	METER_ORDER,
 	splitMeters,
@@ -14,7 +14,7 @@ import {
 	emptyMeterValues,
 	sumMeterValues,
 	type MeterTokenSums
-} from '$lib/usage-meters';
+} from '$lib/features/usage/meters';
 import { usageConds } from '$lib/server/usage-queries/predicates';
 import type { GroupedSeries, GroupedSeriesResult } from '$lib/features/usage/types';
 import { METER_SUM_SELECT, meterLabel } from '$lib/server/usage-queries/meter-sql';

@@ -3,7 +3,7 @@
  * ring draws (and the "Others" reconciliation against the scope total) are
  * testable without rendering.
  */
-import { colorForSeries, OTHERS_COLOR } from '$lib/usage-colors';
+import { colorForSeries, OTHERS_COLOR } from '$lib/features/usage/colors';
 import type { UsageMetric } from './metric';
 
 /** The fields of a dimension usage row the donut reads. */

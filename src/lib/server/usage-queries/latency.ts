@@ -15,8 +15,8 @@
 import { and, isNotNull, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
-import type { ResolvedRange } from '$lib/usage-range';
-import type { UsageFilter } from '$lib/usage-group';
+import type { ResolvedRange } from '$lib/features/usage/range';
+import type { UsageFilter } from '$lib/features/usage/group';
 import { usageConds } from '$lib/server/usage-queries/predicates';
 
 /** One histogram bucket: a latency value and how many requests measured it. */

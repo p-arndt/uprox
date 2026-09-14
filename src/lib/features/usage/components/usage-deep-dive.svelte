@@ -2,15 +2,15 @@
 	import type { Snippet } from 'svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import UsageDetailTable from '$lib/components/usage-detail-table.svelte';
-	import UsageMovers from '$lib/components/usage-movers.svelte';
-	import UsageDonutRow from '$lib/components/usage-donut-row.svelte';
-	import UsageModelEfficiency from '$lib/components/usage-model-efficiency.svelte';
-	import UsageTokenMeters from '$lib/components/usage-token-meters.svelte';
-	import UsageStreamedPanel from '$lib/components/usage-streamed-panel.svelte';
+	import UsageDetailTable from '$lib/features/usage/components/usage-detail-table.svelte';
+	import UsageMovers from '$lib/features/usage/components/usage-movers.svelte';
+	import UsageDonutRow from '$lib/features/usage/components/usage-donut-row.svelte';
+	import UsageModelEfficiency from '$lib/features/usage/components/usage-model-efficiency.svelte';
+	import UsageTokenMeters from '$lib/features/usage/components/usage-token-meters.svelte';
+	import UsageStreamedPanel from '$lib/features/usage/components/usage-streamed-panel.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
-	import { dimensionLabel, type UsageDimension } from '$lib/usage-group';
-	import { latest } from '$lib/state/usage-view.svelte';
+	import { dimensionLabel, type UsageDimension } from '$lib/features/usage/group';
+	import { latest } from '$lib/features/usage/view.svelte';
 	import type { UsageAnalysis } from '$lib/features/usage/types';
 	import type { DimensionUsageRow } from '$lib/features/usage/types';
 

@@ -17,7 +17,7 @@ import {
 	normalizeBucket,
 	shiftRangeBack,
 	type ResolvedRange
-} from '$lib/usage-range';
+} from '$lib/features/usage/range';
 import {
 	USAGE_DIMENSIONS,
 	normalizeGroupBy,
@@ -25,8 +25,8 @@ import {
 	type UsageDimension,
 	type UsageFilter,
 	type UsageFilterOptions
-} from '$lib/usage-group';
-import { MAX_SERIES } from '$lib/usage-colors';
+} from '$lib/features/usage/group';
+import { MAX_SERIES } from '$lib/features/usage/colors';
 import { readUsageWindow, writeUsageWindow } from '$lib/server/usage-window-pref';
 import { cacheWindow, usageCache, usageCacheKey } from '$lib/server/usage-cache';
 

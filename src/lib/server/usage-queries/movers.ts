@@ -1,6 +1,6 @@
 /** Period-over-period spend movers. */
-import type { ResolvedRange } from '$lib/usage-range';
-import type { UsageDimension, UsageFilter } from '$lib/usage-group';
+import type { ResolvedRange } from '$lib/features/usage/range';
+import type { UsageDimension, UsageFilter } from '$lib/features/usage/group';
 import type { DimensionUsageRow, UsageMover } from '$lib/features/usage/types';
 import { orgUsageByDimension } from '$lib/server/usage-queries/by-dimension';
 

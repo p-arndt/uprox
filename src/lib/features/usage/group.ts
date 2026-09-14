@@ -197,7 +197,7 @@ export interface BillingLineKey {
 	model: string;
 	/** 'standard' | 'long', or {@link NULL_VALUE} for traffic that never reached a rate card */
 	tier: string;
-	/** the meter key - see `usage-meters.ts` for the vocabulary */
+	/** the meter key - see `meters.ts` for the vocabulary */
 	meter: string;
 }
 

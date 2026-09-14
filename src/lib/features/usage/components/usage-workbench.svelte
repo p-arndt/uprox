@@ -1,15 +1,15 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import UsageHeadline from '$lib/components/usage-headline.svelte';
-	import UsageToolbarControls from '$lib/components/usage-toolbar-controls.svelte';
-	import UsageAnalysisCard from '$lib/components/usage-analysis-card.svelte';
-	import UsageDeepDive from '$lib/components/usage-deep-dive.svelte';
+	import UsageHeadline from '$lib/features/usage/components/usage-headline.svelte';
+	import UsageToolbarControls from '$lib/features/usage/components/usage-toolbar-controls.svelte';
+	import UsageAnalysisCard from '$lib/features/usage/components/usage-analysis-card.svelte';
+	import UsageDeepDive from '$lib/features/usage/components/usage-deep-dive.svelte';
 	import BudgetGauge from '$lib/components/budget-gauge.svelte';
-	import type { UsageDimension } from '$lib/usage-group';
+	import type { UsageDimension } from '$lib/features/usage/group';
 	import type { DimensionUsageRow, Streamed, UsageAnalysis } from '$lib/features/usage/types';
 	import type { BudgetStatus } from '$lib/budget';
-	import { latest, type UsageView } from '$lib/state/usage-view.svelte';
+	import { latest, type UsageView } from '$lib/features/usage/view.svelte';
 	import type { ResolvedPathname } from '$app/types';
 
 	// The whole cost-analysis surface, shared verbatim by the org usage page and

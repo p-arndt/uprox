@@ -2,7 +2,7 @@
  * The headline band's cells, built from window totals. Pure so the deltas and
  * notes are testable without the card.
  */
-import { cacheRate, type CacheRateInput } from '$lib/cache-rate';
+import { cacheRate, type CacheRateInput } from '$lib/features/usage/cache-rate';
 import { formatCount, formatTokens, formatUsd } from '$lib/format';
 
 export interface HeadlineTotals extends CacheRateInput {

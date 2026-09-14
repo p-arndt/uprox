@@ -4,7 +4,7 @@ import { DONUT_TAIL_KEY, donutArcs, donutSlices } from '$lib/features/usage/donu
 import { formatLatencyMs, headlineCells, pctDelta } from '$lib/features/usage/headline';
 import { cacheSavings, meterRows } from '$lib/features/usage/token-meters';
 import { priceExtreme, priceExtremes } from '$lib/features/usage/efficiency';
-import { OTHERS_COLOR } from '$lib/usage-colors';
+import { OTHERS_COLOR } from '$lib/features/usage/colors';
 
 describe('metric', () => {
 	const p = { costUsd: 1.5, requests: 3, tokens: 12_000 };

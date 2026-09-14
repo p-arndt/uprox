@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { GroupedSeries } from '$lib/features/usage/types';
-	import { colorForSeries } from '$lib/usage-colors';
+	import { colorForSeries } from '$lib/features/usage/colors';
 	import { formatMetric, metricValue, type UsageMetric } from '$lib/features/usage/metric';
 
 	// Always present whenever the chart carries two or more series: three of the

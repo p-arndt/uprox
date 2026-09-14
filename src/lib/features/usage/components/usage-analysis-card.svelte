@@ -3,10 +3,14 @@
 	import * as Popover from '$lib/components/ui/popover/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import UsageStackedChart from '$lib/components/usage-stacked-chart.svelte';
-	import UsageLegend from '$lib/components/usage-legend.svelte';
-	import { BUCKET_OPTIONS } from '$lib/usage-range';
-	import { dimensionLabel, isDerivedDimension, type UsageDimension } from '$lib/usage-group';
+	import UsageStackedChart from '$lib/features/usage/components/usage-stacked-chart.svelte';
+	import UsageLegend from '$lib/features/usage/components/usage-legend.svelte';
+	import { BUCKET_OPTIONS } from '$lib/features/usage/range';
+	import {
+		dimensionLabel,
+		isDerivedDimension,
+		type UsageDimension
+	} from '$lib/features/usage/group';
 	import type { GroupedSeriesResult } from '$lib/features/usage/types';
 	import type { UsageMetric } from '$lib/features/usage/metric';
 	import type { ChartMode } from '$lib/features/usage/chart-math';

@@ -2,8 +2,8 @@
 import { and, desc, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
-import type { ResolvedRange } from '$lib/usage-range';
-import type { UsageFilter } from '$lib/usage-group';
+import type { ResolvedRange } from '$lib/features/usage/range';
+import type { UsageFilter } from '$lib/features/usage/group';
 import { usageConds } from '$lib/server/usage-queries/predicates';
 import type { ModelEfficiency } from '$lib/features/usage/types';
 

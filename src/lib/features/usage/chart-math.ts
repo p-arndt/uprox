@@ -3,7 +3,7 @@
  * component so the numbers the chart draws can be tested without a DOM: the
  * component only maps these matrices onto elements.
  */
-import type { SeriesBucket } from '$lib/usage-range';
+import type { SeriesBucket } from '$lib/features/usage/range';
 import { formatCountCompact, formatTokens } from '$lib/format';
 import { metricValue, type MetricPoint, type UsageMetric } from './metric';
 
