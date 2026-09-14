@@ -464,6 +464,11 @@ export function streamGeminiToOpenAi(
 			} finally {
 				reader.releaseLock();
 			}
+		},
+		// the client went away: stop reading and abort the upstream Gemini stream
+		// instead of draining it to completion in the background
+		async cancel(reason) {
+			await reader.cancel(reason).catch(() => {});
 		}
 	});
 }

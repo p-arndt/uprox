@@ -129,7 +129,7 @@ function geminiNativeUsage(parsed: unknown): NormalizedUsage | null {
  * Pull a usage figure out of one decoded JSON payload (a buffered response or a
  * streamed SSE chunk), or null if it carries none.
  */
-type UsageExtractor = (obj: Record<string, unknown>) => NormalizedUsage | null;
+export type UsageExtractor = (obj: Record<string, unknown>) => NormalizedUsage | null;
 
 /**
  * The OpenAI stream extractor reads the chat shape (`{ usage }`) and the
@@ -159,64 +159,105 @@ function usageFromText(text: string, extract: UsageExtractor): NormalizedUsage |
 	}
 }
 
-interface DrainedSse {
+export interface DrainedSse {
 	usage: NormalizedUsage | null;
-	/** the verbatim SSE body, reassembled — used to cache a streamed response */
+	/**
+	 * The verbatim SSE body, reassembled — used to cache and trace a streamed
+	 * response. Empty unless `keepRaw` was set; stops growing past
+	 * {@link MAX_RAW_SSE_CHARS}, which is already beyond what the cache stores.
+	 */
 	raw: string;
-	/** false if the stream errored/aborted before completing (don't cache) */
+	/** false if the stream errored or was cancelled before completing (don't cache) */
 	complete: boolean;
 }
 
 /**
- * Drain an SSE response stream: capture the last token usage it reports (via the
- * supplied extractor) and accumulate the raw body so a streamed response can be
- * cached and replayed verbatim.
+ * Accumulating more than this is pointless: the response cache skips bodies
+ * over 1 MB and request traces are clamped far below that.
  */
-async function drainSse(
-	stream: ReadableStream<Uint8Array>,
-	extract: UsageExtractor
-): Promise<DrainedSse> {
-	const reader = stream.getReader();
+const MAX_RAW_SSE_CHARS = 1_000_000;
+
+/**
+ * Pass an SSE stream through to the client unchanged while watching it: every
+ * complete `data:` line is fed to the usage extractor (the last usage seen
+ * wins), and the raw body is kept only when asked to (for caching or tracing).
+ *
+ * Unlike `tee()`, nothing is buffered for a second consumer: bytes flow at the
+ * client's pace, and when the client goes away the cancellation is forwarded to
+ * the source, which aborts the upstream request. `done` settles once the stream
+ * finishes, errors or is cancelled, and never rejects.
+ */
+export function tapSseStream(
+	source: ReadableStream<Uint8Array>,
+	extract: UsageExtractor,
+	opts: { keepRaw: boolean }
+): { stream: ReadableStream<Uint8Array>; done: Promise<DrainedSse> } {
+	const reader = source.getReader();
 	const decoder = new TextDecoder();
 	let buffer = '';
 	let raw = '';
 	let usage: NormalizedUsage | null = null;
-	let complete = false;
 
-	const take = (line: string) => {
-		const data = line.slice(5).trim(); // strip "data:"
+	let resolveDone!: (result: DrainedSse) => void;
+	const done = new Promise<DrainedSse>((resolve) => (resolveDone = resolve));
+	let settled = false;
+	const settle = (complete: boolean) => {
+		if (settled) return;
+		settled = true;
+		resolveDone({ usage, raw, complete });
+	};
+
+	const takeLine = (line: string) => {
+		if (!line.startsWith('data:')) return;
+		const data = line.slice(5).trim();
 		if (!data || data === '[DONE]') return;
 		try {
-			const obj = JSON.parse(data) as Record<string, unknown>;
-			const norm = extract(obj);
+			const parsed: unknown = JSON.parse(data);
+			const norm = isRecord(parsed) ? extract(parsed) : null;
 			if (norm) usage = norm;
 		} catch {
 			// ignore non-JSON keepalive/comment lines
 		}
 	};
 
-	try {
-		for (;;) {
-			const { done, value } = await reader.read();
-			if (done) break;
-			const chunk = decoder.decode(value, { stream: true });
-			raw += chunk;
-			buffer += chunk;
-			let nl: number;
-			while ((nl = buffer.indexOf('\n')) !== -1) {
-				const line = buffer.slice(0, nl);
-				buffer = buffer.slice(nl + 1);
-				if (line.startsWith('data:')) take(line);
-			}
+	const feed = (text: string) => {
+		if (opts.keepRaw && raw.length <= MAX_RAW_SSE_CHARS) raw += text;
+		buffer += text;
+		let nl: number;
+		while ((nl = buffer.indexOf('\n')) !== -1) {
+			takeLine(buffer.slice(0, nl));
+			buffer = buffer.slice(nl + 1);
 		}
-		if (buffer.startsWith('data:')) take(buffer);
-		complete = true;
-	} catch {
-		// stream aborted; return whatever we saw and mark it incomplete
-	} finally {
-		reader.releaseLock();
-	}
-	return { usage, raw, complete };
+	};
+
+	const stream = new ReadableStream<Uint8Array>({
+		async pull(controller) {
+			let result: ReadableStreamReadResult<Uint8Array>;
+			try {
+				result = await reader.read();
+			} catch (err) {
+				settle(false);
+				controller.error(err);
+				return;
+			}
+			if (result.done) {
+				feed(decoder.decode());
+				takeLine(buffer);
+				buffer = '';
+				settle(true);
+				controller.close();
+				return;
+			}
+			controller.enqueue(result.value);
+			feed(decoder.decode(result.value, { stream: true }));
+		},
+		async cancel(reason) {
+			settle(false);
+			await reader.cancel(reason).catch(() => {});
+		}
+	});
+
+	return { stream, done };
 }
 
 /* ------------------------------------------------------------------------- */
@@ -697,8 +738,36 @@ async function acquireUpstream(
 /* ------------------------------------------------------------------------- */
 
 /**
- * Call the upstream. A network failure releases the reservation, is audited and
- * comes back as a 502 in the caller's envelope.
+ * Audit a failed upstream exchange (network error, reset mid-body, or the client
+ * going away) and build the 502. A client abort is recorded as 499 so it isn't
+ * mistaken for a provider outage.
+ */
+function upstreamFailure(
+	ctx: RequestContext,
+	provider: ProviderDef,
+	err: unknown
+): Promise<Response> {
+	const aborted = ctx.event.request.signal.aborted;
+	return reject(
+		ctx,
+		{
+			provider: provider.id,
+			statusCode: aborted ? 499 : 502,
+			detail: aborted
+				? 'client closed request'
+				: err instanceof Error
+					? err.message
+					: 'upstream fetch failed',
+			timed: true
+		},
+		ctx.envelope.error(502, 'Upstream provider request failed', 'upstream_unavailable')
+	);
+}
+
+/**
+ * Call the upstream, tied to the client request's abort signal so an abandoned
+ * request stops the upstream call. A failure releases the reservation, is
+ * audited and comes back as a 502 in the caller's envelope.
  */
 async function fetchUpstream(
 	ctx: RequestContext,
@@ -708,20 +777,31 @@ async function fetchUpstream(
 	init: RequestInit
 ): Promise<{ ok: true; upstream: Response } | { ok: false; response: Response }> {
 	try {
-		return { ok: true, upstream: await fetch(url, init) };
+		return {
+			ok: true,
+			upstream: await fetch(url, { ...init, signal: ctx.event.request.signal })
+		};
 	} catch (err) {
 		grant.release();
-		const response = await reject(
-			ctx,
-			{
-				provider: provider.id,
-				statusCode: 502,
-				detail: err instanceof Error ? err.message : 'upstream fetch failed',
-				timed: true
-			},
-			ctx.envelope.error(502, 'Upstream provider request failed', 'upstream_unavailable')
-		);
-		return { ok: false, response };
+		return { ok: false, response: await upstreamFailure(ctx, provider, err) };
+	}
+}
+
+/**
+ * Read a buffered upstream body. A body that fails mid-read releases the
+ * reservation, is audited and becomes a 502 instead of an unhandled error.
+ */
+async function readUpstreamText(
+	ctx: RequestContext,
+	provider: ProviderDef,
+	grant: UpstreamGrant,
+	upstream: Response
+): Promise<string | Response> {
+	try {
+		return await upstream.text();
+	} catch (err) {
+		grant.release();
+		return upstreamFailure(ctx, provider, err);
 	}
 }
 
@@ -824,27 +904,32 @@ interface StreamRecording {
 }
 
 /**
- * Hand a streamed response to the client while its usage is recorded in the
- * background once the stream finishes.
+ * Hand a streamed response to the client while its usage is captured in-line
+ * and recorded once the stream finishes (or the client disconnects). The raw
+ * body is only kept when something will use it: the response cache or the
+ * request trace.
  */
 function streamWithRecording(ctx: RequestContext, s: StreamRecording): Response {
-	const [clientBranch, costBranch] = s.source.tee();
-	void (async () => {
-		const { usage, raw, complete } = await drainSse(costBranch, s.extract);
-		await recordCompletion(ctx, {
-			provider: s.provider,
-			statusCode: s.upstream.status,
-			ok: true,
-			usage,
-			response: raw,
-			format: 'sse',
-			detail: s.detail,
-			cache: s.cache,
-			complete,
-			release: s.release
-		});
-	})();
-	return new Response(clientBranch, {
+	const tap = tapSseStream(s.source, s.extract, {
+		keepRaw: s.cache !== null || ctx.token.effective.tracingEnabled
+	});
+	void tap.done
+		.then(({ usage, raw, complete }) =>
+			recordCompletion(ctx, {
+				provider: s.provider,
+				statusCode: s.upstream.status,
+				ok: true,
+				usage,
+				response: raw,
+				format: 'sse',
+				detail: s.detail,
+				cache: s.cache,
+				complete,
+				release: s.release
+			})
+		)
+		.catch((err) => console.error('[gateway] failed to record streamed request', err));
+	return new Response(tap.stream, {
 		status: s.upstream.status,
 		headers: {
 			'content-type': s.upstream.headers.get('content-type') ?? 'text/event-stream',
@@ -993,7 +1078,8 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	// Buffered: translate (for adapter providers) then parse usage for cost. After
 	// translation the body is OpenAI-shaped, so usage parsing, caching and the
 	// returned payload all use the same code path as pass-through.
-	const rawText = await upstream.text();
+	const rawText = await readUpstreamText(ctx, provider, grant, upstream);
+	if (rawText instanceof Response) return rawText;
 	const text = adapter
 		? adapter.translateResponse({ scope, model, text: rawText, ok: upstream.ok })
 		: rawText;
@@ -1082,7 +1168,8 @@ export async function proxyMultipartToProvider(
 	// Buffer the response and parse usage best-effort. Transcriptions may return
 	// JSON (`response_format=json|verbose_json`) or plain text (`text|srt|vtt`);
 	// the latter simply yields no usage and a null cost.
-	const text = await upstream.text();
+	const text = await readUpstreamText(ctx, provider, grant, upstream);
+	if (text instanceof Response) return text;
 	await recordCompletion(ctx, {
 		provider,
 		statusCode: upstream.status,
@@ -1208,7 +1295,8 @@ export async function proxyGeminiNative(
 	}
 
 	// buffered passthrough: read native usageMetadata for cost, return body as-is.
-	const text = await upstream.text();
+	const text = await readUpstreamText(ctx, provider, grant, upstream);
+	if (text instanceof Response) return text;
 	await recordCompletion(ctx, {
 		provider,
 		statusCode: upstream.status,
@@ -1284,7 +1372,10 @@ export async function proxyGeminiModels(
 
 	let upstream: Response;
 	try {
-		upstream = await fetch(url, { headers: authHeaders(provider, creds.apiKey) });
+		upstream = await fetch(url, {
+			headers: authHeaders(provider, creds.apiKey),
+			signal: event.request.signal
+		});
 	} catch (err) {
 		await audit({
 			action: 'gateway.models',
@@ -1484,6 +1575,7 @@ export async function proxyRawUpstream(
 		upstream = await fetch(upstreamUrl, {
 			method,
 			headers: fwdHeaders,
+			signal: event.request.signal,
 			body: hasBody ? event.request.body : undefined,
 			// Required by undici when streaming a request body.
 			...(hasBody ? { duplex: 'half' } : {})
