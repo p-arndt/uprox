@@ -325,3 +325,202 @@ describe('prettyJson', () => {
 		expect(prettyJson(null)).toBe('');
 	});
 });
+
+describe('characterization — streamed (SSE) reply parsing', () => {
+	const sse = (...events: unknown[]) =>
+		events.map((e) => (typeof e === 'string' ? e : `data: ${JSON.stringify(e)}`)).join('\n');
+
+	it('skips non-data lines, empty data, [DONE], invalid JSON and non-object JSON', () => {
+		const raw = sse(
+			'event: message',
+			'data:',
+			'data: [DONE]',
+			'data: {broken',
+			'data: [1,2]',
+			'   data: {"choices":[{"delta":{"content":"ok"}}]}   '
+		);
+		expect(responseMessage(raw, 'sse')).toEqual({
+			role: 'assistant',
+			text: 'ok',
+			toolCalls: undefined
+		});
+	});
+
+	it('ignores non-record choices, missing deltas and non-record tool-call entries', () => {
+		const raw = sse(
+			{ choices: [null, { message: { content: 'nope' } }, { delta: { content: 1 } }] },
+			{ choices: [{ delta: { tool_calls: [null, 'x'] } }] },
+			{
+				choices: [{ delta: { content: 'a' } }],
+				candidates: [{ content: { parts: [{ text: 'g' }] } }]
+			}
+		);
+		expect(responseMessage(raw, 'sse')).toEqual({
+			role: 'assistant',
+			text: 'a',
+			toolCalls: undefined
+		});
+	});
+
+	it('keys index-less chat tool calls by the current map size and drops empty calls', () => {
+		const raw = sse(
+			{ choices: [{ delta: { tool_calls: [{ index: 1, function: { name: 'one' } }] } }] },
+			// no index: key = c<size> = c1, which merges into the call above
+			{ choices: [{ delta: { tool_calls: [{ function: { arguments: '{"a"' } }] } }] },
+			{ choices: [{ delta: { tool_calls: [{ index: 1, function: { arguments: ':1}' } }] } }] },
+			// no function: the call exists but stays empty and is filtered out
+			{ choices: [{ delta: { tool_calls: [{ index: 5 }] } }] },
+			// non-string name/arguments are ignored
+			{ choices: [{ delta: { tool_calls: [{ index: 6, function: { name: 3, arguments: 4 } }] } }] },
+			{ choices: [{ delta: { tool_calls: [{ index: 7, function: { arguments: '{}' } }] } }] }
+		);
+		expect(responseMessage(raw, 'sse').toolCalls).toEqual([
+			{ name: 'one', args: '{"a":1}' },
+			{ name: '', args: '{}' }
+		]);
+	});
+
+	it('accumulates Responses API function_call items and argument deltas', () => {
+		const raw = sse(
+			{ type: 'response.output_item.added', item: { type: 'function_call', id: 'fc1', name: 'f' } },
+			{ type: 'response.output_item.added', item: { type: 'message', id: 'm1' } },
+			{ type: 'response.function_call_arguments.delta', item_id: 'fc1', delta: '{"x"' },
+			{ type: 'response.function_call_arguments.delta', item_id: 'fc1', delta: ':2}' },
+			// no id: keyed by map size (1)
+			{ type: 'response.output_item.added', item: { type: 'function_call', name: 'g' } },
+			// no item_id: keyed '0'
+			{ type: 'response.function_call_arguments.delta', delta: 'zero' },
+			{ type: 'response.function_call_arguments.delta', item_id: 'fc1', delta: 5 },
+			{ type: 'response.output_text.delta', delta: 'hi' },
+			{ type: 'response.output_text.delta', delta: 7 }
+		);
+		expect(responseMessage(raw, 'sse')).toEqual({
+			role: 'assistant',
+			text: 'hi',
+			toolCalls: [
+				{ name: 'f', args: '{"x":2}' },
+				{ name: 'g', args: '' },
+				{ name: '', args: 'zero' }
+			]
+		});
+	});
+
+	it('falls through unknown typed events to Gemini candidates', () => {
+		const raw = sse(
+			{ type: 'something.else', candidates: [{ content: { parts: [{ text: 'typed' }] } }] },
+			{ candidates: [null, { content: 'x' }, { content: { parts: [{ text: 'b' }] } }] }
+		);
+		expect(reconstructSse(raw)).toBe('typedb');
+	});
+
+	it('collects streamed Gemini functionCall parts in emission order', () => {
+		const raw = sse(
+			{ choices: [{ delta: { tool_calls: [{ index: 0, function: { name: 'chat' } }] } }] },
+			{
+				candidates: [
+					{
+						content: {
+							parts: [
+								{ text: 't' },
+								{ functionCall: { name: 'a', args: { k: 1 } } },
+								{ functionCall: {} }
+							]
+						}
+					}
+				]
+			}
+		);
+		expect(responseMessage(raw, 'sse')).toEqual({
+			role: 'assistant',
+			text: 't',
+			toolCalls: [
+				{ name: 'chat', args: '' },
+				{ name: 'a', args: '{"k":1}' },
+				{ name: 'function', args: '' }
+			]
+		});
+	});
+});
+
+describe('characterization — buffered reply parsing', () => {
+	const msg = (body: unknown) => responseMessage(JSON.stringify(body), 'json');
+
+	it('returns an empty message for non-object and unrecognized bodies', () => {
+		expect(msg([1])).toEqual({ role: 'assistant', text: '', toolCalls: undefined });
+		expect(msg('str')).toEqual({ role: 'assistant', text: '', toolCalls: undefined });
+		expect(msg({ foo: 1 })).toEqual({ role: 'assistant', text: '', toolCalls: undefined });
+		expect(responseMessage('', 'json')).toEqual({ role: 'assistant', text: '' });
+	});
+
+	it('joins multiple chat choices with newlines, skipping empty text and bad choices', () => {
+		expect(
+			msg({
+				choices: [
+					{ message: { content: 'a' } },
+					null,
+					{ delta: { content: 'x' } },
+					{ message: { content: '' } },
+					{
+						message: {
+							content: [{ type: 'text', text: 'b' }],
+							tool_calls: [{ function: { name: 'f' } }, { nope: 1 }]
+						}
+					}
+				]
+			})
+		).toEqual({ role: 'assistant', text: 'a\nb', toolCalls: [{ name: 'f', args: '' }] });
+	});
+
+	it('walks Responses API output items when output_text is absent', () => {
+		expect(
+			msg({
+				output: [
+					null,
+					{ type: 'message', content: [{ type: 'output_text', text: 'one' }] },
+					{ type: 'function_call', name: 7, arguments: 8 },
+					{ type: 'message', content: [{ type: 'output_text', text: 'two' }] }
+				]
+			})
+		).toEqual({
+			role: 'assistant',
+			text: 'one\ntwo',
+			toolCalls: [{ name: 'function', args: '' }]
+		});
+	});
+
+	it('prefers output_text over output item content but still collects function calls', () => {
+		expect(
+			msg({
+				output_text: 'summary',
+				output: [
+					{ type: 'message', content: 'ignored' },
+					{ type: 'function_call', name: 'f', arguments: '{}' }
+				]
+			})
+		).toEqual({ role: 'assistant', text: 'summary', toolCalls: [{ name: 'f', args: '{}' }] });
+	});
+
+	it('walks output items when output_text is an empty string', () => {
+		expect(msg({ output_text: '', output: [{ type: 'message', content: 'c' }] }).text).toBe('c');
+	});
+
+	it('uses output_text alone when output is not an array', () => {
+		expect(msg({ output_text: 'only', output: 'nope' })).toEqual({
+			role: 'assistant',
+			text: 'only',
+			toolCalls: undefined
+		});
+	});
+
+	it('joins multiple Gemini candidates and collects their function calls', () => {
+		expect(
+			msg({
+				candidates: [
+					{ content: { parts: [{ text: 'x' }] } },
+					{ finishReason: 'STOP' },
+					{ content: { parts: [{ text: 'y' }, { functionCall: { name: 'f', args: [] } }] } }
+				]
+			})
+		).toEqual({ role: 'assistant', text: 'x\ny', toolCalls: [{ name: 'f', args: '[]' }] });
+	});
+});

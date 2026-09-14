@@ -1,6 +1,6 @@
 /** Declarative endpoint descriptors and the route handler factories built from them. */
 import type { RequestHandler } from '@sveltejs/kit';
-import type { Capability } from '$lib/server/providers';
+import type { GatewayScope } from '$lib/scopes';
 import { isRecord } from '$lib/server/json';
 import { gatewayError } from './envelope';
 import { authenticateGateway } from './authenticate';
@@ -20,7 +20,7 @@ export type ModelSource = 'body' | 'deployment' | ((body: unknown) => string);
 /** Declarative description of one model-routed gateway endpoint. */
 export interface EndpointDescriptor {
 	/** the gateway capability (and policy scope) the endpoint exercises */
-	scope: Capability;
+	scope: GatewayScope;
 	/** upstream path appended to the provider base url */
 	path: string;
 	/** how the request body is read and forwarded */

@@ -174,6 +174,105 @@ export function requestMessages(requestBody: string | null | undefined): TraceMe
 	return [];
 }
 
+/** The assistant's reply reassembled from a response payload. */
+interface ReplyParts {
+	text: string;
+	toolCalls: ToolCall[];
+}
+
+/** Mutable accumulator for an SSE reply. */
+interface SseReply {
+	text: string;
+	/** insertion-ordered so tool calls render in the order the model emitted them */
+	calls: Map<string, ToolCall>;
+}
+
+/** Get the tool call stored under `key`, creating an empty one on first sight. */
+function ensureCall(calls: Map<string, ToolCall>, key: string): ToolCall {
+	let c = calls.get(key);
+	if (!c) {
+		c = { name: '', args: '' };
+		calls.set(key, c);
+	}
+	return c;
+}
+
+/** The JSON object carried by an SSE `data:` line, or null for anything else. */
+function sseEvent(line: string): Record<string, unknown> | null {
+	const trimmed = line.trim();
+	if (!trimmed.startsWith('data:')) return null;
+	const data = trimmed.slice(5).trim();
+	if (!data || data === '[DONE]') return null;
+	const obj = safeParse(data);
+	return isRecord(obj) ? obj : null;
+}
+
+/** Merge one streamed OpenAI chat tool-call fragment (accumulated by index). */
+function applyChatToolCallDelta(acc: SseReply, tc: unknown): void {
+	if (!isRecord(tc)) return;
+	const c = ensureCall(acc.calls, `c${typeof tc.index === 'number' ? tc.index : acc.calls.size}`);
+	if (!isRecord(tc.function)) return;
+	if (typeof tc.function.name === 'string') c.name = tc.function.name;
+	if (typeof tc.function.arguments === 'string') c.args += tc.function.arguments;
+}
+
+/** OpenAI chat completions chunk: `choices[].delta.{content,tool_calls}`. */
+function applyChatChunk(acc: SseReply, choices: unknown[]): void {
+	for (const ch of choices) {
+		if (!isRecord(ch) || !isRecord(ch.delta)) continue;
+		const delta = ch.delta;
+		if (typeof delta.content === 'string') acc.text += delta.content;
+		if (!Array.isArray(delta.tool_calls)) continue;
+		for (const tc of delta.tool_calls) applyChatToolCallDelta(acc, tc);
+	}
+}
+
+/**
+ * OpenAI Responses API streaming event: `output_text.delta` text plus
+ * `function_call` item/argument-delta events. Returns false when the event is
+ * none of those, so the caller can try the next format.
+ */
+function applyResponsesEvent(acc: SseReply, obj: Record<string, unknown>): boolean {
+	if (obj.type === 'response.output_text.delta' && typeof obj.delta === 'string') {
+		acc.text += obj.delta;
+		return true;
+	}
+	if (
+		obj.type === 'response.output_item.added' &&
+		isRecord(obj.item) &&
+		obj.item.type === 'function_call'
+	) {
+		const id = typeof obj.item.id === 'string' ? obj.item.id : String(acc.calls.size);
+		const c = ensureCall(acc.calls, `r${id}`);
+		if (typeof obj.item.name === 'string') c.name = obj.item.name;
+		return true;
+	}
+	if (obj.type === 'response.function_call_arguments.delta' && typeof obj.delta === 'string') {
+		const id = typeof obj.item_id === 'string' ? obj.item_id : '0';
+		ensureCall(acc.calls, `r${id}`).args += obj.delta;
+		return true;
+	}
+	return false;
+}
+
+/** Native Gemini chunk: `candidates[].content.parts[].{text,functionCall}`. */
+function applyGeminiChunk(acc: SseReply, candidates: unknown[]): void {
+	for (const cand of candidates) {
+		if (!isRecord(cand) || !isRecord(cand.content)) continue;
+		acc.text += flattenContent(cand.content.parts);
+		for (const tc of geminiToolCalls(cand.content.parts) ?? []) {
+			acc.calls.set(`g${acc.calls.size}`, { ...tc });
+		}
+	}
+}
+
+/** Fold one SSE event into the reply, trying chat, Responses API, then Gemini. */
+function applySseEvent(acc: SseReply, obj: Record<string, unknown>): void {
+	if (Array.isArray(obj.choices)) return applyChatChunk(acc, obj.choices);
+	if (applyResponsesEvent(acc, obj)) return;
+	if (Array.isArray(obj.candidates)) applyGeminiChunk(acc, obj.candidates);
+}
+
 /**
  * Reassemble an SSE wire body into the assistant's reply: concatenated text plus
  * any tool calls. Spans OpenAI chat (`choices[].delta.{content,tool_calls}` —
@@ -181,83 +280,13 @@ export function requestMessages(requestBody: string | null | undefined): TraceMe
  * API (`output_text.delta` text + `function_call` item/argument-delta events),
  * and native Gemini (`candidates[].content.parts[].{text,functionCall}`).
  */
-function sseMessage(raw: string): { text: string; toolCalls: ToolCall[] } {
-	let text = '';
-	// insertion-ordered so tool calls render in the order the model emitted them
-	const calls = new Map<string, ToolCall>();
-	const ensure = (key: string) => {
-		let c = calls.get(key);
-		if (!c) {
-			c = { name: '', args: '' };
-			calls.set(key, c);
-		}
-		return c;
-	};
-
+function sseMessage(raw: string): ReplyParts {
+	const acc: SseReply = { text: '', calls: new Map() };
 	for (const line of raw.split('\n')) {
-		const trimmed = line.trim();
-		if (!trimmed.startsWith('data:')) continue;
-		const data = trimmed.slice(5).trim();
-		if (!data || data === '[DONE]') continue;
-		const obj = safeParse(data);
-		if (!isRecord(obj)) continue;
-
-		// OpenAI chat completions
-		if (Array.isArray(obj.choices)) {
-			for (const ch of obj.choices) {
-				if (!isRecord(ch) || !isRecord(ch.delta)) continue;
-				const delta = ch.delta;
-				if (typeof delta.content === 'string') text += delta.content;
-				if (Array.isArray(delta.tool_calls)) {
-					for (const tc of delta.tool_calls) {
-						if (!isRecord(tc)) continue;
-						const key = `c${typeof tc.index === 'number' ? tc.index : calls.size}`;
-						const c = ensure(key);
-						if (isRecord(tc.function)) {
-							if (typeof tc.function.name === 'string') c.name = tc.function.name;
-							if (typeof tc.function.arguments === 'string') c.args += tc.function.arguments;
-						}
-					}
-				}
-			}
-			continue;
-		}
-
-		// OpenAI Responses API streaming events
-		if (typeof obj.type === 'string') {
-			if (obj.type === 'response.output_text.delta' && typeof obj.delta === 'string') {
-				text += obj.delta;
-				continue;
-			}
-			if (
-				obj.type === 'response.output_item.added' &&
-				isRecord(obj.item) &&
-				obj.item.type === 'function_call'
-			) {
-				const id = typeof obj.item.id === 'string' ? obj.item.id : String(calls.size);
-				const c = ensure(`r${id}`);
-				if (typeof obj.item.name === 'string') c.name = obj.item.name;
-				continue;
-			}
-			if (obj.type === 'response.function_call_arguments.delta' && typeof obj.delta === 'string') {
-				const id = typeof obj.item_id === 'string' ? obj.item_id : '0';
-				ensure(`r${id}`).args += obj.delta;
-				continue;
-			}
-		}
-
-		// Native Gemini
-		if (Array.isArray(obj.candidates)) {
-			for (const cand of obj.candidates) {
-				if (!isRecord(cand) || !isRecord(cand.content)) continue;
-				text += flattenContent(cand.content.parts);
-				const tcs = geminiToolCalls(cand.content.parts);
-				if (tcs) for (const tc of tcs) calls.set(`g${calls.size}`, { ...tc });
-			}
-		}
+		const obj = sseEvent(line);
+		if (obj) applySseEvent(acc, obj);
 	}
-
-	return { text, toolCalls: [...calls.values()].filter((c) => c.name || c.args) };
+	return { text: acc.text, toolCalls: [...acc.calls.values()].filter((c) => c.name || c.args) };
 }
 
 /** Backwards-compatible text-only reassembly of an SSE body. */
@@ -265,57 +294,63 @@ export function reconstructSse(raw: string): string {
 	return sseMessage(raw).text;
 }
 
+/** Join two text blocks with a newline, skipping an empty addition. */
+function appendLine(acc: string, next: string): string {
+	if (!next) return acc;
+	return acc ? `${acc}\n${next}` : next;
+}
+
+/** Buffered OpenAI chat completion: `choices[].message`. */
+function bufferedChat(choices: unknown[]): ReplyParts {
+	let text = '';
+	const toolCalls: ToolCall[] = [];
+	for (const ch of choices) {
+		if (!isRecord(ch) || !isRecord(ch.message)) continue;
+		text = appendLine(text, flattenContent(ch.message.content));
+		toolCalls.push(...(toolCallsFrom(ch.message) ?? []));
+	}
+	return { text, toolCalls };
+}
+
+/** Buffered Responses API body: `output_text` convenience, else walk `output` items. */
+function bufferedResponses(body: Record<string, unknown>): ReplyParts {
+	let text = typeof body.output_text === 'string' ? body.output_text : '';
+	const toolCalls: ToolCall[] = [];
+	const output = Array.isArray(body.output) ? body.output : [];
+	for (const item of output) {
+		if (!isRecord(item)) continue;
+		if (item.type === 'function_call') {
+			toolCalls.push({
+				name: typeof item.name === 'string' ? item.name : 'function',
+				args: typeof item.arguments === 'string' ? item.arguments : ''
+			});
+		} else if (!body.output_text) {
+			text = appendLine(text, flattenContent(item.content));
+		}
+	}
+	return { text, toolCalls };
+}
+
+/** Buffered native Gemini response: `candidates[].content.parts`. */
+function bufferedGemini(candidates: unknown[]): ReplyParts {
+	let text = '';
+	const toolCalls: ToolCall[] = [];
+	for (const cand of candidates) {
+		if (!isRecord(cand) || !isRecord(cand.content)) continue;
+		text = appendLine(text, flattenContent(cand.content.parts));
+		toolCalls.push(...(geminiToolCalls(cand.content.parts) ?? []));
+	}
+	return { text, toolCalls };
+}
+
 /** Extract the assistant's reply (text + tool calls) from a buffered JSON body. */
-function bufferedMessage(body: unknown): { text: string; toolCalls: ToolCall[] } {
-	const append = (acc: string, next: string) => (next ? (acc ? `${acc}\n${next}` : next) : acc);
+function bufferedMessage(body: unknown): ReplyParts {
 	if (!isRecord(body)) return { text: '', toolCalls: [] };
-
-	// OpenAI chat completions
-	if (Array.isArray(body.choices)) {
-		let text = '';
-		const calls: ToolCall[] = [];
-		for (const ch of body.choices) {
-			if (!isRecord(ch) || !isRecord(ch.message)) continue;
-			text = append(text, flattenContent(ch.message.content));
-			const tc = toolCallsFrom(ch.message);
-			if (tc) calls.push(...tc);
-		}
-		return { text, toolCalls: calls };
-	}
-
-	// OpenAI Responses API: `output_text` convenience, else walk `output` items
+	if (Array.isArray(body.choices)) return bufferedChat(body.choices);
 	if (typeof body.output_text === 'string' || Array.isArray(body.output)) {
-		let text = typeof body.output_text === 'string' ? body.output_text : '';
-		const calls: ToolCall[] = [];
-		if (Array.isArray(body.output)) {
-			for (const item of body.output) {
-				if (!isRecord(item)) continue;
-				if (item.type === 'function_call') {
-					calls.push({
-						name: typeof item.name === 'string' ? item.name : 'function',
-						args: typeof item.arguments === 'string' ? item.arguments : ''
-					});
-				} else if (!body.output_text) {
-					text = append(text, flattenContent(item.content));
-				}
-			}
-		}
-		return { text, toolCalls: calls };
+		return bufferedResponses(body);
 	}
-
-	// Native Gemini
-	if (Array.isArray(body.candidates)) {
-		let text = '';
-		const calls: ToolCall[] = [];
-		for (const cand of body.candidates) {
-			if (!isRecord(cand) || !isRecord(cand.content)) continue;
-			text = append(text, flattenContent(cand.content.parts));
-			const tc = geminiToolCalls(cand.content.parts);
-			if (tc) calls.push(...tc);
-		}
-		return { text, toolCalls: calls };
-	}
-
+	if (Array.isArray(body.candidates)) return bufferedGemini(body.candidates);
 	return { text: '', toolCalls: [] };
 }
 

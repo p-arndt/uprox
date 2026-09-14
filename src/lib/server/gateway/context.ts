@@ -1,7 +1,7 @@
 /** Per-request context, the audit+trace writer and audited rejections. */
 import type { RequestEvent } from '@sveltejs/kit';
 import type { ResolvedToken } from '$lib/server/tokens';
-import type { Capability } from '$lib/server/providers';
+import type { GatewayScope } from '$lib/scopes';
 import { audit, type AuditEntry } from '$lib/server/audit';
 import { recordTrace } from '$lib/server/trace';
 import type { ErrorEnvelope } from './envelope';
@@ -58,7 +58,7 @@ export interface RequestContext {
 	token: ResolvedToken;
 	ip: string;
 	started: number;
-	scope: Capability;
+	scope: GatewayScope;
 	model: string;
 	envelope: ErrorEnvelope;
 	auditTrace: AuditTrace;
@@ -67,7 +67,7 @@ export interface RequestContext {
 export function createContext(
 	event: RequestEvent,
 	auth: GatewayAuth,
-	init: { scope: Capability; model: string; envelope: ErrorEnvelope; traceRequest: unknown }
+	init: { scope: GatewayScope; model: string; envelope: ErrorEnvelope; traceRequest: unknown }
 ): RequestContext {
 	const { token, ip } = auth;
 	return {

@@ -1,13 +1,86 @@
 /** Non-billable pass-through: native Gemini model discovery and the Files API. */
 import { json, type RequestEvent } from '@sveltejs/kit';
+import type { ResolvedToken } from '$lib/server/tokens';
 import { evaluatePolicy } from '$lib/server/policy';
 import { authHeaders, PROVIDERS, resolveBaseUrl } from '$lib/server/providers';
-import { audit } from '$lib/server/audit';
+import { audit, type AuditEntry } from '$lib/server/audit';
 import { isRecord } from '$lib/server/json';
 import { gatewayError, geminiNativeError } from './envelope';
 import type { GatewayAuth } from './authenticate';
 import { loadProviderCreds } from './credentials';
-import { SAFE_MODEL_NAME } from './pipeline';
+import { queryWithoutKey, SAFE_MODEL_NAME } from './pipeline';
+
+function modelNotFound(model: string): Response {
+	return geminiNativeError(404, `Model "${model}" is not available`, 'NOT_FOUND');
+}
+
+/** Whether the token's policy lets it see `model` ('' = the provider as a whole). */
+function geminiModelAllowed(token: ResolvedToken, model: string): boolean {
+	return evaluatePolicy(token, { provider: PROVIDERS.gemini.id, model, scope: 'models' }).allow;
+}
+
+/** Policy and model-name gate: the response that ends the request, or null to continue. */
+function gateGeminiModels(token: ResolvedToken, model: string | null): Response | null {
+	// A specific model the policy forbids reads as "not found"; for the list we
+	// gate at the provider level and return an empty catalog when gemini is fully
+	// disallowed (no upstream call), matching the OpenAI models route.
+	if (!geminiModelAllowed(token, model ?? '')) {
+		return model ? modelNotFound(model) : json({ models: [] });
+	}
+	// defense-in-depth: `model` is interpolated raw into the upstream URL, so
+	// reject anything outside a safe model-name charset (only for the get call —
+	// `model` is null for the list call).
+	if (model && !SAFE_MODEL_NAME.test(model)) return modelNotFound(model);
+	return null;
+}
+
+/** Credentials and endpoint → the upstream request, or the FAILED_PRECONDITION response. */
+async function geminiModelsRequest(
+	event: RequestEvent,
+	token: ResolvedToken,
+	model: string | null
+): Promise<{ url: string; apiKey: string } | Response> {
+	const provider = PROVIDERS.gemini;
+	const creds = await loadProviderCreds(provider.id, token.providerSecretId);
+	if (!creds) {
+		return geminiNativeError(
+			502,
+			'No Google Gemini credentials configured for this instance',
+			'FAILED_PRECONDITION'
+		);
+	}
+	const baseUrl = resolveBaseUrl(provider, creds.baseUrl);
+	if (!baseUrl) {
+		return geminiNativeError(502, 'No Google Gemini endpoint configured', 'FAILED_PRECONDITION');
+	}
+	// forward pagination/query verbatim, minus the auth `key` param
+	const url = `${baseUrl}/models${model ? `/${model}` : ''}${queryWithoutKey(event.url)}`;
+	return { url, apiKey: creds.apiKey };
+}
+
+/**
+ * models.list → filter the native array by the token's per-model policy,
+ * preserving the native shape (and nextPageToken for pagination).
+ */
+function filterGeminiModelList(
+	token: ResolvedToken,
+	text: string
+): { models: unknown[]; nextPageToken?: string } {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(text);
+	} catch {
+		parsed = null;
+	}
+	const all = isRecord(parsed) && Array.isArray(parsed.models) ? parsed.models : [];
+	const models = all.filter((m) => {
+		const name = isRecord(m) && typeof m.name === 'string' ? m.name.replace(/^models\//, '') : '';
+		return Boolean(name) && geminiModelAllowed(token, name);
+	});
+	return isRecord(parsed) && typeof parsed.nextPageToken === 'string'
+		? { models, nextPageToken: parsed.nextPageToken }
+		: { models };
+}
 
 /**
  * Native model discovery for the Google GenAI SDK: `GET /v1beta/models` (list,
@@ -22,60 +95,33 @@ export async function proxyGeminiModels(
 	model: string | null
 ): Promise<Response> {
 	const { token, ip } = auth;
-	const provider = PROVIDERS.gemini;
+	const gate = gateGeminiModels(token, model);
+	if (gate) return gate;
 
-	// A specific model the policy forbids reads as "not found"; for the list we
-	// gate at the provider level and return an empty catalog when gemini is fully
-	// disallowed (no upstream call), matching the OpenAI models route.
-	if (
-		!evaluatePolicy(token, { provider: provider.id, model: model ?? '', scope: 'models' }).allow
-	) {
-		if (model) return geminiNativeError(404, `Model "${model}" is not available`, 'NOT_FOUND');
-		return json({ models: [] });
-	}
+	const request = await geminiModelsRequest(event, token, model);
+	if (request instanceof Response) return request;
 
-	// defense-in-depth: `model` is interpolated raw into the upstream URL below, so
-	// reject anything outside a safe model-name charset (only for the get call —
-	// `model` is null for the list call).
-	if (model && !SAFE_MODEL_NAME.test(model)) {
-		return geminiNativeError(404, `Model "${model}" is not available`, 'NOT_FOUND');
-	}
-
-	const creds = await loadProviderCreds(provider.id, token.providerSecretId);
-	if (!creds) {
-		return geminiNativeError(
-			502,
-			'No Google Gemini credentials configured for this instance',
-			'FAILED_PRECONDITION'
-		);
-	}
-	const baseUrl = resolveBaseUrl(provider, creds.baseUrl);
-	if (!baseUrl) {
-		return geminiNativeError(502, 'No Google Gemini endpoint configured', 'FAILED_PRECONDITION');
-	}
-
-	// forward pagination/query verbatim, minus the auth `key` param
-	const search = new URLSearchParams(event.url.search);
-	search.delete('key');
-	const qs = search.toString();
-	const url = `${baseUrl}/models${model ? `/${model}` : ''}${qs ? `?${qs}` : ''}`;
+	const auditModels = (entry: Pick<AuditEntry, 'status' | 'model' | 'statusCode' | 'detail'>) =>
+		audit({
+			action: 'gateway.models',
+			serviceId: token.serviceId,
+			tokenId: token.tokenId,
+			provider: PROVIDERS.gemini.id,
+			ip,
+			...entry
+		});
 
 	let upstream: Response;
 	try {
-		upstream = await fetch(url, {
-			headers: authHeaders(provider, creds.apiKey),
+		upstream = await fetch(request.url, {
+			headers: authHeaders(PROVIDERS.gemini, request.apiKey),
 			signal: event.request.signal
 		});
 	} catch (err) {
-		await audit({
-			action: 'gateway.models',
+		await auditModels({
 			status: 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
 			model: model ?? undefined,
 			statusCode: 502,
-			ip,
 			detail: err instanceof Error ? err.message : 'upstream fetch failed'
 		});
 		return geminiNativeError(502, 'Upstream provider request failed', 'UNAVAILABLE');
@@ -83,15 +129,10 @@ export async function proxyGeminiModels(
 
 	const text = await upstream.text();
 	if (!upstream.ok) {
-		await audit({
-			action: 'gateway.models',
+		await auditModels({
 			status: 'error',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
 			model: model ?? undefined,
 			statusCode: upstream.status,
-			ip,
 			detail: model ? `get ${model}` : 'list'
 		});
 		return new Response(text, {
@@ -102,55 +143,13 @@ export async function proxyGeminiModels(
 
 	// models.get → return the single (already policy-checked) model object as-is
 	if (model) {
-		await audit({
-			action: 'gateway.models',
-			status: 'ok',
-			serviceId: token.serviceId,
-			tokenId: token.tokenId,
-			provider: provider.id,
-			model,
-			statusCode: 200,
-			ip,
-			detail: `get ${model}`
-		});
-		return new Response(text, {
-			status: 200,
-			headers: { 'content-type': 'application/json' }
-		});
+		await auditModels({ status: 'ok', model, statusCode: 200, detail: `get ${model}` });
+		return new Response(text, { status: 200, headers: { 'content-type': 'application/json' } });
 	}
 
-	// models.list → filter the native array by the token's per-model policy,
-	// preserving the native shape (and nextPageToken for pagination).
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(text);
-	} catch {
-		parsed = null;
-	}
-	const all = isRecord(parsed) && Array.isArray(parsed.models) ? parsed.models : [];
-	const allowed = all.filter((m) => {
-		const name = isRecord(m) && typeof m.name === 'string' ? m.name.replace(/^models\//, '') : '';
-		return (
-			Boolean(name) &&
-			evaluatePolicy(token, { provider: provider.id, model: name, scope: 'models' }).allow
-		);
-	});
-	const out: Record<string, unknown> = { models: allowed };
-	if (isRecord(parsed) && typeof parsed.nextPageToken === 'string') {
-		out.nextPageToken = parsed.nextPageToken;
-	}
-
-	await audit({
-		action: 'gateway.models',
-		status: 'ok',
-		serviceId: token.serviceId,
-		tokenId: token.tokenId,
-		provider: provider.id,
-		statusCode: 200,
-		ip,
-		detail: `${allowed.length} models`
-	});
-	return json(out);
+	const list = filterGeminiModelList(token, text);
+	await auditModels({ status: 'ok', statusCode: 200, detail: `${list.models.length} models` });
+	return json(list);
 }
 
 export interface RawProxyOptions {
