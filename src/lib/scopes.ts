@@ -17,4 +17,10 @@ export const GATEWAY_SCOPES = [
 	'realtime'
 ] as const;
 
-export type Capability = (typeof GATEWAY_SCOPES)[number];
+export type GatewayScope = (typeof GATEWAY_SCOPES)[number];
+
+/**
+ * @deprecated Use {@link GatewayScope}. Kept for the server modules that still
+ * import it; clashes by name with the role `Capability` in `$lib/permissions`.
+ */
+export type Capability = GatewayScope;

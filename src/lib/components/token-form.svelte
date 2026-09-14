@@ -16,14 +16,15 @@
 	import { untrack, type Snippet } from 'svelte';
 	import { enhance } from '$app/forms';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import InlineLimitsFields from '$lib/components/inline-limits-fields.svelte';
 	import CheckboxGroup from '$lib/components/checkbox-group.svelte';
-	import FieldHint from '$lib/components/field-hint.svelte';
+	import FieldLabel from '$lib/components/field-label.svelte';
+	import SelectField from '$lib/components/select-field.svelte';
+	import { presetOptions } from '$lib/components/form-options';
 	import { GATEWAY_SCOPES } from '$lib/scopes';
 
 	let {
@@ -60,11 +61,11 @@
 	let serviceId = $state(untrack(() => values.serviceId ?? ''));
 
 	const id = (field: string) => `${idPrefix}-${field}`;
-	const policyLabel = (pid: string) =>
-		pid ? (policies.find((p) => p.id === pid)?.name ?? pid) : 'No preset';
 	// '' renders as "Default" — the catch-all service the server assigns
-	const serviceLabel = (sid: string) =>
-		sid ? (services.find((s) => s.id === sid)?.name ?? sid) : 'Default';
+	const serviceOptions = $derived([
+		{ value: '', label: 'Default' },
+		...services.map((s) => ({ value: s.id, label: s.name }))
+	]);
 	const scopeOptions = GATEWAY_SCOPES.map((s) => ({ value: s, label: s }));
 </script>
 
@@ -89,42 +90,32 @@
 
 	{#if services.length > 0}
 		<div class="space-y-2">
-			<div class="flex items-center gap-1.5">
-				<Label for={id('serviceId')}>Service</Label>
-				<FieldHint
-					text="Which service this token belongs to. Leave on Default to start — you can move it into a service later."
-				/>
-			</div>
-			<Select.Root type="single" name="serviceId" bind:value={serviceId}>
-				<Select.Trigger id={id('serviceId')} class="w-full">
-					{serviceLabel(serviceId)}
-				</Select.Trigger>
-				<Select.Content>
-					<Select.Item value="" label="Default">Default</Select.Item>
-					{#each services as s (s.id)}
-						<Select.Item value={s.id} label={s.name}>{s.name}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
+			<FieldLabel
+				for={id('serviceId')}
+				label="Service"
+				hint="Which service this token belongs to. Leave on Default to start — you can move it into a service later."
+			/>
+			<SelectField
+				id={id('serviceId')}
+				name="serviceId"
+				bind:value={serviceId}
+				options={serviceOptions}
+			/>
 		</div>
 	{/if}
 
 	<div class="space-y-2">
-		<div class="flex items-center gap-1.5">
-			<Label for={id('policyId')}>Preset</Label>
-			<FieldHint
-				text="Optional reusable baseline. The overrides below take priority field-by-field."
-			/>
-		</div>
-		<Select.Root type="single" name="policyId" bind:value={policyId}>
-			<Select.Trigger id={id('policyId')} class="w-full">{policyLabel(policyId)}</Select.Trigger>
-			<Select.Content>
-				<Select.Item value="" label="No preset">No preset</Select.Item>
-				{#each policies as p (p.id)}
-					<Select.Item value={p.id} label={p.name}>{p.name}</Select.Item>
-				{/each}
-			</Select.Content>
-		</Select.Root>
+		<FieldLabel
+			for={id('policyId')}
+			label="Preset"
+			hint="Optional reusable baseline. The overrides below take priority field-by-field."
+		/>
+		<SelectField
+			id={id('policyId')}
+			name="policyId"
+			bind:value={policyId}
+			options={presetOptions(policies)}
+		/>
 	</div>
 
 	{@render bottomFields?.()}
@@ -140,10 +131,11 @@
 	>
 		{#snippet advanced()}
 			<div class="space-y-2">
-				<div class="flex items-center gap-1.5 text-muted-foreground">
-					<Label>Scopes</Label>
-					<FieldHint text="Leave all unchecked to grant every scope." />
-				</div>
+				<FieldLabel
+					label="Scopes"
+					hint="Leave all unchecked to grant every scope."
+					class="text-muted-foreground"
+				/>
 				<CheckboxGroup
 					name="scopes"
 					idPrefix={id('scope')}

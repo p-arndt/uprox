@@ -4,6 +4,9 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
+	import EntityDialog from '$lib/components/entity-dialog.svelte';
+	import FormError from '$lib/components/form-error.svelte';
+	import { endpointPlaceholder } from '$lib/components/form-options';
 
 	let {
 		adding,
@@ -16,7 +19,6 @@
 			label: string;
 			requiresEndpoint: boolean;
 			authScheme: string;
-			optionalAuth: boolean;
 		} | null;
 		message?: string;
 		onClose: () => void;
@@ -24,111 +26,96 @@
 </script>
 
 <!-- Add key -->
-<Dialog.Root
+<EntityDialog
 	open={adding !== null}
-	onOpenChange={(v) => {
-		if (!v) onClose();
-	}}
+	{onClose}
+	title="Add {adding?.label} key"
+	description="Stored encrypted. We only ever show the last 4 characters."
 >
-	<Dialog.Content>
-		<Dialog.Header>
-			<Dialog.Title>Add {adding?.label} key</Dialog.Title>
-			<Dialog.Description
-				>Stored encrypted. We only ever show the last 4 characters.</Dialog.Description
-			>
-		</Dialog.Header>
-		<form
-			method="post"
-			action="?/create"
-			class="space-y-4"
-			use:enhance={() =>
-				async ({ update }) =>
-					update()}
-		>
-			<input type="hidden" name="provider" value={adding?.provider} />
-			{#if adding?.requiresEndpoint}
-				<div class="space-y-2">
-					<Label for="baseUrl">Endpoint URL</Label>
-					<Input
-						id="baseUrl"
-						name="baseUrl"
-						type="url"
-						placeholder={adding?.provider === 'custom'
-							? 'https://api.groq.com/openai/v1'
-							: adding?.provider === 'ollama'
-								? 'http://localhost:11434'
-								: 'https://my-resource.openai.azure.com'}
-						autocomplete="off"
-						required
-					/>
-					{#if adding?.provider === 'custom'}
-						<p class="text-xs text-muted-foreground">
-							The base URL of any OpenAI-compatible API — Groq, OpenRouter, Together, or a
-							self-hosted vLLM/Ollama/LiteLLM. Used as-is, so include the full path (e.g.
-							<code>/v1</code>). Call models by their exact name.
-						</p>
-					{:else if adding?.provider === 'ollama'}
-						<p class="text-xs text-muted-foreground">
-							Your Ollama host. Plain <code>http://</code> is fine; the <code>/v1</code> path is
-							added automatically. Call models by their exact name (e.g.
-							<code>llama3.2</code>).
-						</p>
-					{:else}
-						<p class="text-xs text-muted-foreground">
-							Your Azure resource endpoint. Call models by their deployment name (e.g.
-							<code>gpt-4o</code>) — no prefix. Add one key per resource and pick it on each
-							service.
-						</p>
-					{/if}
-				</div>
-			{/if}
-			{#if adding?.authScheme === 'basic'}
-				<div class="grid grid-cols-2 gap-3">
-					<div class="space-y-2">
-						<Label for="username">Username</Label>
-						<Input id="username" name="username" autocomplete="off" />
-					</div>
-					<div class="space-y-2">
-						<Label for="password">Password</Label>
-						<Input id="password" name="password" type="password" autocomplete="off" />
-					</div>
-				</div>
-				<p class="text-xs text-muted-foreground">
-					Optional HTTP basic auth, sent on every upstream request — leave both blank if your
-					endpoint needs no credentials.
-				</p>
-			{:else}
-				<div class="space-y-2">
-					<Label for="secret">API key</Label>
-					<Input
-						id="secret"
-						name="secret"
-						type="password"
-						placeholder="sk-…"
-						autocomplete="off"
-						required
-					/>
-				</div>
-			{/if}
+	<form
+		method="post"
+		action="?/create"
+		class="space-y-4"
+		use:enhance={() =>
+			async ({ update }) =>
+				update()}
+	>
+		<input type="hidden" name="provider" value={adding?.provider} />
+		{#if adding?.requiresEndpoint}
+			<div class="space-y-2">
+				<Label for="baseUrl">Endpoint URL</Label>
+				<Input
+					id="baseUrl"
+					name="baseUrl"
+					type="url"
+					placeholder={endpointPlaceholder(adding?.provider)}
+					autocomplete="off"
+					required
+				/>
+				{#if adding?.provider === 'custom'}
+					<p class="text-xs text-muted-foreground">
+						The base URL of any OpenAI-compatible API — Groq, OpenRouter, Together, or a self-hosted
+						vLLM/Ollama/LiteLLM. Used as-is, so include the full path (e.g.
+						<code>/v1</code>). Call models by their exact name.
+					</p>
+				{:else if adding?.provider === 'ollama'}
+					<p class="text-xs text-muted-foreground">
+						Your Ollama host. Plain <code>http://</code> is fine; the <code>/v1</code> path is added
+						automatically. Call models by their exact name (e.g.
+						<code>llama3.2</code>).
+					</p>
+				{:else}
+					<p class="text-xs text-muted-foreground">
+						Your Azure resource endpoint. Call models by their deployment name (e.g.
+						<code>gpt-4o</code>) — no prefix. Add one key per resource and pick it on each service.
+					</p>
+				{/if}
+			</div>
+		{/if}
+		{#if adding?.authScheme === 'basic'}
 			<div class="grid grid-cols-2 gap-3">
 				<div class="space-y-2">
-					<Label for="label">Label</Label>
-					<Input id="label" name="label" placeholder="e.g. Azure East US" />
+					<Label for="username">Username</Label>
+					<Input id="username" name="username" autocomplete="off" />
 				</div>
 				<div class="space-y-2">
-					<Label for="priority">Priority</Label>
-					<Input id="priority" name="priority" type="number" value="0" />
+					<Label for="password">Password</Label>
+					<Input id="password" name="password" type="password" autocomplete="off" />
 				</div>
 			</div>
 			<p class="text-xs text-muted-foreground">
-				When a service hasn't pinned a key, the highest-priority one for the provider is used.
+				Optional HTTP basic auth, sent on every upstream request — leave both blank if your endpoint
+				needs no credentials.
 			</p>
-			{#if message}
-				<p class="text-sm text-destructive">{message}</p>
-			{/if}
-			<Dialog.Footer>
-				<Button type="submit">Save key</Button>
-			</Dialog.Footer>
-		</form>
-	</Dialog.Content>
-</Dialog.Root>
+		{:else}
+			<div class="space-y-2">
+				<Label for="secret">API key</Label>
+				<Input
+					id="secret"
+					name="secret"
+					type="password"
+					placeholder="sk-…"
+					autocomplete="off"
+					required
+				/>
+			</div>
+		{/if}
+		<div class="grid grid-cols-2 gap-3">
+			<div class="space-y-2">
+				<Label for="label">Label</Label>
+				<Input id="label" name="label" placeholder="e.g. Azure East US" />
+			</div>
+			<div class="space-y-2">
+				<Label for="priority">Priority</Label>
+				<Input id="priority" name="priority" type="number" value="0" />
+			</div>
+		</div>
+		<p class="text-xs text-muted-foreground">
+			When a service hasn't pinned a key, the highest-priority one for the provider is used.
+		</p>
+		<FormError {message} />
+		<Dialog.Footer>
+			<Button type="submit">Save key</Button>
+		</Dialog.Footer>
+	</form>
+</EntityDialog>

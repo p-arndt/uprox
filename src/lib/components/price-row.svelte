@@ -3,10 +3,9 @@
 	import { TIER_FIELDS, tierValues, type PriceRow, type PriceTier } from '$lib/pricing';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import ConfirmAction from '$lib/components/confirm-action.svelte';
-	import { formatUsd } from '$lib/format';
+	import PriceCell from '$lib/components/price-cell.svelte';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
 	import Check from '@lucide/svelte/icons/check';
@@ -47,7 +46,12 @@
 	// Inline editing is row-local: the pencil swaps this row's price cells for
 	// number inputs. Works for custom rows (update) and default rows (override
 	// via create); the provider is carried through unchanged.
-	let editing = $state(false);
+	// Leaving edit mode on a tier switch avoids carrying one card's drafts into
+	// the other's inputs, so `editing` resets whenever the tier changes.
+	let editing = $derived.by(() => {
+		void tier;
+		return false;
+	});
 	let draftIn = $state('');
 	let draftOut = $state('');
 	let draftCacheRead = $state('');
@@ -63,13 +67,6 @@
 		editing = true;
 	}
 
-	// Leaving edit mode on a tier switch avoids carrying one card's drafts into
-	// the other's inputs.
-	$effect(() => {
-		tier;
-		editing = false;
-	});
-
 	// HTML forms can't wrap table cells, so the inputs associate with the actions-cell
 	// form by id.
 	const fid = $derived(`edit-${price.model.replace(/[^a-z0-9]+/gi, '-')}`);
@@ -83,94 +80,46 @@
 	{#if showProvider}
 		<Table.Cell class="text-muted-foreground">{price.providerLabel}</Table.Cell>
 	{/if}
-	<Table.Cell class="text-right tabular-nums">
-		{#if editing}
-			<Input
-				form={fid}
-				name={field.input}
-				type="number"
-				step="0.0001"
-				min="0"
-				placeholder={required ? undefined : 'none'}
-				bind:value={draftIn}
-				{required}
-				aria-label="Input price per 1M tokens"
-				class="ml-auto h-8 w-28 text-right"
-			/>
-		{:else if shown.input !== null}
-			{formatUsd(shown.input)}
-			{#if price.source === 'custom' && shown.defaultInput !== null && shown.defaultInput !== shown.input}
-				<div class="text-xs text-muted-foreground line-through">
-					{formatUsd(shown.defaultInput)}
-				</div>
-			{/if}
-		{:else}
-			<span class="text-muted-foreground">—</span>
-		{/if}
-	</Table.Cell>
-	<Table.Cell class="text-right tabular-nums">
-		{#if editing}
-			<Input
-				form={fid}
-				name={field.output}
-				type="number"
-				step="0.0001"
-				min="0"
-				placeholder={required ? undefined : 'none'}
-				bind:value={draftOut}
-				{required}
-				aria-label="Output price per 1M tokens"
-				class="ml-auto h-8 w-28 text-right"
-			/>
-		{:else if shown.output !== null}
-			{formatUsd(shown.output)}
-			{#if price.source === 'custom' && shown.defaultOutput !== null && shown.defaultOutput !== shown.output}
-				<div class="text-xs text-muted-foreground line-through">
-					{formatUsd(shown.defaultOutput)}
-				</div>
-			{/if}
-		{:else}
-			<span class="text-muted-foreground">—</span>
-		{/if}
-	</Table.Cell>
-	<Table.Cell class="text-right tabular-nums">
-		{#if editing}
-			<Input
-				form={fid}
-				name={field.cacheRead}
-				type="number"
-				step="0.0001"
-				min="0"
-				placeholder="auto"
-				bind:value={draftCacheRead}
-				aria-label="Cache read price per 1M tokens"
-				class="ml-auto h-8 w-28 text-right"
-			/>
-		{:else if shown.cacheRead !== null}
-			{formatUsd(shown.cacheRead)}
-		{:else}
-			<span class="text-muted-foreground">—</span>
-		{/if}
-	</Table.Cell>
-	<Table.Cell class="text-right tabular-nums">
-		{#if editing}
-			<Input
-				form={fid}
-				name={field.cacheWrite}
-				type="number"
-				step="0.0001"
-				min="0"
-				placeholder="auto"
-				bind:value={draftCacheWrite}
-				aria-label="Cache write price per 1M tokens"
-				class="ml-auto h-8 w-28 text-right"
-			/>
-		{:else if shown.cacheWrite !== null}
-			{formatUsd(shown.cacheWrite)}
-		{:else}
-			<span class="text-muted-foreground">—</span>
-		{/if}
-	</Table.Cell>
+	<PriceCell
+		{editing}
+		form={fid}
+		name={field.input}
+		bind:value={draftIn}
+		amount={shown.input}
+		previous={price.source === 'custom' ? shown.defaultInput : null}
+		{required}
+		placeholder={required ? undefined : 'none'}
+		ariaLabel="Input price per 1M tokens"
+	/>
+	<PriceCell
+		{editing}
+		form={fid}
+		name={field.output}
+		bind:value={draftOut}
+		amount={shown.output}
+		previous={price.source === 'custom' ? shown.defaultOutput : null}
+		{required}
+		placeholder={required ? undefined : 'none'}
+		ariaLabel="Output price per 1M tokens"
+	/>
+	<PriceCell
+		{editing}
+		form={fid}
+		name={field.cacheRead}
+		bind:value={draftCacheRead}
+		amount={shown.cacheRead}
+		placeholder="auto"
+		ariaLabel="Cache read price per 1M tokens"
+	/>
+	<PriceCell
+		{editing}
+		form={fid}
+		name={field.cacheWrite}
+		bind:value={draftCacheWrite}
+		amount={shown.cacheWrite}
+		placeholder="auto"
+		ariaLabel="Cache write price per 1M tokens"
+	/>
 	<Table.Cell>
 		{#if price.source === 'custom'}
 			<Badge variant="secondary">custom</Badge>

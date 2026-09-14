@@ -25,12 +25,6 @@ export function relativeTime(value: Date | string | null | undefined): string {
 }
 
 /**
- * Format an LLM token count compactly (e.g. 1.2M, 47.3K, 812). LLM usage adds
- * up fast — tens of millions of tokens are routine for a busy service — so the
- * raw "12,485,201" reads as wall-of-digits in tight UI. Falls back to a plain
- * locale string below 10k where precision is still useful.
- */
-/**
  * Every figure in the dashboard is pinned to en-US, matching {@link formatUsd}.
  * The viewer's own locale is deliberately NOT used: these numbers sit inline
  * with USD amounts, and a German or French browser would otherwise render
@@ -39,6 +33,12 @@ export function relativeTime(value: Date | string | null | undefined): string {
  */
 const LOCALE = 'en-US';
 
+/**
+ * Format an LLM token count compactly (e.g. 1.2M, 47.3K, 812). LLM usage adds
+ * up fast — tens of millions of tokens are routine for a busy service — so the
+ * raw "12,485,201" reads as wall-of-digits in tight UI. Falls back to a plain
+ * locale string below 10k where precision is still useful.
+ */
 export function formatTokens(value: number | string | null | undefined): string {
 	const n = typeof value === 'string' ? Number(value) : (value ?? 0);
 	if (!Number.isFinite(n) || n === 0) return '0';
@@ -102,4 +102,16 @@ export function formatUsdCompact(value: number | string | null | undefined): str
 		return `$${n.toLocaleString(LOCALE, { notation: 'compact', maximumFractionDigits: 1 })}`;
 	}
 	return formatUsd(n);
+}
+
+/**
+ * A unit price in USD per million tokens. Rates span five orders of magnitude —
+ * an embedding line is cents per million tokens where a frontier model's
+ * output is tens of dollars — so the precision follows the value rather than a
+ * fixed 2dp that would round every embedding rate to $0.00.
+ */
+export function formatUsdRate(rate: number | null | undefined): string {
+	if (rate == null) return '—';
+	if (rate === 0) return '$0';
+	return rate < 1 ? `$${rate.toFixed(3)}` : `$${rate.toFixed(2)}`;
 }

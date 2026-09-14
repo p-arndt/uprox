@@ -1,6 +1,7 @@
 <script lang="ts">
-	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import TokenForm, { type TokenFormValues } from '$lib/components/token-form.svelte';
+	import EntityDialog from '$lib/components/entity-dialog.svelte';
+	import FormError from '$lib/components/form-error.svelte';
 
 	let {
 		editing,
@@ -20,37 +21,28 @@
 </script>
 
 <!-- edit token: change its policy, model allowlist, scopes, and name in place -->
-<Dialog.Root
+<EntityDialog
 	open={editing !== null}
-	onOpenChange={(v) => {
-		if (!v) onClose();
-	}}
+	{onClose}
+	title="Edit token"
+	description="Adjust this token's access. The secret itself never changes."
+	class="max-h-[88vh] overflow-y-auto sm:max-w-lg"
 >
-	<Dialog.Content class="max-h-[88vh] overflow-y-auto sm:max-w-lg">
-		<Dialog.Header>
-			<Dialog.Title>Edit token</Dialog.Title>
-			<Dialog.Description>
-				Adjust this token's access. The secret itself never changes.
-			</Dialog.Description>
-		</Dialog.Header>
-		{#if editing}
-			{#key editing.id}
-				<TokenForm
-					action="?/update"
-					submitLabel="Save token"
-					idPrefix="edit"
-					values={editing}
-					{policies}
-					{providers}
-					{services}
-				>
-					{#snippet bottomFields()}
-						{#if message}
-							<p class="text-sm text-destructive">{message}</p>
-						{/if}
-					{/snippet}
-				</TokenForm>
-			{/key}
-		{/if}
-	</Dialog.Content>
-</Dialog.Root>
+	{#if editing}
+		{#key editing.id}
+			<TokenForm
+				action="?/update"
+				submitLabel="Save token"
+				idPrefix="edit"
+				values={editing}
+				{policies}
+				{providers}
+				{services}
+			>
+				{#snippet bottomFields()}
+					<FormError {message} />
+				{/snippet}
+			</TokenForm>
+		{/key}
+	{/if}
+</EntityDialog>

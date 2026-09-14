@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { GroupedSeries } from '$lib/server/data';
 	import { colorForSeries } from '$lib/usage-colors';
-	import { formatUsd, formatTokens, formatCount } from '$lib/format';
+	import { formatMetric, metricValue, type UsageMetric } from '$lib/features/usage/metric';
 
 	// Always present whenever the chart carries two or more series: three of the
 	// light-mode palette slots sit below 3:1 against the card, so these text
@@ -20,17 +20,11 @@
 	}: {
 		series: GroupedSeries[];
 		dim: string;
-		metric?: 'cost' | 'requests' | 'tokens';
+		metric?: UsageMetric;
 		highlighted?: string | null;
 		/** series keys toggled off, owned by the parent so the chart sees them too */
 		hidden?: string[];
 	} = $props();
-
-	function valueOf(s: GroupedSeries): string {
-		if (metric === 'cost') return formatUsd(s.costUsd);
-		if (metric === 'requests') return formatCount(s.requests);
-		return formatTokens(s.tokens);
-	}
 
 	function toggle(key: string) {
 		// Never hide the last visible series: an empty plot reads as broken rather
@@ -69,7 +63,7 @@
 						aria-hidden="true"
 					></span>
 					<span class="max-w-56 truncate {off ? 'line-through' : ''}">{s.label}</span>
-					<span class="text-muted-foreground tabular-nums">{valueOf(s)}</span>
+					<span class="text-muted-foreground tabular-nums">{formatMetric(metricValue(s, metric), metric)}</span>
 				</button>
 			</li>
 		{/each}

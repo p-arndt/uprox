@@ -2,13 +2,14 @@
 	import { untrack } from 'svelte';
 	import { enhance } from '$app/forms';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import InlineLimitsFields from '$lib/components/inline-limits-fields.svelte';
-	import FieldHint from '$lib/components/field-hint.svelte';
+	import FieldLabel from '$lib/components/field-label.svelte';
+	import SelectField from '$lib/components/select-field.svelte';
+	import { presetOptions } from '$lib/components/form-options';
 	import type { InlineLimitValues } from '$lib/components/inline-limits';
 
 	export interface ServiceFormValues extends InlineLimitValues {
@@ -62,15 +63,13 @@
 		{ value: 'agent', label: 'Agent' },
 		{ value: 'workload', label: 'Workload' }
 	];
-	const typeLabel = (v: string) => typeOptions.find((o) => o.value === v)?.label ?? v;
-	const policyLabel = (pid: string) =>
-		pid ? (policies.find((p) => p.id === pid)?.name ?? pid) : 'No preset';
-
-	const secretName = $derived(
-		new Map(secretOptions.map((s) => [s.id, `${s.providerLabel} — ${s.label || `••••${s.hint}`}`]))
-	);
-	const secretLabel = (sid: string) =>
-		sid ? (secretName.get(sid) ?? sid) : 'Automatic (default key)';
+	const secretSelectOptions = $derived([
+		{ value: '', label: 'Automatic (default key)' },
+		...secretOptions.map((s) => ({
+			value: s.id,
+			label: `${s.providerLabel} — ${s.label || `••••${s.hint}`}`
+		}))
+	]);
 </script>
 
 <form
@@ -93,14 +92,7 @@
 	<div class="grid grid-cols-2 gap-4">
 		<div class="space-y-2">
 			<Label for={id('type')}>Type</Label>
-			<Select.Root type="single" name="type" bind:value={type}>
-				<Select.Trigger id={id('type')} class="w-full">{typeLabel(type)}</Select.Trigger>
-				<Select.Content>
-					{#each typeOptions as o (o.value)}
-						<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
+			<SelectField id={id('type')} name="type" bind:value={type} options={typeOptions} />
 		</div>
 		<div class="space-y-2">
 			<Label for={id('description')}>Description</Label>
@@ -116,19 +108,17 @@
 	<Separator />
 
 	<div class="space-y-2">
-		<div class="flex items-center gap-1.5">
-			<Label for={id('policyId')}>Preset</Label>
-			<FieldHint text="Optional reusable baseline. The fields below override it field-by-field." />
-		</div>
-		<Select.Root type="single" name="policyId" bind:value={policyId}>
-			<Select.Trigger id={id('policyId')} class="w-full">{policyLabel(policyId)}</Select.Trigger>
-			<Select.Content>
-				<Select.Item value="" label="No preset">No preset</Select.Item>
-				{#each policies as p (p.id)}
-					<Select.Item value={p.id} label={p.name}>{p.name}</Select.Item>
-				{/each}
-			</Select.Content>
-		</Select.Root>
+		<FieldLabel
+			for={id('policyId')}
+			label="Preset"
+			hint="Optional reusable baseline. The fields below override it field-by-field."
+		/>
+		<SelectField
+			id={id('policyId')}
+			name="policyId"
+			bind:value={policyId}
+			options={presetOptions(policies)}
+		/>
 	</div>
 
 	<InlineLimitsFields
@@ -141,27 +131,17 @@
 		{#snippet advanced()}
 			{#if secretOptions.length > 0}
 				<div class="space-y-2">
-					<div class="flex items-center gap-1.5">
-						<Label for={id('providerSecretId')}>Upstream key</Label>
-						<FieldHint
-							text="Pin which provider key this service uses — e.g. a specific Azure resource."
-						/>
-					</div>
-					<Select.Root type="single" name="providerSecretId" bind:value={providerSecretId}>
-						<Select.Trigger id={id('providerSecretId')} class="w-full">
-							{secretLabel(providerSecretId)}
-						</Select.Trigger>
-						<Select.Content>
-							<Select.Item value="" label="Automatic (default key)">
-								Automatic (default key)
-							</Select.Item>
-							{#each secretOptions as s (s.id)}
-								<Select.Item value={s.id} label={secretName.get(s.id) ?? s.id}>
-									{secretName.get(s.id) ?? s.id}
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
+					<FieldLabel
+						for={id('providerSecretId')}
+						label="Upstream key"
+						hint="Pin which provider key this service uses — e.g. a specific Azure resource."
+					/>
+					<SelectField
+						id={id('providerSecretId')}
+						name="providerSecretId"
+						bind:value={providerSecretId}
+						options={secretSelectOptions}
+					/>
 				</div>
 			{/if}
 		{/snippet}

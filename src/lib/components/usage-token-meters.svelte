@@ -2,7 +2,8 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import type { TokenMeterBreakdown } from '$lib/server/data';
 	import { formatTokens, formatUsd, formatPct } from '$lib/format';
-	import { METER_COLOR, METER_META } from '$lib/usage-colors';
+	import { METER_COLOR } from '$lib/usage-colors';
+	import { cacheSavings, meterRows } from '$lib/features/usage/token-meters';
 	import Info from '@lucide/svelte/icons/info';
 
 	// Token volume decomposed into its billing meters, the way a cloud bill
@@ -29,22 +30,10 @@
 	} = $props();
 
 	const total = $derived(breakdown.totalTokens);
-	const rows = $derived(
-		breakdown.meters
-			.filter((m) => m.tokens > 0)
-			.map((m) => ({
-				...m,
-				...METER_META[m.key],
-				color: METER_COLOR[m.key],
-				share: total > 0 ? m.tokens / total : 0
-			}))
-	);
-
-	const totalSaved = $derived(breakdown.savedUsd + breakdown.providerCacheSavedUsd);
+	const rows = $derived(meterRows(breakdown.meters, total));
 	// What the window would have cost with neither cache layer — the "list price"
 	// against which the actual spend is the discounted figure.
-	const listCost = $derived(breakdown.costUsd + totalSaved);
-	const savedShare = $derived(listCost > 0 ? totalSaved / listCost : 0);
+	const { totalSaved, listCost, savedShare } = $derived(cacheSavings(breakdown));
 </script>
 
 <Card.Root>
