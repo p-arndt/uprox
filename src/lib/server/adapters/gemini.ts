@@ -58,6 +58,81 @@ interface BuiltContents {
 	contents: Record<string, unknown>[];
 }
 
+/** tool_call_id → function name, learned from assistant `tool_calls`. */
+type ToolCallNames = Map<string, string>;
+
+/** Parse a tool call's JSON `arguments` string; anything empty or unparseable is `{}`. */
+function parseToolArgs(args: unknown): unknown {
+	if (typeof args !== 'string' || !args) return {};
+	try {
+		return JSON.parse(args);
+	} catch {
+		return {};
+	}
+}
+
+/** One OpenAI assistant tool call → a Gemini `functionCall` part (null if malformed). */
+function functionCallPart(tc: unknown, names: ToolCallNames): Record<string, unknown> | null {
+	if (!isRecord(tc) || !isRecord(tc.function)) return null;
+	const name = String(tc.function.name ?? '');
+	if (tc.id != null) names.set(String(tc.id), name);
+	return { functionCall: { name, args: parseToolArgs(tc.function.arguments) } };
+}
+
+/** Assistant message → a `model` content of text plus `functionCall` parts. */
+function assistantContent(
+	msg: Record<string, unknown>,
+	names: ToolCallNames
+): Record<string, unknown> | null {
+	const parts: Record<string, unknown>[] = [];
+	const t = textOf(msg.content);
+	if (t) parts.push({ text: t });
+	const calls = Array.isArray(msg.tool_calls) ? msg.tool_calls : [];
+	for (const tc of calls) {
+		const part = functionCallPart(tc, names);
+		if (part) parts.push(part);
+	}
+	return parts.length ? { role: 'model', parts } : null;
+}
+
+/** A tool result's text as a `functionResponse.response` object (non-objects are wrapped). */
+function toolResponse(raw: string): Record<string, unknown> {
+	let response: unknown;
+	try {
+		response = JSON.parse(raw);
+	} catch {
+		return { result: raw };
+	}
+	return isRecord(response) ? response : { result: response };
+}
+
+/**
+ * Tool message → a `user` content carrying a `functionResponse`, named after
+ * the matching assistant tool call, else `msg.name`, else the id.
+ */
+function toolContent(msg: Record<string, unknown>, names: ToolCallNames): Record<string, unknown> {
+	const id = msg.tool_call_id != null ? String(msg.tool_call_id) : '';
+	const name = names.get(id) || (msg.name != null ? String(msg.name) : id || 'function');
+	const response = toolResponse(textOf(msg.content));
+	return { role: 'user', parts: [{ functionResponse: { name, response } }] };
+}
+
+/** User (and any unrecognized role) message → plain/multimodal `user` content. */
+function userContent(msg: Record<string, unknown>): Record<string, unknown> | null {
+	const parts = partsFromContent(msg.content);
+	return parts.length ? { role: 'user', parts } : null;
+}
+
+/** Non-system message → its Gemini content, or null when it has nothing to send. */
+function contentFor(
+	msg: Record<string, unknown>,
+	names: ToolCallNames
+): Record<string, unknown> | null {
+	if (msg.role === 'assistant') return assistantContent(msg, names);
+	if (msg.role === 'tool') return toolContent(msg, names);
+	return userContent(msg);
+}
+
 /**
  * OpenAI `messages` → Gemini `contents` + collected system text. Maps roles
  * (assistant→model, system/developer→systemInstruction, tool→functionResponse)
@@ -67,62 +142,17 @@ interface BuiltContents {
 export function toContents(messages: unknown[]): BuiltContents {
 	const systemTexts: string[] = [];
 	const contents: Record<string, unknown>[] = [];
-	const toolCallNames = new Map<string, string>();
+	const names: ToolCallNames = new Map();
 
 	for (const msg of messages) {
 		if (!isRecord(msg)) continue;
-		const role = msg.role;
-
-		if (role === 'system' || role === 'developer') {
+		if (msg.role === 'system' || msg.role === 'developer') {
 			const t = textOf(msg.content);
 			if (t) systemTexts.push(t);
 			continue;
 		}
-
-		if (role === 'assistant') {
-			const parts: Record<string, unknown>[] = [];
-			const t = textOf(msg.content);
-			if (t) parts.push({ text: t });
-			if (Array.isArray(msg.tool_calls)) {
-				for (const tc of msg.tool_calls) {
-					if (!isRecord(tc) || !isRecord(tc.function)) continue;
-					const name = String(tc.function.name ?? '');
-					if (tc.id != null) toolCallNames.set(String(tc.id), name);
-					let args: unknown;
-					try {
-						args =
-							typeof tc.function.arguments === 'string' && tc.function.arguments
-								? JSON.parse(tc.function.arguments)
-								: {};
-					} catch {
-						args = {};
-					}
-					parts.push({ functionCall: { name, args } });
-				}
-			}
-			if (parts.length) contents.push({ role: 'model', parts });
-			continue;
-		}
-
-		if (role === 'tool') {
-			const id = msg.tool_call_id != null ? String(msg.tool_call_id) : '';
-			const name =
-				toolCallNames.get(id) || (msg.name != null ? String(msg.name) : id || 'function');
-			const raw = textOf(msg.content);
-			let response: unknown;
-			try {
-				response = JSON.parse(raw);
-			} catch {
-				response = { result: raw };
-			}
-			if (!isRecord(response)) response = { result: response };
-			contents.push({ role: 'user', parts: [{ functionResponse: { name, response } }] });
-			continue;
-		}
-
-		// user (and any unrecognized role) — plain/multimodal content
-		const parts = partsFromContent(msg.content);
-		if (parts.length) contents.push({ role: 'user', parts });
+		const content = contentFor(msg, names);
+		if (content) contents.push(content);
 	}
 
 	return { systemTexts, contents };
@@ -254,6 +284,15 @@ export function mapUsage(u: unknown): Record<string, unknown> | undefined {
 	return usage;
 }
 
+/** A Gemini `functionCall` → the OpenAI `tool_calls` entry (`id`, `type`, `function`). */
+function toolCallOf(i: number, fc: Record<string, unknown>): Record<string, unknown> {
+	return {
+		id: `call_${i}`,
+		type: 'function',
+		function: { name: String(fc.name ?? ''), arguments: JSON.stringify(fc.args ?? {}) }
+	};
+}
+
 /** Extract text + tool calls from a Gemini candidate's content parts. */
 function readParts(parts: unknown[]): { text: string; toolCalls: Record<string, unknown>[] } {
 	let text = '';
@@ -263,15 +302,7 @@ function readParts(parts: unknown[]): { text: string; toolCalls: Record<string, 
 		if (typeof p.text === 'string') {
 			text += p.text;
 		} else if (isRecord(p.functionCall)) {
-			const i = toolCalls.length;
-			toolCalls.push({
-				id: `call_${i}`,
-				type: 'function',
-				function: {
-					name: String(p.functionCall.name ?? ''),
-					arguments: JSON.stringify(p.functionCall.args ?? {})
-				}
-			});
+			toolCalls.push(toolCallOf(toolCalls.length, p.functionCall));
 		}
 	}
 	return { text, toolCalls };
@@ -339,6 +370,82 @@ function fromGeminiError(text: string): string {
 	return JSON.stringify({ error: { message, type: 'api_error', code: null, param: null } });
 }
 
+/** Translation state carried across the events of one stream. */
+interface StreamState {
+	/** the first delta carries `role: 'assistant'` */
+	roleSent: boolean;
+	/** tool calls are numbered across the whole stream */
+	toolIndex: number;
+}
+
+/** One OpenAI chunk payload: its `choices` and, for the trailing chunk, `usage`. */
+interface StreamChunk {
+	choices: unknown[];
+	usage?: Record<string, unknown>;
+}
+
+function textDelta(state: StreamState, text: string): Record<string, unknown> {
+	const delta = state.roleSent ? { content: text } : { role: 'assistant', content: text };
+	state.roleSent = true;
+	return delta;
+}
+
+function toolCallDelta(state: StreamState, fc: Record<string, unknown>): Record<string, unknown> {
+	const delta: Record<string, unknown> = {
+		tool_calls: [{ index: state.toolIndex, ...toolCallOf(state.toolIndex, fc) }]
+	};
+	if (!state.roleSent) delta.role = 'assistant';
+	state.roleSent = true;
+	state.toolIndex++;
+	return delta;
+}
+
+/** The delta for one streamed part (non-empty text or a functionCall), else null. */
+function partDelta(
+	state: StreamState,
+	p: unknown
+): { delta: Record<string, unknown>; tool: boolean } | null {
+	if (!isRecord(p)) return null;
+	if (typeof p.text === 'string' && p.text) return { delta: textDelta(state, p.text), tool: false };
+	if (isRecord(p.functionCall)) return { delta: toolCallDelta(state, p.functionCall), tool: true };
+	return null;
+}
+
+/** One candidate → its part deltas, then a finish chunk when it carries a finishReason. */
+function candidateChunks(state: StreamState, c: Record<string, unknown>): StreamChunk[] {
+	const parts = isRecord(c.content) && Array.isArray(c.content.parts) ? c.content.parts : [];
+	const index = typeof c.index === 'number' ? c.index : 0;
+	const chunks: StreamChunk[] = [];
+	let hasTool = false;
+	for (const p of parts) {
+		const d = partDelta(state, p);
+		if (!d) continue;
+		hasTool ||= d.tool;
+		chunks.push({ choices: [{ index, delta: d.delta, finish_reason: null }] });
+	}
+	if (c.finishReason) {
+		const finish_reason = mapFinishReason(c.finishReason, hasTool);
+		chunks.push({ choices: [{ index, delta: {}, finish_reason }] });
+	}
+	return chunks;
+}
+
+/** One native SSE event payload → the OpenAI chunks it translates to (none for junk). */
+function streamEventChunks(payload: string, state: StreamState): StreamChunk[] {
+	if (payload === '[DONE]') return [];
+	let g: unknown;
+	try {
+		g = JSON.parse(payload);
+	} catch {
+		return [];
+	}
+	const candidates = isRecord(g) && Array.isArray(g.candidates) ? g.candidates : [];
+	const chunks = candidates.filter(isRecord).flatMap((c) => candidateChunks(state, c));
+	const usage = mapUsage(isRecord(g) ? g.usageMetadata : undefined);
+	if (usage) chunks.push({ choices: [], usage });
+	return chunks;
+}
+
 /**
  * Transform a Gemini `streamGenerateContent?alt=sse` body into OpenAI
  * `chat.completion.chunk` SSE: a role delta, content/tool-call deltas, a
@@ -355,8 +462,7 @@ export function streamGeminiToOpenAi(
 	const reader = source.getReader();
 	let buffer = '';
 	let dataLines: string[] = [];
-	let roleSent = false;
-	let toolIndex = 0;
+	const state: StreamState = { roleSent: false, toolIndex: 0 };
 
 	const emit = (
 		controller: ReadableStreamDefaultController<Uint8Array>,
@@ -378,56 +484,9 @@ export function streamGeminiToOpenAi(
 		if (!dataLines.length) return;
 		const payload = dataLines.join('\n');
 		dataLines = [];
-		if (payload === '[DONE]') return;
-		let g: unknown;
-		try {
-			g = JSON.parse(payload);
-		} catch {
-			return;
+		for (const chunk of streamEventChunks(payload, state)) {
+			emit(controller, chunk.choices, chunk.usage);
 		}
-		const candidates = isRecord(g) && Array.isArray(g.candidates) ? g.candidates : [];
-		for (const c of candidates) {
-			if (!isRecord(c)) continue;
-			const parts = isRecord(c.content) && Array.isArray(c.content.parts) ? c.content.parts : [];
-			const index = typeof c.index === 'number' ? c.index : 0;
-			let chunkHasTool = false;
-			for (const p of parts) {
-				if (!isRecord(p)) continue;
-				if (typeof p.text === 'string' && p.text) {
-					const delta: Record<string, unknown> = roleSent
-						? { content: p.text }
-						: { role: 'assistant', content: p.text };
-					roleSent = true;
-					emit(controller, [{ index, delta, finish_reason: null }]);
-				} else if (isRecord(p.functionCall)) {
-					chunkHasTool = true;
-					const delta: Record<string, unknown> = {
-						tool_calls: [
-							{
-								index: toolIndex,
-								id: `call_${toolIndex}`,
-								type: 'function',
-								function: {
-									name: String(p.functionCall.name ?? ''),
-									arguments: JSON.stringify(p.functionCall.args ?? {})
-								}
-							}
-						]
-					};
-					if (!roleSent) delta.role = 'assistant';
-					roleSent = true;
-					toolIndex++;
-					emit(controller, [{ index, delta, finish_reason: null }]);
-				}
-			}
-			if (c.finishReason) {
-				emit(controller, [
-					{ index, delta: {}, finish_reason: mapFinishReason(c.finishReason, chunkHasTool) }
-				]);
-			}
-		}
-		const usage = mapUsage(isRecord(g) ? g.usageMetadata : undefined);
-		if (usage) emit(controller, [], usage);
 	};
 
 	return new ReadableStream<Uint8Array>({
