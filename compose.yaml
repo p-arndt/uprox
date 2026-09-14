@@ -1,6 +1,8 @@
 services:
   postgres:
-    image: postgres
+    # Pinned major: the pgdata volume is initialised by Postgres 18 and a new
+    # major cannot start on it without pg_upgrade.
+    image: postgres:18
     restart: unless-stopped
     ports:
       - 5432:5432
@@ -8,6 +10,11 @@ services:
       POSTGRES_USER:
       POSTGRES_PASSWORD:
       POSTGRES_DB:
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 5s
+      timeout: 5s
+      retries: 10
     volumes:
       - pgdata:/var/lib/postgresql
 

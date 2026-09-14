@@ -25,7 +25,8 @@ export default defineConfig({
 		trace: 'on-first-retry'
 	},
 	webServer: {
-		command: 'pnpm build && tsx tests/e2e/prepare-db.ts && pnpm preview',
+		command:
+			'pnpm build && tsx --env-file-if-exists=.env tests/e2e/prepare-db.ts && pnpm preview',
 		port: PORT,
 		reuseExistingServer: !process.env.CI,
 		timeout: 180_000,
