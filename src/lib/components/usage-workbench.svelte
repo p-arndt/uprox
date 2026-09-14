@@ -6,10 +6,12 @@
 	import UsageAnalysisCard from '$lib/components/usage-analysis-card.svelte';
 	import UsageDeepDive from '$lib/components/usage-deep-dive.svelte';
 	import BudgetGauge from '$lib/components/budget-gauge.svelte';
-	import type { UsageDimension, UsageFilter } from '$lib/usage-group';
+	import type { UsageDimension, UsageFilter, UsageFilterOptions } from '$lib/usage-group';
 	import type { UsageAnalysis } from '$lib/features/usage/types';
 	import type { DimensionUsageRow } from '$lib/features/usage/types';
 	import type { BudgetStatus } from '$lib/budget';
+	import type { Streamed } from '$lib/features/usage/types';
+	import { latest } from '$lib/state/usage-view.svelte';
 	import type { ResolvedPathname } from '$app/types';
 
 	// The whole cost-analysis surface, shared verbatim by the org usage page and
@@ -27,8 +29,7 @@
 		rowLabel,
 		leading,
 		trailing,
-		budgets = [],
-		instanceBudget = null,
+		budgets,
 		budgetThreshold
 	}: {
 		analysis: UsageAnalysis;
@@ -42,12 +43,20 @@
 		leading?: Snippet;
 		/** page-owned actions at the end of the command bar (refresh, export) */
 		trailing?: Snippet;
-		budgets?: BudgetStatus[];
-		instanceBudget?: BudgetStatus | null;
+		/** budget statuses (instance ceiling first), streamed after first paint */
+		budgets?: Promise<Streamed<BudgetStatus[]>>;
 		budgetThreshold?: number;
 	} = $props();
 
 	const hasTraffic = $derived(analysis.totals.requests > 0 || analysis.breakdown.length > 0);
+
+	// streamed after first paint
+	const prevTotals = latest(() => analysis.prevTotals);
+	const filterOptions = latest(() => analysis.filterOptions);
+	const budgetStatuses = latest(() => budgets);
+	const comparison = $derived(
+		prevTotals.current === undefined ? 'pending' : prevTotals.current.failed ? 'failed' : 'ready'
+	);
 </script>
 
 <!-- One command bar: window, grouping and filters on the left, page actions on
@@ -70,7 +79,8 @@
 				groupBy={analysis.groupBy}
 				filters={analysis.filters}
 				dimensions={analysis.dimensions}
-				options={analysis.filterOptions}
+				options={filterOptions.current?.value ?? ({} as UsageFilterOptions)}
+				optionsPending={filterOptions.current === undefined}
 				{onGroupBy}
 				{onFilters}
 			/>
@@ -90,8 +100,13 @@
      mismatch is why it can't be a line on the chart — dividing a monthly ceiling
      down to an hourly bucket produces a threshold any single request clears. -->
 {#snippet budgetHeadroom()}
+	<!-- no skeleton: most instances carry no ceiling, and the gauge renders
+	     nothing then, so a placeholder would only flash and disappear -->
+	{#if budgetStatuses.current?.failed}
+		<p class="text-sm text-muted-foreground" role="status">Budget headroom could not be loaded.</p>
+	{/if}
 	<BudgetGauge
-		statuses={instanceBudget ? [instanceBudget, ...budgets] : budgets}
+		statuses={budgetStatuses.current?.value ?? []}
 		threshold={budgetThreshold}
 		showServiceName={true}
 		title="Budget headroom"
@@ -113,7 +128,8 @@
 {:else}
 	<UsageHeadline
 		totals={analysis.totals}
-		prevTotals={analysis.prevTotals}
+		prevTotals={prevTotals.current?.value ?? null}
+		{comparison}
 		series={analysis.series}
 		{rangeLabel}
 	/>

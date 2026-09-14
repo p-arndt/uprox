@@ -9,7 +9,7 @@ import {
 	orgTopMovers,
 	orgModelEfficiency
 } from '$lib/server/data';
-import type { DimensionUsageRow, UsageAnalysis } from '$lib/features/usage/types';
+import type { DimensionUsageRow, Streamed, UsageAnalysis } from '$lib/features/usage/types';
 import {
 	USAGE_RANGES,
 	resolveUsageRange,
@@ -23,16 +23,34 @@ import {
 	normalizeGroupBy,
 	parseFilters,
 	type UsageDimension,
-	type UsageFilter
+	type UsageFilter,
+	type UsageFilterOptions
 } from '$lib/usage-group';
 import { MAX_SERIES } from '$lib/usage-colors';
 import { readUsageWindow, writeUsageWindow } from '$lib/server/usage-window-pref';
+
+export type { UsageAnalysis };
 
 const DAY_MS = 86_400_000;
 const ymd = (d: Date) => d.toISOString().slice(0, 10);
 
 /** Top-N for the detail table; surfaced so the page can flag truncation. */
 const BREAKDOWN_LIMIT = 100;
+
+/**
+ * Wraps a promise that is returned un-awaited from a load function, so SvelteKit
+ * streams it. It never rejects: a failure is logged and resolves to `empty` with
+ * `failed` set, which the panel renders as an inline error.
+ */
+export function streamed<T>(promise: Promise<T>, empty: T, label: string): Promise<Streamed<T>> {
+	return promise.then(
+		(value) => ({ value, failed: false }),
+		(err: unknown) => {
+			console.error(`usage: streamed panel "${label}" failed`, err);
+			return { value: empty, failed: true };
+		}
+	);
+}
 
 /**
  * Builds the entire cost-analysis payload for a page, given the request and an
@@ -45,6 +63,11 @@ const BREAKDOWN_LIMIT = 100;
  * service-detail page drops the `service` dimension because it would collapse
  * to a single row, and a token page drops both `service` and `token` for the
  * same reason — a dimension with one value is a label, not an analysis.
+ *
+ * Only what the first paint needs is awaited (headline totals, the sparkline
+ * series, the stacked chart and the breakdown table). Everything else is
+ * returned as a promise and streamed in, so the page is usable while the
+ * secondary panels are still computing.
  */
 export async function loadUsageAnalysis(
 	event: RequestEvent,
@@ -105,28 +128,18 @@ export async function loadUsageAnalysis(
 		let rows = rankings.get(key);
 		if (!rows) {
 			rows = orgUsageByDimension(r, dim, { ...scope, filters: f });
+			// the awaited and the streamed consumers each handle a failure; this
+			// keeps the shared promise itself from surfacing as unhandled
+			rows.catch(() => {});
 			rankings.set(key, rows);
 		}
 		return rows;
 	};
 
-	const [
-		totals,
-		prevTotals,
-		grouped,
-		breakdown,
-		donuts,
-		filterOptions,
-		meters,
-		movers,
-		efficiency,
-		series,
-		prevSeries
-	] = await Promise.all([
+	// First-paint queries are dispatched before the secondary ones, so they are
+	// first in line for pooled connections when the pool is contended.
+	const firstPaint = Promise.all([
 		orgUsageTotals(range, { ...scope, filters }),
-		// previous equal-length window — powers the headline deltas. Filters carry
-		// over, or the comparison would be against a differently-scoped population.
-		orgUsageTotals(prevRange, { ...scope, filters }),
 		ranked(range, groupBy, filters).then((rows) =>
 			orgUsageSeriesGrouped(range, groupBy, {
 				...scope,
@@ -137,29 +150,52 @@ export async function loadUsageAnalysis(
 			})
 		),
 		ranked(range, groupBy, filters).then((rows) => rows.slice(0, BREAKDOWN_LIMIT)),
+		// flat series behind the headline sparklines — same window, same filters
+		orgUsageSeries(range, { ...scope, unit, filters })
+	]);
+
+	// Secondary panels: started now so they run alongside the first-paint
+	// queries, but returned un-awaited.
+	const prevTotals = streamed(
+		// previous equal-length window — powers the headline deltas. Filters carry
+		// over, or the comparison would be against a differently-scoped population.
+		orgUsageTotals(prevRange, { ...scope, filters }),
+		null,
+		'prevTotals'
+	);
+	const donuts = streamed(
 		Promise.all(
 			donutDims.map(async (dim) => ({
 				dim,
 				rows: (await ranked(range, dim, filters)).slice(0, 25)
 			}))
 		),
+		[],
+		'donuts'
+	);
+	const filterOptions = streamed(
 		// pickers are deliberately derived from the unfiltered window
 		orgUsageFilterOptions(range, dimensions, {
 			...scope,
 			loadRanked: (dim) => ranked(range, dim, [])
 		}),
-		orgTokenMeters(range, { ...scope, filters }),
+		{} as UsageFilterOptions,
+		'filterOptions'
+	);
+	const meters = streamed(orgTokenMeters(range, { ...scope, filters }), null, 'meters');
+	const movers = streamed(
 		// "what changed" is always measured on the grouping the operator picked,
 		// so the answer lines up with the chart directly above it
 		Promise.all([ranked(range, groupBy, filters), ranked(prevRange, groupBy, filters)]).then(
 			([current, previous]) =>
 				orgTopMovers(range, prevRange, groupBy, { ...scope, filters, current, previous })
 		),
-		orgModelEfficiency(range, { ...scope, filters }),
-		// flat series behind the headline sparklines — same window, same filters
-		orgUsageSeries(range, { ...scope, unit, filters }),
-		orgUsageSeries(prevRange, { ...scope, unit, filters })
-	]);
+		[],
+		'movers'
+	);
+	const efficiency = streamed(orgModelEfficiency(range, { ...scope, filters }), [], 'efficiency');
+
+	const [totals, grouped, breakdown, series] = await firstPaint;
 
 	return {
 		range: range.key,
@@ -167,24 +203,20 @@ export async function loadUsageAnalysis(
 		bucket,
 		groupBy,
 		filters,
-		filterOptions,
 		dimensions,
 		breakdownLimit: BREAKDOWN_LIMIT,
 		breakdownTruncated: breakdown.length >= BREAKDOWN_LIMIT,
 		customFrom,
 		customTo,
 		totals,
-		prevTotals,
 		grouped,
 		breakdown,
+		series,
+		prevTotals,
+		filterOptions,
 		donuts,
 		meters,
 		movers,
-		efficiency,
-		series,
-		// only the points are needed for the overlay; the unit matches `series`
-		prevPoints: prevSeries.points
+		efficiency
 	};
 }
-
-export type { UsageAnalysis };

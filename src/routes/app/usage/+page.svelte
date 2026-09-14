@@ -101,10 +101,9 @@
 		description="Spend, requests and token volume — sliced by service, model, provider, machine token, or down to the individual rate-card line."
 	/>
 
-	<BudgetAlert
-		statuses={data.instanceBudget ? [data.instanceBudget, ...data.budgets] : data.budgets}
-		threshold={data.budgetThreshold}
-	/>
+	{#await data.budgets then budgets}
+		<BudgetAlert statuses={budgets.value} threshold={data.budgetThreshold} />
+	{/await}
 
 	<!-- The setup checklist lives on /app and has no nav entry of its own, so an
 	     unfiltered empty window is the one place that still has to point back at
@@ -129,7 +128,6 @@
 		{leading}
 		{trailing}
 		budgets={data.budgets}
-		instanceBudget={data.instanceBudget}
 		budgetThreshold={data.budgetThreshold}
 	/>
 </PageShell>

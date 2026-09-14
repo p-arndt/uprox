@@ -117,3 +117,31 @@ export function createUsageView(opts: {
 		}
 	};
 }
+
+/**
+ * Reactive view of the latest value of a streamed promise: `undefined` while
+ * the current promise is pending, then its value. When the source hands over a
+ * new promise (a navigation re-ran the load), the old one is ignored even if it
+ * settles later, so a slow earlier response can never overwrite newer data.
+ */
+export function latest<T>(source: () => Promise<T> | undefined): {
+	readonly current: T | undefined;
+} {
+	let current = $state<T | undefined>(undefined);
+	$effect(() => {
+		const promise = source();
+		let active = true;
+		current = undefined;
+		promise?.then((value) => {
+			if (active) current = value;
+		});
+		return () => {
+			active = false;
+		};
+	});
+	return {
+		get current() {
+			return current;
+		}
+	};
+}

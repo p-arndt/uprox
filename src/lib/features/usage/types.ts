@@ -131,28 +131,42 @@ export interface UsageDonutPanel {
 	rows: DimensionUsageRow[];
 }
 
-/** The cost-analysis payload shared by the usage, service and token pages. */
+/**
+ * A secondary panel's data, streamed after first paint. A failed query resolves
+ * to the panel's empty shape with `failed` set instead of rejecting, so the page
+ * can show an inline error rather than an unhandled rejection.
+ */
+export interface Streamed<T> {
+	value: T;
+	failed: boolean;
+}
+
+/**
+ * The cost-analysis payload shared by the usage, service and token pages. The
+ * fields the first paint needs are plain values; the secondary panels arrive
+ * as promises that SvelteKit streams in.
+ */
 export interface UsageAnalysis {
 	range: ResolvedRangeKey;
 	ranges: readonly UsageRangeOption[];
 	bucket: BucketChoice;
 	groupBy: UsageDimension;
 	filters: UsageFilter[];
-	filterOptions: UsageFilterOptions;
 	dimensions: readonly UsageDimension[];
 	breakdownLimit: number;
 	breakdownTruncated: boolean;
 	customFrom: string | null;
 	customTo: string | null;
 	totals: UsageTotals;
-	prevTotals: UsageTotals;
 	grouped: GroupedSeriesResult;
 	breakdown: DimensionUsageRow[];
-	donuts: UsageDonutPanel[];
-	meters: TokenMeterBreakdown;
-	movers: UsageMover[];
-	efficiency: ModelEfficiency[];
 	series: UsageSeries;
-	/** only the points are needed for the overlay; the unit matches `series` */
-	prevPoints: UsageSeriesPoint[];
+	/** previous equal-length window; null when the comparison failed */
+	prevTotals: Promise<Streamed<UsageTotals | null>>;
+	filterOptions: Promise<Streamed<UsageFilterOptions>>;
+	donuts: Promise<Streamed<UsageDonutPanel[]>>;
+	/** null when the meter breakdown failed */
+	meters: Promise<Streamed<TokenMeterBreakdown | null>>;
+	movers: Promise<Streamed<UsageMover[]>>;
+	efficiency: Promise<Streamed<ModelEfficiency[]>>;
 }
