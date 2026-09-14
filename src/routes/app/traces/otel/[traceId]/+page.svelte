@@ -12,9 +12,9 @@
 	import { formatDuration, formatTokens } from '$lib/format';
 	import { toneDot } from '$lib/events';
 	import TraceWaterfall from '$lib/features/traces/components/trace-waterfall.svelte';
-	import DetailHeader from '$lib/components/detail-header.svelte';
+	import DetailHeader from '$lib/components/layout/detail-header.svelte';
 	import Network from '@lucide/svelte/icons/network';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
 
 	let { data } = $props();
 

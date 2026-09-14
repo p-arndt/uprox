@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Label } from '$lib/components/ui/label/index.js';
-	import FieldHint from '$lib/components/field-hint.svelte';
+	import FieldHint from '$lib/components/form/field-hint.svelte';
 
 	// A form label with an optional inline info hint beside it.
 

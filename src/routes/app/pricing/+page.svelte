@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button/index.js';
-	import PageHeader from '$lib/components/page-header.svelte';
-	import PageShell from '$lib/components/page-shell.svelte';
-	import EmptyState from '$lib/components/empty-state.svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
+	import EmptyState from '$lib/components/layout/empty-state.svelte';
 	import AddModelDialog from '$lib/features/pricing/components/add-model-dialog.svelte';
 	import { createTableState } from '$lib/state/table.svelte';
 	import {

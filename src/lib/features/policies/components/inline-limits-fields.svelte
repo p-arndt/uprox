@@ -3,7 +3,7 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
-	import FieldLabel from '$lib/components/field-label.svelte';
+	import FieldLabel from '$lib/components/form/field-label.svelte';
 	import InlineLimitsAdvanced from '$lib/features/policies/components/inline-limits-advanced.svelte';
 	import type { InlineLimitValues } from '$lib/features/policies/inline-limits';
 	import {

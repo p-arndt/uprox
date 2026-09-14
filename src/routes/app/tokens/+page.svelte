@@ -3,9 +3,9 @@
 	import * as Table from '$lib/components/ui/table/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
-	import PageHeader from '$lib/components/page-header.svelte';
-	import EmptyState from '$lib/components/empty-state.svelte';
-	import StatCard from '$lib/components/stat-card.svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import EmptyState from '$lib/components/layout/empty-state.svelte';
+	import StatCard from '$lib/components/layout/stat-card.svelte';
 	import TokenRow from '$lib/features/tokens/components/token-row.svelte';
 	import CreateTokenDialog from '$lib/features/tokens/components/create-token-dialog.svelte';
 	import EditTokenDialog from '$lib/features/tokens/components/edit-token-dialog.svelte';
@@ -16,7 +16,7 @@
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import KeyRound from '@lucide/svelte/icons/key-round';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
 
 	let { data, form } = $props();
 	let createOpen = $state(false);

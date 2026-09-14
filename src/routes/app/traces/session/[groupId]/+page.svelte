@@ -1,6 +1,6 @@
 <script lang="ts">
 	import TraceWaterfall from '$lib/features/traces/components/trace-waterfall.svelte';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
 	import { formatDuration } from '$lib/format';
 	import { eventTone, toneDot } from '$lib/events';
 	import { callSpan, callsWindow, waterfallBar } from '$lib/features/traces/trace';

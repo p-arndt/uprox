@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { invalidateAll } from '$app/navigation';
-	import PageHeader from '$lib/components/page-header.svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import ProviderSecretRow from '$lib/features/providers/components/provider-secret-row.svelte';
 	import ProviderKeyDialog from '$lib/features/providers/components/provider-key-dialog.svelte';
 	import RotateKeyDialog from '$lib/features/providers/components/rotate-key-dialog.svelte';
@@ -16,7 +16,7 @@
 	import { can } from '$lib/permissions';
 	import Plug from '@lucide/svelte/icons/plug';
 	import Plus from '@lucide/svelte/icons/plus';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
 
 	let { data, form } = $props();
 

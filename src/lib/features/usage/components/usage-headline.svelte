@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
-	import DeltaPill from '$lib/components/delta-pill.svelte';
-	import Sparkline from '$lib/components/sparkline.svelte';
+	import DeltaPill from '$lib/components/data/delta-pill.svelte';
+	import Sparkline from '$lib/components/data/sparkline.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
 	import type { UsageTotals, UsageSeries } from '$lib/features/usage/types';
 	import { headlineCells } from '$lib/features/usage/headline';

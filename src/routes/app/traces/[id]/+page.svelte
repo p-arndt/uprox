@@ -14,9 +14,9 @@
 	import TraceMetadata from '$lib/features/traces/components/trace-metadata.svelte';
 	import TraceWaterfall from '$lib/features/traces/components/trace-waterfall.svelte';
 	import RawPayloadTabs from '$lib/features/traces/components/raw-payload-tabs.svelte';
-	import DetailHeader from '$lib/components/detail-header.svelte';
+	import DetailHeader from '$lib/components/layout/detail-header.svelte';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
 	import CallStatus from '../call-status.svelte';
 	import SummaryStat from '../summary-stat.svelte';
 	import { callLabel } from '../session/[groupId]/session';

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Select from '$lib/components/ui/select/index.js';
-	import type { SelectOption } from '$lib/components/form-options';
+	import type { SelectOption } from '$lib/components/form/form-options';
 
 	// A single-value select that submits with its form under `name` and shows the
 	// selected option's label in the trigger.

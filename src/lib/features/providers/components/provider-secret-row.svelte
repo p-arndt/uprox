@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import ConfirmAction from '$lib/components/confirm-action.svelte';
+	import ConfirmAction from '$lib/components/form/confirm-action.svelte';
 	import { relativeTime } from '$lib/format';
 	import { endpointHost, type ProviderSecret } from '$lib/features/providers/providers';
 	import Lock from '@lucide/svelte/icons/lock';

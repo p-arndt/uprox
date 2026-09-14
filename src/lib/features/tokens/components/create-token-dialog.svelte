@@ -7,8 +7,8 @@
 		type TokenFormValues
 	} from '$lib/features/tokens/components/token-form.svelte';
 	import { emptyInlineLimits } from '$lib/features/policies/inline-limits';
-	import SelectField from '$lib/components/select-field.svelte';
-	import FormError from '$lib/components/form-error.svelte';
+	import SelectField from '$lib/components/form/select-field.svelte';
+	import FormError from '$lib/components/form/form-error.svelte';
 
 	let {
 		open = $bindable(false),

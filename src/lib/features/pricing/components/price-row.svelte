@@ -9,7 +9,7 @@
 	import * as Table from '$lib/components/ui/table/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import ConfirmAction from '$lib/components/confirm-action.svelte';
+	import ConfirmAction from '$lib/components/form/confirm-action.svelte';
 	import PriceCell from '$lib/features/pricing/components/price-cell.svelte';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';

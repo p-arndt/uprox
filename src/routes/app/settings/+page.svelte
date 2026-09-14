@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import PageHeader from '$lib/components/page-header.svelte';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
 	import { can } from '$lib/permissions';
 	import CacheSettingsCard from './cache-settings-card.svelte';
 	import MemberPermissionsCard from './member-permissions-card.svelte';

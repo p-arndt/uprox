@@ -7,8 +7,8 @@
 	import type { DimensionUsageRow } from '$lib/features/usage/types';
 	import { relativeTime } from '$lib/format';
 	import Boxes from '@lucide/svelte/icons/boxes';
-	import DetailHeader from '$lib/components/detail-header.svelte';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import DetailHeader from '$lib/components/layout/detail-header.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
 
 	let { data } = $props();
 

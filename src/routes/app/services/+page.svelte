@@ -5,9 +5,9 @@
 	import * as Table from '$lib/components/ui/table/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import PageHeader from '$lib/components/page-header.svelte';
-	import EmptyState from '$lib/components/empty-state.svelte';
-	import ConfirmAction from '$lib/components/confirm-action.svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import EmptyState from '$lib/components/layout/empty-state.svelte';
+	import ConfirmAction from '$lib/components/form/confirm-action.svelte';
 	import ServiceForm, { type ServiceFormValues } from './service-form.svelte';
 	import { emptyInlineLimits, inlineLimitsFromRow } from '$lib/features/policies/inline-limits';
 	import { relativeTime } from '$lib/format';
@@ -16,7 +16,7 @@
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Pencil from '@lucide/svelte/icons/pencil';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
 
 	let { data, form } = $props();
 	let open = $state(false);

@@ -5,7 +5,7 @@
 	import { isDerivedDimension, type UsageDimension } from '$lib/features/usage/group';
 	import { formatUsd, formatTokens, formatCount, formatUsdRate } from '$lib/format';
 	import { createTableState } from '$lib/state/table.svelte';
-	import SortableHeader from '$lib/components/sortable-header.svelte';
+	import SortableHeader from '$lib/components/form/sortable-header.svelte';
 
 	// The numeric view of the grouping — and the table view the accessibility
 	// pass requires, so every figure the chart encodes in colour is also readable

@@ -2,15 +2,15 @@
 	import * as Table from '$lib/components/ui/table/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import PageHeader from '$lib/components/page-header.svelte';
-	import EmptyState from '$lib/components/empty-state.svelte';
-	import SearchInput from '$lib/components/search-input.svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import EmptyState from '$lib/components/layout/empty-state.svelte';
+	import SearchInput from '$lib/components/form/search-input.svelte';
 	import { formatDateTime, relativeTime, formatUsd, formatCount } from '$lib/format';
 	import { eventTone, toneDot, toneText, actionIcon, isGatewayAction } from '$lib/events';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
 	import Search from '@lucide/svelte/icons/search';
 	import X from '@lucide/svelte/icons/x';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
 
 	let { data } = $props();
 

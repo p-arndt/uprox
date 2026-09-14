@@ -4,7 +4,7 @@
 	import { formatUsd, formatTokens, formatCount, formatPct } from '$lib/format';
 	import { priceExtreme, priceExtremes } from '$lib/features/usage/efficiency';
 	import { createTableState } from '$lib/state/table.svelte';
-	import SortableHeader from '$lib/components/sortable-header.svelte';
+	import SortableHeader from '$lib/components/form/sortable-header.svelte';
 
 	// Per-model unit economics: the table behind "should we switch models".
 	//

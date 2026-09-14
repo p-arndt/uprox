@@ -2,8 +2,8 @@
 	import TokenForm, {
 		type TokenFormValues
 	} from '$lib/features/tokens/components/token-form.svelte';
-	import EntityDialog from '$lib/components/entity-dialog.svelte';
-	import FormError from '$lib/components/form-error.svelte';
+	import EntityDialog from '$lib/components/form/entity-dialog.svelte';
+	import FormError from '$lib/components/form/form-error.svelte';
 
 	let {
 		editing,

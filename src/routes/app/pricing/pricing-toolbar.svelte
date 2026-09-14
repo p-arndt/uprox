@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import SearchInput from '$lib/components/search-input.svelte';
+	import SearchInput from '$lib/components/form/search-input.svelte';
 	import type { PriceTier } from '$lib/features/pricing/pricing';
 
 	// Provider tabs, the rate-card (tier) switch and the model search.

@@ -21,10 +21,10 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import InlineLimitsFields from '$lib/features/policies/components/inline-limits-fields.svelte';
-	import CheckboxGroup from '$lib/components/checkbox-group.svelte';
-	import FieldLabel from '$lib/components/field-label.svelte';
-	import SelectField from '$lib/components/select-field.svelte';
-	import { presetOptions } from '$lib/components/form-options';
+	import CheckboxGroup from '$lib/components/form/checkbox-group.svelte';
+	import FieldLabel from '$lib/components/form/field-label.svelte';
+	import SelectField from '$lib/components/form/select-field.svelte';
+	import { presetOptions } from '$lib/components/form/form-options';
 	import { GATEWAY_SCOPES } from '$lib/scopes';
 
 	let {

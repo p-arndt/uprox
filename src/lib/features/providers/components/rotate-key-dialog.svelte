@@ -4,8 +4,8 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import EntityDialog from '$lib/components/entity-dialog.svelte';
-	import FormError from '$lib/components/form-error.svelte';
+	import EntityDialog from '$lib/components/form/entity-dialog.svelte';
+	import FormError from '$lib/components/form/form-error.svelte';
 	import type { RotateKeyDraft } from '$lib/features/providers/providers';
 
 	let {

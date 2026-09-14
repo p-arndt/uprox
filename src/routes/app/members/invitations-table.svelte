@@ -3,7 +3,7 @@
 	import * as Table from '$lib/components/ui/table/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import ConfirmAction from '$lib/components/confirm-action.svelte';
+	import ConfirmAction from '$lib/components/form/confirm-action.svelte';
 	import { formatDateTime } from '$lib/format';
 	import Copy from '@lucide/svelte/icons/copy';
 	import Ban from '@lucide/svelte/icons/ban';

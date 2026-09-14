@@ -4,9 +4,9 @@
 	import { goto } from '$app/navigation';
 	import type { ResolvedPathname } from '$app/types';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import PageHeader from '$lib/components/page-header.svelte';
-	import PageShell from '$lib/components/page-shell.svelte';
-	import EmptyState from '$lib/components/empty-state.svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
+	import EmptyState from '$lib/components/layout/empty-state.svelte';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
 	import MetaFilterBanner from './meta-filter-banner.svelte';
 	import OtelTracesTable from './otel-traces-table.svelte';

@@ -5,8 +5,8 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/features/pricing/pricing';
-	import SelectField from '$lib/components/select-field.svelte';
-	import FormError from '$lib/components/form-error.svelte';
+	import SelectField from '$lib/components/form/select-field.svelte';
+	import FormError from '$lib/components/form/form-error.svelte';
 
 	const longThresholdLabel = `${Math.round(LONG_CONTEXT_MIN_PROMPT_TOKENS / 1000)}k`;
 	const AUTO_READ = 'auto (0.1× input)';

@@ -7,9 +7,9 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import InlineLimitsFields from '$lib/features/policies/components/inline-limits-fields.svelte';
-	import FieldLabel from '$lib/components/field-label.svelte';
-	import SelectField from '$lib/components/select-field.svelte';
-	import { presetOptions } from '$lib/components/form-options';
+	import FieldLabel from '$lib/components/form/field-label.svelte';
+	import SelectField from '$lib/components/form/select-field.svelte';
+	import { presetOptions } from '$lib/components/form/form-options';
 	import type { InlineLimitValues } from '$lib/features/policies/inline-limits';
 
 	export interface ServiceFormValues extends InlineLimitValues {

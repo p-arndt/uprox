@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import PageHeader from '$lib/components/page-header.svelte';
-	import PageShell from '$lib/components/page-shell.svelte';
-	import EmptyState from '$lib/components/empty-state.svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
+	import EmptyState from '$lib/components/layout/empty-state.svelte';
 	import { can } from '$lib/permissions';
 	import Users from '@lucide/svelte/icons/users';
 	import InviteMemberDialog from './invite-member-dialog.svelte';

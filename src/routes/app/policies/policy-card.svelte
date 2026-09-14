@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import ConfirmAction from '$lib/components/confirm-action.svelte';
+	import ConfirmAction from '$lib/components/form/confirm-action.svelte';
 	import ShieldHalf from '@lucide/svelte/icons/shield-half';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Trash2 from '@lucide/svelte/icons/trash-2';

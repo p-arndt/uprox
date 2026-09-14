@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
-	import EntityDialog from '$lib/components/entity-dialog.svelte';
+	import EntityDialog from '$lib/components/form/entity-dialog.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import type { RevealedSecret } from '$lib/features/tokens/tokens';
 	import Copy from '@lucide/svelte/icons/copy';

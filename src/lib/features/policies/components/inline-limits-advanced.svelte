@@ -2,9 +2,9 @@
 	import { untrack, type Snippet } from 'svelte';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
-	import CheckboxGroup from '$lib/components/checkbox-group.svelte';
-	import FieldLabel from '$lib/components/field-label.svelte';
-	import SelectField from '$lib/components/select-field.svelte';
+	import CheckboxGroup from '$lib/components/form/checkbox-group.svelte';
+	import FieldLabel from '$lib/components/form/field-label.svelte';
+	import SelectField from '$lib/components/form/select-field.svelte';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
 	import type { InlineLimitValues } from '$lib/features/policies/inline-limits';
 	import type {

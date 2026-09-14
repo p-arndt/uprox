@@ -7,8 +7,8 @@
 	import { createUsageView } from '$lib/features/usage/view.svelte';
 	import { NULL_VALUE, type UsageDimension } from '$lib/features/usage/group';
 	import type { DimensionUsageRow } from '$lib/features/usage/types';
-	import PageShell from '$lib/components/page-shell.svelte';
-	import PageHeader from '$lib/components/page-header.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
 
 	let { data } = $props();
 
