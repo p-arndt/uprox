@@ -5,7 +5,8 @@ import { auditLog } from '$lib/server/db/schema';
 import type { ResolvedRange } from '$lib/usage-range';
 import type { UsageFilter } from '$lib/usage-group';
 import { usageConds } from '$lib/server/usage-queries/predicates';
-import { latencyHistogram, latencyPercentiles } from '$lib/server/usage-queries/latency';
+import { latencyHistogram } from '$lib/server/usage-queries/latency';
+import { mapTotalsRow } from '$lib/server/usage-queries/row-mapping';
 import type { UsageTotals } from '$lib/features/usage/types';
 
 export type { UsageTotals };
@@ -56,17 +57,5 @@ export async function orgUsageTotals(
 		opts.latency === false ? Promise.resolve([]) : latencyHistogram(range, opts)
 	]);
 
-	return {
-		requests: Number(row?.requests ?? 0),
-		costUsd: Number(row?.cost ?? 0),
-		errors: Number(row?.errors ?? 0),
-		denied: Number(row?.denied ?? 0),
-		...latencyPercentiles(histogram),
-		inputTokens: Number(row?.inputTokens ?? 0),
-		outputTokens: Number(row?.outputTokens ?? 0),
-		savedInputTokens: Number(row?.savedInputTokens ?? 0),
-		providerCachedTokens: Number(row?.providerCachedTokens ?? 0),
-		embeddingInputTokens: Number(row?.embeddingInputTokens ?? 0),
-		embeddingOutputTokens: Number(row?.embeddingOutputTokens ?? 0)
-	};
+	return mapTotalsRow(row, histogram);
 }
