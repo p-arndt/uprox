@@ -78,9 +78,9 @@
 	<Card.Root>
 		<Card.Content class="py-16 text-center text-sm text-muted-foreground">
 			{#if analysis.filters.length > 0}
-				No gateway traffic for rangeLabel={view.rangeLabel} matching these filters.
+				No gateway traffic for {view.rangeLabel} matching these filters.
 			{:else}
-				No gateway traffic for rangeLabel={view.rangeLabel}.
+				No gateway traffic for {view.rangeLabel}.
 			{/if}
 		</Card.Content>
 	</Card.Root>
