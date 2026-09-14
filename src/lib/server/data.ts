@@ -1208,7 +1208,6 @@ export async function orgUsageSeries(
 		? sql`and ${auditLog.serviceId} = ${opts.serviceId}::uuid`
 		: sql``;
 	const tokenFilter = opts.tokenId ? sql`and ${auditLog.tokenId} = ${opts.tokenId}::uuid` : sql``;
-	const dimFilters = (opts.filters ?? []).map((f) => sql`and ${filterCond(f)}`);
 
 	const rows = await db.execute<{
 		bucket: string;
@@ -1232,10 +1231,11 @@ export async function orgUsageSeries(
 		) as g(bucket)
 		left join ${auditLog}
 			on date_trunc(${unit}, ${auditLog.createdAt}) = g.bucket
-			and ${auditLog.action} like 'gateway.%'
+			-- the shared predicate bounds created_at to the window, so the join
+			-- only reads the selected range instead of the whole table
+			and ${usageCondsSql(range, opts.filters)}
 			${serviceFilter}
 			${tokenFilter}
-			${sql.join(dimFilters, sql` `)}
 		group by g.bucket
 		order by g.bucket asc
 	`);
