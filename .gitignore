@@ -26,3 +26,6 @@ test-results
 playwright-report
 /blob-report
 .playwright
+
+# Claude Code agent worktrees
+.claude/worktrees/
