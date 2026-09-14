@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Unit tests, migration drift, build
+    runs-on: ubuntu-latest
+    env:
+      # Build-time placeholders: SvelteKit's build imports server modules, and
+      # the DB client / better-auth validate env at import time. No real
+      # database is contacted during these steps.
+      POSTGRES_HOST: ci
+      POSTGRES_USER: ci
+      POSTGRES_PASSWORD: ci
+      POSTGRES_DB: ci
+      BETTER_AUTH_SECRET: ci-placeholder-secret-not-used-at-runtime
+      ORIGIN: http://localhost
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # Disabled: svelte-check and typescript-eslint do not support the installed
+      # TypeScript 7 yet (svelte-check needs TS 6 side by side with --tsgo, and
+      # typescript-eslint has no TS 7 support). Re-enable once the toolchain
+      # catches up.
+      # - name: Type check
+      #   run: pnpm check
+      # - name: Lint
+      #   run: pnpm lint
+
+      - name: Unit tests
+        run: pnpm test:unit --run
+
+      - name: Migration drift check
+        # Generating from the current schema must be a no-op. If drizzle-kit
+        # writes a new migration, the schema and ./drizzle are out of sync.
+        run: |
+          pnpm exec drizzle-kit generate --name ci_drift_check
+          if [ -n "$(git status --porcelain -- drizzle)" ]; then
+            echo "::error::Schema changed without a committed migration. Run 'pnpm db:generate' and commit the result."
+            git status --porcelain -- drizzle
+            exit 1
+          fi
+
+      - name: Build
+        run: pnpm build
+
+  e2e:
+    name: E2E tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: root
+          POSTGRES_PASSWORD: mysecretpassword
+          POSTGRES_DB: local
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U root -d local"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: '5432'
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: mysecretpassword
+      POSTGRES_DB: local
+      BETTER_AUTH_SECRET: ci-e2e-secret-0123456789abcdef0123456789
+      # 32 zero bytes, base64: throwaway key for the ephemeral CI database.
+      ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: E2E tests
+        run: pnpm test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
