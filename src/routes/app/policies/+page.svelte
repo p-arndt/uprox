@@ -3,8 +3,8 @@
 	import PageHeader from '$lib/components/page-header.svelte';
 	import PageShell from '$lib/components/page-shell.svelte';
 	import EmptyState from '$lib/components/empty-state.svelte';
-	import type { PolicyFormValues } from '$lib/components/policy-form.svelte';
-	import { inlineLimitsFromRow } from '$lib/components/inline-limits';
+	import type { PolicyFormValues } from '$lib/features/policies/components/policy-form.svelte';
+	import { inlineLimitsFromRow } from '$lib/features/policies/inline-limits';
 	import { can } from '$lib/permissions';
 	import ShieldHalf from '@lucide/svelte/icons/shield-half';
 	import CreatePolicyDialog from './create-policy-dialog.svelte';

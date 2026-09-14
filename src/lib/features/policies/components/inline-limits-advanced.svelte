@@ -6,8 +6,11 @@
 	import FieldLabel from '$lib/components/field-label.svelte';
 	import SelectField from '$lib/components/select-field.svelte';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
-	import type { InlineLimitValues } from '$lib/components/inline-limits';
-	import type { InlineLimitHints, InlineLimitScope } from '$lib/components/inline-limits-hints';
+	import type { InlineLimitValues } from '$lib/features/policies/inline-limits';
+	import type {
+		InlineLimitHints,
+		InlineLimitScope
+	} from '$lib/features/policies/inline-limits-hints';
 
 	// The collapsible "Advanced settings" part of the inline limits form:
 	// access narrowing, caching and tracing, plus any parent-supplied extras.

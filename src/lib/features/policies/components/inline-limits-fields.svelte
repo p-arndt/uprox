@@ -4,9 +4,12 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import FieldLabel from '$lib/components/field-label.svelte';
-	import InlineLimitsAdvanced from '$lib/components/inline-limits-advanced.svelte';
-	import type { InlineLimitValues } from '$lib/components/inline-limits';
-	import { inlineLimitHints, type InlineLimitScope } from '$lib/components/inline-limits-hints';
+	import InlineLimitsAdvanced from '$lib/features/policies/components/inline-limits-advanced.svelte';
+	import type { InlineLimitValues } from '$lib/features/policies/inline-limits';
+	import {
+		inlineLimitHints,
+		type InlineLimitScope
+	} from '$lib/features/policies/inline-limits-hints';
 
 	let {
 		providers,

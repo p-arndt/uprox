@@ -6,7 +6,7 @@
 	import TokenForm, {
 		type TokenFormValues
 	} from '$lib/features/tokens/components/token-form.svelte';
-	import { emptyInlineLimits } from '$lib/components/inline-limits';
+	import { emptyInlineLimits } from '$lib/features/policies/inline-limits';
 	import SelectField from '$lib/components/select-field.svelte';
 	import FormError from '$lib/components/form-error.svelte';
 

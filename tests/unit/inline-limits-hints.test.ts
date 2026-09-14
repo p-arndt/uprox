@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { inlineLimitHints } from '$lib/components/inline-limits-hints';
+import { inlineLimitHints } from '$lib/features/policies/inline-limits-hints';
 
 describe('inlineLimitHints', () => {
 	it('describes a policy as the concrete base layer', () => {

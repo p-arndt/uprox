@@ -1,7 +1,9 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import PolicyForm, { type PolicyFormValues } from '$lib/components/policy-form.svelte';
+	import PolicyForm, {
+		type PolicyFormValues
+	} from '$lib/features/policies/components/policy-form.svelte';
 	import Plus from '@lucide/svelte/icons/plus';
 
 	// The "New preset" button and its create dialog.

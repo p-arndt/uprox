@@ -9,7 +9,7 @@
 	import EmptyState from '$lib/components/empty-state.svelte';
 	import ConfirmAction from '$lib/components/confirm-action.svelte';
 	import ServiceForm, { type ServiceFormValues } from '$lib/components/service-form.svelte';
-	import { emptyInlineLimits, inlineLimitsFromRow } from '$lib/components/inline-limits';
+	import { emptyInlineLimits, inlineLimitsFromRow } from '$lib/features/policies/inline-limits';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import Plus from '@lucide/svelte/icons/plus';

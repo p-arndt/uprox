@@ -6,8 +6,8 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
-	import InlineLimitsFields from '$lib/components/inline-limits-fields.svelte';
-	import type { InlineLimitValues } from '$lib/components/inline-limits';
+	import InlineLimitsFields from '$lib/features/policies/components/inline-limits-fields.svelte';
+	import type { InlineLimitValues } from '$lib/features/policies/inline-limits';
 
 	export interface PolicyFormValues {
 		id?: string;

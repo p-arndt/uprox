@@ -12,7 +12,7 @@
 	import SecretDialog from '$lib/features/tokens/components/secret-dialog.svelte';
 	import { type TokenFormValues } from '$lib/features/tokens/components/token-form.svelte';
 	import { tokenStats, type RevealedSecret, type Token } from '$lib/features/tokens/tokens';
-	import { inlineLimitsFromRow } from '$lib/components/inline-limits';
+	import { inlineLimitsFromRow } from '$lib/features/policies/inline-limits';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import KeyRound from '@lucide/svelte/icons/key-round';

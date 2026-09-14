@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { emptyInlineLimits, inlineLimitsFromRow } from '$lib/components/inline-limits';
+import { emptyInlineLimits, inlineLimitsFromRow } from '$lib/features/policies/inline-limits';
 
 describe('inlineLimitsFromRow', () => {
 	it('maps null columns to inherit', () => {
