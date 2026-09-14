@@ -1,14 +1,20 @@
-/** The billable request pipelines: OpenAI-compatible JSON, multipart and native Gemini. */
+/**
+ * The billable request pipelines: OpenAI-compatible JSON, multipart and native
+ * Gemini. The JSON and native pipelines run the same stages over a shared
+ * {@link RequestContext}: resolve the provider → guard (capability, policy, rate
+ * limit) and replay the exact-match cache → acquire the upstream (budget,
+ * credentials) → send → record (stream or buffered).
+ */
 import type { RequestEvent } from '@sveltejs/kit';
-import { authHeaders, PROVIDERS, type Capability } from '$lib/server/providers';
-import { getAdapter } from '$lib/server/adapters';
+import { authHeaders, PROVIDERS, type Capability, type ProviderDef } from '$lib/server/providers';
+import { getAdapter, type ProviderAdapter } from '$lib/server/adapters';
 import { cacheKeyFor, isDeterministicRequest } from '$lib/server/cache';
 import { isRecord } from '$lib/server/json';
 import { geminiEnvelope, openAiEnvelope } from './envelope';
 import type { GatewayAuth } from './authenticate';
-import { createContext } from './context';
+import { createContext, type RequestContext } from './context';
 import { resolveRoutedProvider } from './resolve-provider';
-import { acquireUpstream, checkAccess, replayCached } from './guards';
+import { acquireUpstream, checkAccess, replayCached, type UpstreamGrant } from './guards';
 import { fetchUpstream, readUpstreamText } from './upstream';
 import {
 	bufferedOpenAiUsageExtractor,
@@ -17,7 +23,8 @@ import {
 	openAiUsageExtractor,
 	recordCompletion,
 	usageFromText,
-	type CacheTarget
+	type CacheTarget,
+	type UsageExtractor
 } from './record-usage';
 import { streamWithRecording } from './stream';
 
@@ -44,143 +51,247 @@ export interface ProxyOptions {
 	preferProvider?: string;
 }
 
+/* ------------------------------ shared stages ------------------------------ */
+
+/** A completed upstream exchange, carried into the record stage. */
+interface Exchange {
+	provider: ProviderDef;
+	grant: UpstreamGrant;
+	upstream: Response;
+	cache: CacheTarget | null;
+}
+
+/**
+ * Guard stage: capability, policy and rate limit, then the exact-match cache. A
+ * hit is free (no key, no upstream call, no spend), so it runs before the budget
+ * gate in {@link acquireUpstream}. Returns the response that ends the request —
+ * an audited rejection or a cache replay — or null to continue.
+ */
+async function guardAndReplay(
+	ctx: RequestContext,
+	provider: ProviderDef,
+	cache: CacheTarget | null,
+	replay: (cacheKey: string) => Promise<Response | null>
+): Promise<Response | null> {
+	const denied = await checkAccess(ctx, provider);
+	if (denied) return denied;
+	return cache ? replay(cache.key) : null;
+}
+
+/** The upstream body to stream to the client, or null when the response is buffered. */
+function streamBody(stream: boolean, upstream: Response): ReadableStream<Uint8Array> | null {
+	return stream && upstream.ok ? upstream.body : null;
+}
+
+/** Record stage (streamed): hand the body to the client while usage is captured in-line. */
+function recordStream(
+	ctx: RequestContext,
+	x: Exchange,
+	stream: { source: ReadableStream<Uint8Array>; extract: UsageExtractor; detail: string }
+): Response {
+	return streamWithRecording(ctx, {
+		provider: x.provider,
+		upstream: x.upstream,
+		source: stream.source,
+		extract: stream.extract,
+		cache: x.cache,
+		detail: stream.detail,
+		release: x.grant.release
+	});
+}
+
+interface BufferedRecording {
+	/** turn the raw upstream body into the body the client receives */
+	translate: (raw: string) => string;
+	extract: UsageExtractor;
+	detail?: string;
+	contentType: string;
+}
+
+/** Record stage (buffered): read the body, record usage and cost, answer the client. */
+async function recordBuffered(
+	ctx: RequestContext,
+	x: Exchange,
+	opts: BufferedRecording
+): Promise<Response> {
+	const rawText = await readUpstreamText(ctx, x.provider, x.grant, x.upstream);
+	if (rawText instanceof Response) return rawText;
+	const text = opts.translate(rawText);
+	await recordCompletion(ctx, {
+		provider: x.provider,
+		statusCode: x.upstream.status,
+		ok: x.upstream.ok,
+		usage: usageFromText(text, opts.extract),
+		response: text,
+		format: 'json',
+		...(opts.detail ? { detail: opts.detail } : {}),
+		cache: x.cache,
+		complete: true,
+		release: x.grant.release
+	});
+	return new Response(text, {
+		status: x.upstream.status,
+		headers: {
+			'content-type': opts.contentType,
+			...(x.cache ? { 'x-uprox-cache': 'MISS' } : {})
+		}
+	});
+}
+
+/* ------------------------- OpenAI-compatible pipeline ------------------------- */
+
+const CACHEABLE_SCOPES: ReadonlySet<Capability> = new Set(['chat', 'embeddings', 'responses']);
+
+/**
+ * Exact-match cache target for an OpenAI-shaped request, or null when it isn't
+ * cacheable. Applies to chat, embeddings and the Responses API. Streaming
+ * responses are cacheable too: the SSE body is captured and replayed verbatim on
+ * a hit. The key includes the request's `stream` flag, so a streamed request
+ * only ever matches a stored SSE body and a buffered one only stored JSON.
+ *
+ * Caching is an instance-wide optimization, not access control: it applies even
+ * to services with no policy. A policy's cacheTtlSeconds, when set (non-null),
+ * overrides the instance default — including 0 to explicitly opt a policy out.
+ * A multi-turn Responses call carries `previous_response_id`, which differs every
+ * turn, so only a byte-identical request is ever served from cache.
+ */
+function openAiCacheTarget(
+	ctx: RequestContext,
+	provider: ProviderDef,
+	opts: ProxyOptions
+): CacheTarget | null {
+	const { scope, body } = opts;
+	const ttlSeconds = ctx.token.effective.cacheTtlSeconds;
+	if (!CACHEABLE_SCOPES.has(scope) || !(ttlSeconds > 0)) return null;
+	// A Responses API call with store:false isn't persisted by OpenAI, so its
+	// returned `id` can't be referenced later — don't cache/replay one.
+	if (scope === 'responses' && isRecord(body) && body.store === false) return null;
+	// only cache reproducible requests: embeddings always, chat/responses only
+	// when sampling is pinned (temperature 0 or an explicit seed), so two
+	// identical-but-varied prompts each reach the model.
+	if (!isDeterministicRequest(scope, body)) return null;
+	return {
+		key: cacheKeyFor(provider.id, opts.path, body, ctx.token.providerSecretId),
+		ttlSeconds
+	};
+}
+
+/**
+ * For streamed chat completions, ask a pass-through upstream to emit a final
+ * usage chunk; otherwise streaming responses carry no token counts and we can't
+ * compute cost. A caller-supplied stream_options is kept.
+ */
+function withUsageChunk(body: unknown, wanted: boolean): unknown {
+	if (!wanted || !isRecord(body)) return body;
+	const existing = isRecord(body.stream_options) ? body.stream_options : {};
+	return { ...body, stream_options: { ...existing, include_usage: true } };
+}
+
+/**
+ * Forward the beta opt-in header some OpenAI endpoints require — e.g. the
+ * Realtime endpoints need `OpenAI-Beta: realtime=v1`, and without it OpenAI 404s
+ * the route. Defaults it for realtime when the client omitted it, but honours a
+ * client-supplied value. Only for pass-through providers; adapters speak their
+ * own native API.
+ */
+function openAiBetaHeader(
+	event: RequestEvent,
+	scope: Capability,
+	adapter: ProviderAdapter | null
+): Record<string, string> {
+	if (adapter) return {};
+	const beta =
+		event.request.headers.get('openai-beta') ?? (scope === 'realtime' ? 'realtime=v1' : null);
+	return beta ? { 'openai-beta': beta } : {};
+}
+
+/**
+ * Send stage request for the OpenAI-compatible surface. A provider with an
+ * adapter speaks a non-OpenAI native API: it builds its own URL and translates
+ * the body (adapters emit their own usage chunk, so the OpenAI-only
+ * `include_usage` knob is skipped for them). Pass-through providers get the
+ * OpenAI request verbatim at `${baseUrl}${path}`.
+ */
+function openAiUpstreamRequest(
+	event: RequestEvent,
+	opts: ProxyOptions,
+	provider: ProviderDef,
+	grant: UpstreamGrant,
+	adapter: ProviderAdapter | null
+): { url: string; init: RequestInit } {
+	const { scope, model, stream } = opts;
+	const url = adapter
+		? adapter.buildUrl({ baseUrl: grant.baseUrl, scope, model, stream })
+		: `${grant.baseUrl}${opts.path}`;
+	const body = adapter
+		? adapter.translateRequest(scope, opts.body)
+		: withUsageChunk(opts.body, stream && Boolean(opts.wantsUsageChunk));
+	return {
+		url,
+		init: {
+			method: 'POST',
+			headers: {
+				'content-type': 'application/json',
+				...openAiBetaHeader(event, scope, adapter),
+				...authHeaders(provider, grant.apiKey)
+			},
+			body: JSON.stringify(body)
+		}
+	};
+}
+
 /**
  * The core request flow: route by model → enforce policy → load the upstream
  * key → proxy to the provider → audit. Returns a Response either way.
  */
 export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): Promise<Response> {
-	const { auth, scope, model, path, body, stream, preferProvider, wantsUsageChunk } = opts;
-	const ctx = createContext(event, auth, {
+	const { scope, model } = opts;
+	const ctx = createContext(event, opts.auth, {
 		scope,
 		model,
 		envelope: openAiEnvelope,
-		traceRequest: body
+		traceRequest: opts.body
 	});
-	const { token } = ctx;
 
-	const provider = await resolveRoutedProvider(ctx, preferProvider);
+	const provider = await resolveRoutedProvider(ctx, opts.preferProvider);
 	if (provider instanceof Response) return provider;
 
-	const denied = await checkAccess(ctx, provider);
-	if (denied) return denied;
-
-	// exact-match cache: applies to chat, embeddings, and the Responses API.
-	// Streaming responses are cacheable too: the SSE body is captured and replayed
-	// verbatim on a hit. The cache key includes the request's `stream` flag, so a
-	// streamed request only ever matches a stored SSE body and a buffered request
-	// only matches stored JSON — formats never cross.
-	// Caching is an instance-wide optimization, not access control: it applies even
-	// to services with no policy. A policy's cacheTtlSeconds, when set (non-null),
-	// overrides the instance default — including 0 to explicitly opt a policy out.
-	// Note on the Responses API: a multi-turn call carries `previous_response_id`,
-	// which differs every turn, so its body never collides with another turn —
-	// only a byte-identical request is ever served from cache.
-	const cacheTtl = token.effective.cacheTtlSeconds;
-	// A Responses API call with store:false isn't persisted by OpenAI, so its
-	// returned `id` can't be referenced later — don't cache/replay one.
-	const responsesStoreOff = scope === 'responses' && isRecord(body) && body.store === false;
-	const cacheable =
-		(scope === 'chat' || scope === 'embeddings' || scope === 'responses') &&
-		cacheTtl > 0 &&
-		!responsesStoreOff &&
-		// only cache reproducible requests: embeddings always, chat/responses only
-		// when sampling is pinned (temperature 0 or an explicit seed), so two
-		// identical-but-varied prompts each reach the model.
-		isDeterministicRequest(scope, body);
-	const cache: CacheTarget | null = cacheable
-		? { key: cacheKeyFor(provider.id, path, body, token.providerSecretId), ttlSeconds: cacheTtl }
-		: null;
-	if (cache) {
-		const hit = await replayCached(ctx, provider, cache.key, stream);
-		if (hit) return hit;
-	}
+	const cache = openAiCacheTarget(ctx, provider, opts);
+	const blocked = await guardAndReplay(ctx, provider, cache, (key) =>
+		replayCached(ctx, provider, key, opts.stream)
+	);
+	if (blocked) return blocked;
 
 	const grant = await acquireUpstream(ctx, provider);
 	if (grant instanceof Response) return grant;
 
-	// A provider with an adapter speaks a non-OpenAI native API; it builds its own
-	// URL and translates the request/response bodies. Pass-through providers send
-	// the OpenAI request verbatim to `${baseUrl}${path}`.
 	const adapter = getAdapter(provider.id);
-
-	let outboundBody = body;
-	// For streamed chat completions, ask the upstream to emit a final usage
-	// chunk; otherwise streaming responses carry no token counts and we can't
-	// compute cost. Don't clobber a caller-supplied stream_options. Adapters emit
-	// their own usage chunk, so this OpenAI-only knob is skipped for them.
-	if (!adapter && stream && wantsUsageChunk && isRecord(outboundBody)) {
-		const existing = isRecord(outboundBody.stream_options) ? outboundBody.stream_options : {};
-		outboundBody = { ...outboundBody, stream_options: { ...existing, include_usage: true } };
-	}
-
-	const upstreamUrl = adapter
-		? adapter.buildUrl({ baseUrl: grant.baseUrl, scope, model, stream })
-		: `${grant.baseUrl}${path}`;
-	const upstreamBody = adapter ? adapter.translateRequest(scope, outboundBody) : outboundBody;
-
-	// Realtime endpoints are gated behind `OpenAI-Beta: realtime=v1`; default it
-	// when the client omitted the header, but honour a client-supplied value.
-	const incomingBeta =
-		event.request.headers.get('openai-beta') ?? (scope === 'realtime' ? 'realtime=v1' : null);
-	const fetched = await fetchUpstream(ctx, provider, grant, upstreamUrl, {
-		method: 'POST',
-		headers: {
-			'content-type': 'application/json',
-			// Forward the beta opt-in header some OpenAI endpoints require — e.g. the
-			// Realtime endpoints need `OpenAI-Beta: realtime=v1`, and without it OpenAI
-			// 404s the route. Only for pass-through providers; adapters speak their
-			// own native API.
-			...(!adapter && incomingBeta ? { 'openai-beta': incomingBeta } : {}),
-			...authHeaders(provider, grant.apiKey)
-		},
-		body: JSON.stringify(upstreamBody)
-	});
+	const { url, init } = openAiUpstreamRequest(event, opts, provider, grant, adapter);
+	const fetched = await fetchUpstream(ctx, provider, grant, url, init);
 	if (!fetched.ok) return fetched.response;
-	const { upstream } = fetched;
+	const x: Exchange = { provider, grant, upstream: fetched.upstream, cache };
 
 	// Streaming: the client gets the body untouched while usage is captured for
-	// cost. For an adapter provider we first translate the native event stream
+	// cost. For an adapter provider the native event stream is first translated
 	// into OpenAI SSE, so both the client and the usage capture see that shape.
-	if (stream && upstream.ok && upstream.body) {
-		return streamWithRecording(ctx, {
-			provider,
-			upstream,
-			source: adapter ? adapter.translateStream({ model }, upstream.body) : upstream.body,
-			extract: openAiUsageExtractor,
-			cache,
-			detail: 'stream',
-			release: grant.release
-		});
+	const body = streamBody(opts.stream, x.upstream);
+	if (body) {
+		const source = adapter ? adapter.translateStream({ model }, body) : body;
+		return recordStream(ctx, x, { source, extract: openAiUsageExtractor, detail: 'stream' });
 	}
 
 	// Buffered: translate (for adapter providers) then parse usage for cost. After
 	// translation the body is OpenAI-shaped, so usage parsing, caching and the
 	// returned payload all use the same code path as pass-through.
-	const rawText = await readUpstreamText(ctx, provider, grant, upstream);
-	if (rawText instanceof Response) return rawText;
-	const text = adapter
-		? adapter.translateResponse({ scope, model, text: rawText, ok: upstream.ok })
-		: rawText;
-	await recordCompletion(ctx, {
-		provider,
-		statusCode: upstream.status,
-		ok: upstream.ok,
-		usage: usageFromText(text, bufferedOpenAiUsageExtractor),
-		response: text,
-		format: 'json',
-		cache,
-		complete: true,
-		release: grant.release
-	});
-
-	return new Response(text, {
-		status: upstream.status,
-		headers: {
-			'content-type': 'application/json',
-			...(cache ? { 'x-uprox-cache': 'MISS' } : {})
-		}
+	const { ok } = x.upstream;
+	return recordBuffered(ctx, x, {
+		translate: (text) => (adapter ? adapter.translateResponse({ scope, model, text, ok }) : text),
+		extract: bufferedOpenAiUsageExtractor,
+		contentType: 'application/json'
 	});
 }
+
+/* ----------------------------- multipart pipeline ----------------------------- */
 
 export interface MultipartProxyOptions {
 	auth: GatewayAuth;
@@ -260,6 +371,8 @@ export async function proxyMultipartToProvider(
 	return new Response(text, { status: upstream.status, headers: { 'content-type': outCt } });
 }
 
+/* --------------------------- native Gemini pipeline --------------------------- */
+
 export interface NativeGeminiOptions {
 	auth: GatewayAuth;
 	/** the gateway capability this request exercises (chat or embeddings) */
@@ -273,6 +386,42 @@ export interface NativeGeminiOptions {
 
 /** Model names that are safe to interpolate into an upstream URL path. */
 export const SAFE_MODEL_NAME = /^[A-Za-z0-9._-]+$/;
+
+/**
+ * The request's query string, forwarded verbatim except `key` — the Google SDK
+ * may put the API key there, and that's the uprox token, which must never reach
+ * Google. Returns '' or `?…`.
+ */
+export function queryWithoutKey(url: URL): string {
+	const search = new URLSearchParams(url.search);
+	search.delete('key');
+	const qs = search.toString();
+	return qs ? `?${qs}` : '';
+}
+
+/**
+ * Exact-match cache target for a native Gemini request. Determinism for native
+ * bodies: embeddings always; generateContent only when sampling is pinned
+ * (generationConfig.temperature 0). Keyed on the native path + body, distinct
+ * from the OpenAI-ingress cache (which keys on `/chat/completions` + an OpenAI
+ * body), so formats never cross.
+ */
+function nativeCacheTarget(
+	ctx: RequestContext,
+	provider: ProviderDef,
+	opts: NativeGeminiOptions
+): CacheTarget | null {
+	const { scope, body } = opts;
+	const ttlSeconds = ctx.token.effective.cacheTtlSeconds;
+	if ((scope !== 'chat' && scope !== 'embeddings') || !(ttlSeconds > 0)) return null;
+	const genCfg = isRecord(body) && isRecord(body.generationConfig) ? body.generationConfig : null;
+	if (scope !== 'embeddings' && genCfg?.temperature !== 0) return null;
+	const cachePath = `/models/${opts.model}:${opts.method}`;
+	return {
+		key: cacheKeyFor(provider.id, cachePath, body, ctx.token.providerSecretId),
+		ttlSeconds
+	};
+}
 
 /**
  * Native-ingress sibling of {@link proxyToProvider}. Accepts a request shaped for
@@ -289,7 +438,7 @@ export async function proxyGeminiNative(
 	event: RequestEvent,
 	opts: NativeGeminiOptions
 ): Promise<Response> {
-	const { auth, scope, model, method, stream, body } = opts;
+	const { scope, model, method, stream, body } = opts;
 	const provider = PROVIDERS.gemini;
 
 	// defense-in-depth: `model` is interpolated raw into the upstream URL below, so
@@ -298,48 +447,24 @@ export async function proxyGeminiNative(
 		return geminiEnvelope.error(400, 'Invalid model name', 'invalid_request');
 	}
 
-	const ctx = createContext(event, auth, {
+	const ctx = createContext(event, opts.auth, {
 		scope,
 		model,
 		envelope: geminiEnvelope,
 		traceRequest: body
 	});
-	const { token } = ctx;
 
-	const denied = await checkAccess(ctx, provider);
-	if (denied) return denied;
-
-	// exact-match cache. Determinism for native bodies: embeddings always;
-	// generateContent only when sampling is pinned (generationConfig.temperature 0).
-	const cacheTtl = token.effective.cacheTtlSeconds;
-	const genCfg = isRecord(body) && isRecord(body.generationConfig) ? body.generationConfig : null;
-	const deterministic = scope === 'embeddings' || (genCfg != null && genCfg.temperature === 0);
-	const cacheable = (scope === 'chat' || scope === 'embeddings') && cacheTtl > 0 && deterministic;
-	// Key on the native path + body; distinct from the OpenAI-ingress cache (which
-	// keys on `/chat/completions` + an OpenAI body), so formats never cross.
-	const cachePath = `/models/${model}:${method}`;
-	const cache: CacheTarget | null = cacheable
-		? {
-				key: cacheKeyFor(provider.id, cachePath, body, token.providerSecretId),
-				ttlSeconds: cacheTtl
-			}
-		: null;
-	if (cache) {
-		const hit = await replayCached(ctx, provider, cache.key, stream, 'native ');
-		if (hit) return hit;
-	}
+	const cache = nativeCacheTarget(ctx, provider, opts);
+	const blocked = await guardAndReplay(ctx, provider, cache, (key) =>
+		replayCached(ctx, provider, key, stream, 'native ')
+	);
+	if (blocked) return blocked;
 
 	const grant = await acquireUpstream(ctx, provider);
 	if (grant instanceof Response) return grant;
 
-	// Forward the query string verbatim except `key` — the Google SDK may put the
-	// API key there, and that's the uprox token, which must never reach Google.
-	const search = new URLSearchParams(event.url.search);
-	search.delete('key');
-	const qs = search.toString();
-	const upstreamUrl = `${grant.baseUrl}/models/${model}:${method}${qs ? `?${qs}` : ''}`;
-
-	const fetched = await fetchUpstream(ctx, provider, grant, upstreamUrl, {
+	const url = `${grant.baseUrl}/models/${model}:${method}${queryWithoutKey(event.url)}`;
+	const fetched = await fetchUpstream(ctx, provider, grant, url, {
 		method: 'POST',
 		headers: {
 			'content-type': 'application/json',
@@ -348,43 +473,20 @@ export async function proxyGeminiNative(
 		body: JSON.stringify(body)
 	});
 	if (!fetched.ok) return fetched.response;
-	const { upstream } = fetched;
+	const x: Exchange = { provider, grant, upstream: fetched.upstream, cache };
 
 	// streaming passthrough: the client gets the native SSE untouched while the
 	// native usageMetadata is captured so we can still bill it.
-	if (stream && upstream.ok && upstream.body) {
-		return streamWithRecording(ctx, {
-			provider,
-			upstream,
-			source: upstream.body,
-			extract: geminiUsageExtractor,
-			cache,
-			detail: 'native stream',
-			release: grant.release
-		});
+	const source = streamBody(stream, x.upstream);
+	if (source) {
+		return recordStream(ctx, x, { source, extract: geminiUsageExtractor, detail: 'native stream' });
 	}
 
 	// buffered passthrough: read native usageMetadata for cost, return body as-is.
-	const text = await readUpstreamText(ctx, provider, grant, upstream);
-	if (text instanceof Response) return text;
-	await recordCompletion(ctx, {
-		provider,
-		statusCode: upstream.status,
-		ok: upstream.ok,
-		usage: usageFromText(text, geminiNativeUsage),
-		response: text,
-		format: 'json',
+	return recordBuffered(ctx, x, {
+		translate: (text) => text,
+		extract: geminiNativeUsage,
 		detail: 'native',
-		cache,
-		complete: true,
-		release: grant.release
-	});
-
-	return new Response(text, {
-		status: upstream.status,
-		headers: {
-			'content-type': upstream.headers.get('content-type') ?? 'application/json',
-			...(cache ? { 'x-uprox-cache': 'MISS' } : {})
-		}
+		contentType: x.upstream.headers.get('content-type') ?? 'application/json'
 	});
 }
