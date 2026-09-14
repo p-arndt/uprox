@@ -88,8 +88,12 @@ class Reader {
 	skip(wireType: number): void {
 		if (wireType === 0) this.varint();
 		else if (wireType === 1) this.pos += 8;
-		else if (wireType === 2) this.pos += Number(this.varint());
-		else if (wireType === 5) this.pos += 4;
+		else if (wireType === 2) {
+			// read the length before advancing: `this.pos += this.varint()` would add
+			// the length to the position *before* the varint moved past its prefix
+			const len = Number(this.varint());
+			this.pos += len;
+		} else if (wireType === 5) this.pos += 4;
 		else throw new Error(`unsupported wire type ${wireType}`);
 	}
 }
