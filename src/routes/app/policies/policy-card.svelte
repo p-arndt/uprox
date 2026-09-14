@@ -10,7 +10,7 @@
 	import Wallet from '@lucide/svelte/icons/wallet';
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
 	import Waypoints from '@lucide/svelte/icons/waypoints';
-	import { formatBudget } from './budget-label';
+	import { formatBudget } from '$lib/format';
 	import type { PageData } from './$types';
 
 	// One preset: its access lists and a one-line summary of limits, cache and tracing.

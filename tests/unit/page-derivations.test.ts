@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { OTHER_PROVIDER_KEY, providerTabs, tagPriceProviders } from '$lib/pricing';
 import { isNavActive, navItemFor } from '$lib/nav';
-import { formatBudget } from '../../src/routes/app/policies/budget-label';
 
 const providers = [
 	{ id: 'openai', label: 'OpenAI' },
@@ -72,17 +71,5 @@ describe('nav matching', () => {
 		expect(isNavActive('/app/usage', { href: '/app', exact: true } as never)).toBe(false);
 		expect(navItemFor('/app', [...items] as never[])).toEqual({ href: '/app', exact: true });
 		expect(navItemFor('/elsewhere', [...items] as never[])).toBeUndefined();
-	});
-});
-
-describe('formatBudget', () => {
-	it('lists the set ceilings', () => {
-		expect(formatBudget('5', 0)).toBe('$5/day');
-		expect(formatBudget(0, '100.50')).toBe('$100.5/mo');
-		expect(formatBudget(5, 100)).toBe('$5/day · $100/mo');
-	});
-
-	it('says when there is no budget', () => {
-		expect(formatBudget('0', 0)).toBe('No budget');
 	});
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatDateTime, relativeTime, formatUsd, formatUsdRate } from '$lib/format';
+import { formatBudget, formatDateTime, relativeTime, formatUsd, formatUsdRate } from '$lib/format';
 
 // `formatUsd` deliberately uses the runtime locale (toLocaleString), so the
 // decimal separator is "." or "," depending on the machine. We assert with a
@@ -81,5 +81,17 @@ describe('formatUsdRate', () => {
 		expect(formatUsdRate(0)).toBe('$0');
 		expect(formatUsdRate(0.02)).toBe('$0.020');
 		expect(formatUsdRate(15)).toBe('$15.00');
+	});
+});
+
+describe('formatBudget', () => {
+	it('lists the set ceilings', () => {
+		expect(formatBudget('5', 0)).toBe('$5/day');
+		expect(formatBudget(0, '100.50')).toBe('$100.5/mo');
+		expect(formatBudget(5, 100)).toBe('$5/day · $100/mo');
+	});
+
+	it('says when there is no budget', () => {
+		expect(formatBudget('0', 0)).toBe('No budget');
 	});
 });
