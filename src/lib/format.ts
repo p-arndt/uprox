@@ -103,3 +103,15 @@ export function formatUsdCompact(value: number | string | null | undefined): str
 	}
 	return formatUsd(n);
 }
+
+/**
+ * A unit price in USD per million tokens. Rates span five orders of magnitude —
+ * an embedding line is cents per million tokens where a frontier model's
+ * output is tens of dollars — so the precision follows the value rather than a
+ * fixed 2dp that would round every embedding rate to $0.00.
+ */
+export function formatUsdRate(rate: number | null | undefined): string {
+	if (rate == null) return '—';
+	if (rate === 0) return '$0';
+	return rate < 1 ? `$${rate.toFixed(3)}` : `$${rate.toFixed(2)}`;
+}

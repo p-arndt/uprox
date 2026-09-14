@@ -3,9 +3,9 @@
 	import type { DimensionUsageRow } from '$lib/server/data';
 	import { colorForSeries } from '$lib/usage-colors';
 	import { isDerivedDimension, type UsageDimension } from '$lib/usage-group';
-	import { formatUsd, formatTokens, formatCount } from '$lib/format';
-	import ArrowDown from '@lucide/svelte/icons/arrow-down';
-	import ArrowUp from '@lucide/svelte/icons/arrow-up';
+	import { formatUsd, formatTokens, formatCount, formatUsdRate } from '$lib/format';
+	import { createTableState } from '$lib/state/table.svelte';
+	import SortableHeader from '$lib/components/sortable-header.svelte';
 
 	// The numeric view of the grouping — and the table view the accessibility
 	// pass requires, so every figure the chart encodes in colour is also readable
@@ -31,8 +31,6 @@
 	} = $props();
 
 	type SortKey = 'cost' | 'requests' | 'tokens' | 'rate' | 'denied' | 'label';
-	let sortBy = $state<SortKey>('cost');
-	let desc = $state(true);
 
 	// A meter or a billing line decomposes a request rather than describing one,
 	// so one request feeds several rows at once and the per-request columns would
@@ -53,52 +51,30 @@
 
 	const tokensOf = (r: DimensionUsageRow) => r.inputTokens + r.outputTokens;
 
-	function valueOf(r: DimensionUsageRow, key: SortKey): number | string {
-		if (key === 'cost') return r.costUsd;
-		if (key === 'requests') return r.requests;
-		if (key === 'tokens') return tokensOf(r);
-		if (key === 'rate') return r.ratePerMtok ?? 0;
-		if (key === 'denied') return r.denied;
-		return r.label.toLowerCase();
-	}
-
-	/**
-	 * Unit prices span five orders of magnitude — an embedding line is cents per
-	 * million tokens where a frontier model's output is tens of dollars — so the
-	 * precision follows the value rather than a fixed 2dp that would round every
-	 * embedding rate to $0.00.
-	 */
-	function formatRate(rate: number | null | undefined): string {
-		if (rate == null) return '—';
-		if (rate === 0) return '$0';
-		return rate < 1 ? `$${rate.toFixed(3)}` : `$${rate.toFixed(2)}`;
-	}
+	type Ranked = { row: DimensionUsageRow; rank: number };
+	const byNumber =
+		(f: (r: DimensionUsageRow) => number) =>
+		(a: Ranked, b: Ranked) =>
+			f(a.row) - f(b.row);
 
 	// Rank is captured BEFORE sorting: the swatch has to keep matching the chart,
 	// which always stacks in cost order. Sorting by requests re-orders the rows
 	// but must not repaint them.
-	const ranked = $derived(rows.map((r, i) => ({ row: r, rank: i })));
-
-	const sorted = $derived.by(() => {
-		const dir = desc ? -1 : 1;
-		return [...ranked].sort((a, b) => {
-			const av = valueOf(a.row, sortBy);
-			const bv = valueOf(b.row, sortBy);
-			if (typeof av === 'string' || typeof bv === 'string') {
-				return String(av).localeCompare(String(bv)) * dir;
-			}
-			return (av - bv) * dir;
-		});
+	const table = createTableState<Ranked>({
+		rows: () => rows.map((r, i) => ({ row: r, rank: i })),
+		sorters: {
+			cost: byNumber((r) => r.costUsd),
+			requests: byNumber((r) => r.requests),
+			tokens: byNumber(tokensOf),
+			rate: byNumber((r) => r.ratePerMtok ?? 0),
+			denied: byNumber((r) => r.denied),
+			label: (a, b) => a.row.label.toLowerCase().localeCompare(b.row.label.toLowerCase())
+		},
+		initialSort: 'cost',
+		initialDir: 'desc',
+		// numbers are most useful largest-first; names alphabetically
+		dirFor: (key) => (key === 'label' ? 'asc' : 'desc')
 	});
-
-	function toggleSort(key: SortKey) {
-		if (sortBy === key) desc = !desc;
-		else {
-			sortBy = key;
-			// numbers are most useful largest-first; names alphabetically
-			desc = key !== 'label';
-		}
-	}
 </script>
 
 <div class="overflow-x-auto">
@@ -106,35 +82,19 @@
 		<thead>
 			<tr class="border-b text-xs text-muted-foreground">
 				{#each COLUMNS as c (c.key)}
-					<th
-						scope="col"
-						class="py-2 font-medium {c.numeric ? 'text-right' : 'text-left'}"
-						aria-sort={sortBy === c.key ? (desc ? 'descending' : 'ascending') : 'none'}
-					>
-						<button
-							type="button"
-							onclick={() => toggleSort(c.key)}
-							class="inline-flex items-center gap-1 transition-colors hover:text-foreground {sortBy ===
-							c.key
-								? 'text-foreground'
-								: ''}"
-						>
-							{c.label}
-							{#if sortBy === c.key}
-								{#if desc}
-									<ArrowDown class="size-3" />
-								{:else}
-									<ArrowUp class="size-3" />
-								{/if}
-							{/if}
-						</button>
-					</th>
+					<SortableHeader
+						label={c.label}
+						numeric={c.numeric}
+						active={table.sortKey === c.key}
+						dir={table.sortDir}
+						onclick={() => table.toggleSort(c.key)}
+					/>
 				{/each}
 				<th scope="col" class="w-28 py-2 text-right font-medium">Share</th>
 			</tr>
 		</thead>
 		<tbody>
-			{#each sorted as { row, rank } (row.key)}
+			{#each table.visible as { row, rank } (row.key)}
 				{@const share = total > 0 ? row.costUsd / total : 0}
 				<tr class="border-b last:border-0 hover:bg-muted/40">
 					<td class="py-2 pr-3">
@@ -161,7 +121,7 @@
 					<td class="py-2 text-right tabular-nums">{formatTokens(tokensOf(row))}</td>
 					{#if hasRate}
 						<td class="py-2 text-right text-muted-foreground tabular-nums">
-							{formatRate(row.ratePerMtok)}
+							{formatUsdRate(row.ratePerMtok)}
 						</td>
 					{/if}
 					{#if perRequest}
