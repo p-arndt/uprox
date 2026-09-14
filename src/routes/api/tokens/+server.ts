@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireOrgApi, requirePermission } from '$lib/server/org';
-import { listTokens, createToken } from '$lib/server/data';
+import { listTokens, createToken } from '$lib/server/tokens-admin';
 import { apiHandler, badRequest } from '$lib/server/api/errors';
 import { readJson } from '$lib/server/api/fields';
 import { parseTokenCreate, tokenResponse } from '$lib/server/api/token-body';

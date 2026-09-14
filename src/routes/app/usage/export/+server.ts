@@ -1,6 +1,6 @@
 import type { RequestHandler } from './$types';
 import { requireOrgApi } from '$lib/server/org';
-import { orgUsageByDimension, orgUsageSeriesGrouped } from '$lib/server/data';
+import { orgUsageByDimension, orgUsageSeriesGrouped } from '$lib/server/usage-queries/by-dimension';
 import { resolveUsageRange, normalizeBucket } from '$lib/usage-range';
 import { normalizeGroupBy, parseFilters, dimensionLabel } from '$lib/usage-group';
 

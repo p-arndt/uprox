@@ -1,7 +1,10 @@
 import { error } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
 import { requireOrg } from '$lib/server/org';
-import { getService, listPolicies, orgBudgetStatus, getSettings } from '$lib/server/data';
+import { getService } from '$lib/server/services';
+import { listPolicies } from '$lib/server/policies';
+import { orgBudgetStatus } from '$lib/server/budget-status';
+import { getSettings } from '$lib/server/settings';
 import { loadUsageAnalysis, streamed } from '$lib/server/usage-analysis';
 
 export const load: PageServerLoad = async (event) => {

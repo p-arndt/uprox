@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireOrgApi } from '$lib/server/org';
-import { listAudit } from '$lib/server/data';
+import { listAudit } from '$lib/server/audit-queries';
 import { apiHandler } from '$lib/server/api/errors';
 
 export const GET: RequestHandler = apiHandler(async (event) => {

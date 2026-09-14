@@ -49,8 +49,7 @@ unit tested without mocks. I/O wrappers stay thin and call into them.
 
 - `src/lib/server/<domain>.ts` (or `src/lib/server/<domain>/`) per domain: services,
   tokens, providers, policies, pricing, budgets, usage, traces, members, settings.
-- `data.ts` is being split into these domain modules. Do not add new functions to it.
-  Put them in the matching domain module instead.
+- There is no catch-all barrel. Import each function from the module that defines it.
 - The gateway is being restructured into a request pipeline
   (authenticate -> resolve endpoint -> policy/budget/rate limit -> cache -> upstream
   adapter -> meter/audit/trace) driven by **endpoint descriptors**: one declarative

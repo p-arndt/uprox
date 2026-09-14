@@ -1,7 +1,7 @@
 import { error, fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
-import { getToken, revealToken } from '$lib/server/data';
+import { getToken, revealToken } from '$lib/server/tokens-admin';
 import { loadUsageAnalysis } from '$lib/server/usage-analysis';
 
 export const load: PageServerLoad = async (event) => {

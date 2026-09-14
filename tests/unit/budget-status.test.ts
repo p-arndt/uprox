@@ -17,7 +17,7 @@ vi.mock('$lib/server/db', () => {
 	return { db: { select: () => builder } };
 });
 
-import { orgBudgetStatus } from '$lib/server/data';
+import { orgBudgetStatus } from '$lib/server/budget-status';
 
 const row = (over: Record<string, unknown> = {}) => ({
 	serviceId: 'svc-1',

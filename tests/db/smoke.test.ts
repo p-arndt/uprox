@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
-import { orgDailyStats } from '$lib/server/data';
+import { orgDailyStats } from '$lib/server/usage-queries/overview';
 
 /** A `created_at` value `days` whole days before now, computed by the database clock. */
 const daysAgo = (days: number) => sql`now() - make_interval(days => ${days})`;

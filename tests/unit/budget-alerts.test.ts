@@ -12,7 +12,7 @@ const settings = {
 	budgetAlertThresholdPct: 80,
 	budgetAlertEmail: null as string | null
 };
-vi.mock('$lib/server/data', () => ({ getSettings: () => Promise.resolve(settings) }));
+vi.mock('$lib/server/settings', () => ({ getSettings: () => Promise.resolve(settings) }));
 
 // Controllable realized spend for both windows.
 let spend = {

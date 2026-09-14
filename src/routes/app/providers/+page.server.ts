@@ -6,7 +6,7 @@ import {
 	createProviderSecret,
 	updateProviderSecret,
 	deleteProviderSecret
-} from '$lib/server/data';
+} from '$lib/server/provider-secrets';
 import { PROVIDERS, PROVIDER_IDS, type ProviderDef } from '$lib/server/providers';
 import { parsePriority } from '$lib/server/form';
 

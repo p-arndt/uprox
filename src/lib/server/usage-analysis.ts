@@ -2,13 +2,13 @@ import type { RequestEvent } from '@sveltejs/kit';
 import {
 	orgUsageByDimension,
 	orgUsageSeriesGrouped,
-	orgUsageFilterOptions,
-	orgUsageTotals,
-	orgUsageSeries,
-	orgTokenMeters,
-	orgTopMovers,
-	orgModelEfficiency
-} from '$lib/server/data';
+	orgUsageFilterOptions
+} from '$lib/server/usage-queries/by-dimension';
+import { orgUsageTotals } from '$lib/server/usage-queries/totals';
+import { orgUsageSeries } from '$lib/server/usage-queries/series';
+import { orgTokenMeters } from '$lib/server/usage-queries/meters';
+import { orgTopMovers } from '$lib/server/usage-queries/movers';
+import { orgModelEfficiency } from '$lib/server/usage-queries/efficiency';
 import type { DimensionUsageRow, Streamed, UsageAnalysis } from '$lib/features/usage/types';
 import {
 	USAGE_RANGES,

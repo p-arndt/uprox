@@ -1,6 +1,6 @@
 import type { LayoutServerLoad } from './$types';
 import { requireOrg } from '$lib/server/org';
-import { getSettings } from '$lib/server/data';
+import { getSettings } from '$lib/server/settings';
 // The running build's version, straight from the manifest that `pnpm version`
 // bumps — so it can never drift from a hand-maintained copy. Imported in a
 // server load, so the rest of package.json (scripts, dependency list) is read at

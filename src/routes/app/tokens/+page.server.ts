@@ -3,15 +3,15 @@ import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
 import {
 	listTokens,
-	listServices,
-	listPolicies,
 	createToken,
 	updateToken,
 	revokeToken,
 	deleteToken,
-	revealToken,
-	getSettings
-} from '$lib/server/data';
+	revealToken
+} from '$lib/server/tokens-admin';
+import { listServices } from '$lib/server/services';
+import { listPolicies } from '$lib/server/policies';
+import { getSettings } from '$lib/server/settings';
 import { inlineFromForm, splitList } from '$lib/server/parse-config';
 import { isOn } from '$lib/server/form';
 import { PROVIDERS } from '$lib/server/providers';

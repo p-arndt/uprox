@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireOrgApi, requirePermission } from '$lib/server/org';
-import { listServices, createService } from '$lib/server/data';
+import { listServices, createService } from '$lib/server/services';
 import { apiHandler } from '$lib/server/api/errors';
 import { readJson } from '$lib/server/api/fields';
 import { parseServiceCreate } from '$lib/server/api/service-body';

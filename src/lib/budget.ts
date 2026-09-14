@@ -2,7 +2,7 @@
  * Client-safe budget presentation helpers, shared by the overview and usage
  * pages. Pure functions only — no DB access — so they're trivially testable and
  * usable in components. The spend/ceiling numbers come from the server (see
- * `orgBudgetStatus` in `$lib/server/data`); this module only decides *how close*
+ * `orgBudgetStatus` in `$lib/server/budget-status`); this module only decides *how close*
  * a service is to its ceiling and turns that into a display warning.
  */
 

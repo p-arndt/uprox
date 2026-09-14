@@ -1,6 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { requireOrg } from '$lib/server/org';
-import { listTraceFeed, listOtelTraces, getSettings } from '$lib/server/data';
+import { listTraceFeed, listOtelTraces } from '$lib/server/traces-queries';
+import { getSettings } from '$lib/server/settings';
 import { parseMetaFilter } from '$lib/trace';
 
 export const load: PageServerLoad = async (event) => {

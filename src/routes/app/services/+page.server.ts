@@ -1,14 +1,9 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
-import {
-	listServices,
-	createService,
-	updateService,
-	deleteService,
-	listPolicies,
-	listProviderSecrets
-} from '$lib/server/data';
+import { listServices, createService, updateService, deleteService } from '$lib/server/services';
+import { listPolicies } from '$lib/server/policies';
+import { listProviderSecrets } from '$lib/server/provider-secrets';
 import { inlineFromForm } from '$lib/server/parse-config';
 import { PROVIDERS } from '$lib/server/providers';
 

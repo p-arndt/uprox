@@ -1,7 +1,7 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requirePermission } from '$lib/server/org';
-import { updatePolicy, deletePolicy } from '$lib/server/data';
+import { updatePolicy, deletePolicy } from '$lib/server/policies';
 import { apiHandler, notFound } from '$lib/server/api/errors';
 import { pathId, readJson } from '$lib/server/api/fields';
 import { parsePolicyPatch } from '$lib/server/api/policy-body';

@@ -9,7 +9,7 @@
  * any other value sets the override. An empty array is a real value — "allow
  * all" — distinct from `null` (inherit).
  */
-import type { InlineConfigInput } from '$lib/server/data';
+import type { InlineConfigInput } from '$lib/server/inline-config';
 
 function parseArray(v: unknown): string[] | null | undefined {
 	if (v === undefined) return undefined;

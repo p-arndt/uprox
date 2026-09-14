@@ -4,7 +4,7 @@ import type { RequestHandler } from './$types';
 import { authenticateGateway, gatewayError } from '$lib/server/gateway';
 import { parseOtlpProtobuf, parseOtlpJson, type ParsedSpan } from '$lib/server/otlp/decode';
 import { recordSpans } from '$lib/server/trace';
-import { getSettings } from '$lib/server/data';
+import { getSettings } from '$lib/server/settings';
 
 /**
  * OTLP/HTTP trace ingest — the standard OTel collector path. Client apps point

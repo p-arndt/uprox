@@ -23,7 +23,7 @@ vi.mock('$lib/server/audit', () => ({
 	}
 }));
 
-import { deleteToken } from '$lib/server/data';
+import { deleteToken } from '$lib/server/tokens-admin';
 
 beforeEach(() => {
 	deletedRows = [];

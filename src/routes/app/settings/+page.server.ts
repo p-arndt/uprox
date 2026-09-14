@@ -1,7 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
-import { getSettings, updateSettings } from '$lib/server/data';
+import { getSettings, updateSettings } from '$lib/server/settings';
 import { isOn, parseOptionalPrice } from '$lib/server/form';
 
 export const load: PageServerLoad = async (event) => {

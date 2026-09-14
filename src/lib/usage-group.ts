@@ -4,7 +4,7 @@
  * toolbar.
  *
  * Client-safe by construction: a dimension is an opaque key here, and only
- * `server/data.ts` maps that key onto a real column. Nothing in this module ever
+ * `server/usage-queries/predicates.ts` maps that key onto a real column. Nothing in this module ever
  * reaches SQL, so an attacker-supplied `group=` or `f=` value can at worst fail
  * to match a known key and fall back to the default.
  */
