@@ -3,6 +3,7 @@
 	import UsageDonut from '$lib/components/usage-donut.svelte';
 	import { dimensionLabel, type UsageDimension } from '$lib/usage-group';
 	import type { DimensionUsageRow } from '$lib/server/data';
+	import type { UsageMetric } from '$lib/features/usage/metric';
 
 	// Three compositions side by side rather than behind tabs. Cost analysis is a
 	// comparison task — "which service, on which model, through which provider" —
@@ -14,7 +15,7 @@
 		scopeTotal = null
 	}: {
 		panels: { dim: UsageDimension; rows: DimensionUsageRow[] }[];
-		metric?: 'cost' | 'requests' | 'tokens';
+		metric?: UsageMetric;
 		/** window total for the metric, so each ring reconciles with the headline */
 		scopeTotal?: number | null;
 	} = $props();

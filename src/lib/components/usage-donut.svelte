@@ -1,7 +1,12 @@
 <script lang="ts">
 	import type { DimensionUsageRow } from '$lib/server/data';
-	import { colorForSeries, OTHERS_COLOR } from '$lib/usage-colors';
-	import { formatUsd, formatTokens, formatCount } from '$lib/format';
+	import { formatMetric, type UsageMetric } from '$lib/features/usage/metric';
+	import {
+		DONUT_CIRCUMFERENCE,
+		DONUT_RADIUS,
+		donutArcs,
+		donutSlices
+	} from '$lib/features/usage/donut';
 
 	// A dimension's composition over the window: ring on the left, ranked
 	// direct-labelled values on the right. The label column is not decoration —
@@ -17,7 +22,7 @@
 	}: {
 		rows: DimensionUsageRow[];
 		dim: string;
-		metric?: 'cost' | 'requests' | 'tokens';
+		metric?: UsageMetric;
 		/** how many slices get their own colour before the tail becomes "Others" */
 		limit?: number;
 		/**
@@ -30,64 +35,11 @@
 		scopeTotal?: number | null;
 	} = $props();
 
-	const valueOf = (r: DimensionUsageRow) =>
-		metric === 'cost'
-			? r.costUsd
-			: metric === 'requests'
-				? r.requests
-				: r.inputTokens + r.outputTokens;
-
-	const format = (v: number) =>
-		metric === 'cost' ? formatUsd(v) : metric === 'requests' ? formatCount(v) : formatTokens(v);
-
-	// Rank by the displayed metric, not by the server's cost ordering — a donut
-	// showing requests must be sorted by requests or the ring and the list would
-	// disagree about which slice is biggest.
-	const ranked = $derived([...rows].sort((a, b) => valueOf(b) - valueOf(a)));
-	const rowsTotal = $derived(ranked.reduce((s, r) => s + valueOf(r), 0));
-	// Prefer the authoritative total; fall back to the rows when none was given.
-	const total = $derived(scopeTotal != null && scopeTotal > 0 ? scopeTotal : rowsTotal);
-
-	// Everything past the cut collapses into one neutral slice rather than
-	// recycling a hue — a repeated colour would claim two entities are the same.
-	const slices = $derived.by(() => {
-		const head = ranked.slice(0, limit).filter((r) => valueOf(r) > 0);
-		// Everything not in `head`: the ranked rows past the cut PLUS whatever the
-		// server's top-N never returned (total − rows), so the ring always closes.
-		const headValue = head.reduce((s, r) => s + valueOf(r), 0);
-		const tailValue = Math.max(0, total - headValue);
-		const out = head.map((r, i) => ({
-			key: r.key,
-			label: r.label,
-			value: valueOf(r),
-			color: colorForSeries(dim, r.key, i)
-		}));
-		if (tailValue > 0) {
-			out.push({
-				key: '__tail__',
-				label: ranked.length > head.length ? `Others (${ranked.length - head.length}+)` : 'Others',
-				value: tailValue,
-				color: OTHERS_COLOR
-			});
-		}
-		return out;
-	});
-
-	// Ring geometry via stroke-dasharray on a single circle per slice: r=15.9155
-	// makes the circumference exactly 100, so a percentage IS the dash length.
-	const R = 15.9155;
-	const CIRC = 100;
-	const arcs = $derived.by(() => {
-		let offset = 0;
-		return slices.map((s) => {
-			const pct = total > 0 ? (s.value / total) * 100 : 0;
-			// 0.6 of the gap on each side keeps a 2px-ish surface gap between arcs
-			const dash = Math.max(0, pct - 0.6);
-			const arc = { ...s, pct, dash, offset };
-			offset += pct;
-			return arc;
-		});
-	});
+	// Rank by the displayed metric and fold the tail into "Others"; see donut.ts.
+	const folded = $derived(donutSlices(rows, dim, metric, limit, scopeTotal));
+	const total = $derived(folded.total);
+	const arcs = $derived(donutArcs(folded.slices, total));
+	const format = (v: number) => formatMetric(v, metric);
 </script>
 
 {#if total <= 0}
@@ -100,11 +52,11 @@
 					<circle
 						cx="20"
 						cy="20"
-						r={R}
+						r={DONUT_RADIUS}
 						fill="none"
 						stroke={a.color}
 						stroke-width="6"
-						stroke-dasharray="{a.dash} {CIRC - a.dash}"
+						stroke-dasharray="{a.dash} {DONUT_CIRCUMFERENCE - a.dash}"
 						stroke-dashoffset={-a.offset}
 					>
 						<title>{a.label}: {format(a.value)} ({a.pct.toFixed(1)}%)</title>

@@ -2,6 +2,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import type { ModelEfficiency } from '$lib/server/data';
 	import { formatUsd, formatTokens, formatCount, formatPct } from '$lib/format';
+	import { priceExtreme, priceExtremes } from '$lib/features/usage/efficiency';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
 
@@ -75,13 +76,8 @@
 
 	// Cheapest and dearest unit price, so the extremes are findable at a glance
 	// without reading every row. Only meaningful with something to compare.
-	const priced = $derived(rows.filter((r) => r.costPer1kTokens > 0));
-	const cheapest = $derived(
-		priced.length > 1 ? Math.min(...priced.map((r) => r.costPer1kTokens)) : null
-	);
-	const dearest = $derived(
-		priced.length > 1 ? Math.max(...priced.map((r) => r.costPer1kTokens)) : null
-	);
+	const extremes = $derived(priceExtremes(rows));
+	const EXTREME_CLASS = { cheapest: 'text-emerald-500', dearest: 'text-destructive', none: '' };
 </script>
 
 <Card.Root>
@@ -142,11 +138,7 @@
 								<td class="py-2 text-right tabular-nums">{formatUsd(r.costUsd)}</td>
 								<td class="py-2 text-right font-medium tabular-nums">
 									<span
-										class={r.costPer1kTokens > 0 && r.costPer1kTokens === cheapest
-											? 'text-emerald-500'
-											: r.costPer1kTokens > 0 && r.costPer1kTokens === dearest
-												? 'text-destructive'
-												: ''}
+										class={EXTREME_CLASS[priceExtreme(r.costPer1kTokens, extremes) ?? 'none']}
 									>
 										{formatUsd(r.costPer1kTokens)}
 									</span>
@@ -166,7 +158,7 @@
 					</tbody>
 				</table>
 			</div>
-			{#if cheapest !== null}
+			{#if extremes.cheapest !== null}
 				<p class="pt-2 text-xs text-muted-foreground">
 					Cheapest and dearest unit price are highlighted. Compare
 					<span class="font-medium">$ / 1K tok</span> alongside
