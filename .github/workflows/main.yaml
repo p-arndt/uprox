@@ -3,40 +3,63 @@ permissions:
   contents: write
   packages: write
 
+# Two release runs pushing images and notes for the same tag would race; queue
+# them instead (never cancel, a half-cancelled release leaves partial state).
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+# Tag pushes only. The version and the notes are decided by `stamp release`
+# before the tag exists; this pipeline is a worker, not a controller.
 on:
   push:
     tags: ['*']
 
 jobs:
-  build:
+  # The tag is the only input, and it has to agree with the committed version.
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      VERSION: ${{ steps.version.outputs.VERSION }}
+      PRERELEASE: ${{ steps.version.outputs.PRERELEASE }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          fetch-tags: true
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: '10'
+      - name: Install stamp
+        run: curl -fsSL https://raw.githubusercontent.com/p-arndt/stamp/main/install.sh | sh -s -- --bin-dir /usr/local/bin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: 'pnpm'
+      - name: Verify the tag against the committed version
+        run: stamp verify --tag "$GITHUB_REF_NAME"
 
-      - name: Install dependencies
-        run: pnpm install
-
-      - name: Get Tags
-        id: get_tag
+      - name: Resolve version
+        id: version
+        shell: bash
         run: |
-          cur=$(git describe --tags --abbrev=0 $(git rev-list --tags --skip=0 --max-count=1))
-          echo "VERSION=$cur" >> $GITHUB_OUTPUT
+          set -euo pipefail
+          VERSION="$GITHUB_REF_NAME"
+          # Semver pre-release tags (e.g. 0.27.0-beta.1) are flagged automatically.
+          if [[ "$VERSION" == *-* ]]; then PRERELEASE=true; else PRERELEASE=false; fi
+          echo "VERSION=$VERSION"       >> "$GITHUB_OUTPUT"
+          echo "PRERELEASE=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
+  # Nothing gets published from a commit that fails the regular CI suite.
+  ci:
+    needs: verify
+    uses: ./.github/workflows/ci.yaml
+
+  publish:
+    needs: [verify, ci]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -48,42 +71,64 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker images (Docker Hub + GHCR)
+      # Pre-releases get their version tag only; `latest` stays on the last release.
+      - name: Build and push Docker image (GHCR)
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          build-args: VERSION=${{ steps.get_tag.outputs.VERSION }}
           tags: |
-            ghcr.io/${{ github.repository_owner }}/uprox:${{ steps.get_tag.outputs.VERSION }}
-            ghcr.io/${{ github.repository_owner }}/uprox:latest
+            ghcr.io/${{ github.repository_owner }}/uprox:${{ needs.verify.outputs.VERSION }}
+            ${{ needs.verify.outputs.PRERELEASE == 'false' && format('ghcr.io/{0}/uprox:latest', github.repository_owner) || '' }}
           cache-from: |
             type=registry,ref=ghcr.io/${{ github.repository_owner }}/uprox:latest
           cache-to: type=inline
 
-      - name: Generate changelog
-        uses: orhun/git-cliff-action@v4
+  release:
+    needs: [verify, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
         with:
-          config: cliff.toml
-          args: --latest --strip all
-        env:
-          OUTPUT: CHANGELOG_BODY.md
+          fetch-depth: 0
+          fetch-tags: true
 
+      # `stamp release` renders the changelog section into the annotated tag
+      # message, so the tag already carries its own release notes. Nothing is
+      # generated here.
       - name: Assemble release notes
+        shell: bash
+        env:
+          PRERELEASE: ${{ needs.verify.outputs.PRERELEASE }}
         run: |
-          CUR=${{ steps.get_tag.outputs.VERSION }}
-
-          echo "## 🚀 Release $CUR" > RELEASE_NOTES.md
+          set -euo pipefail
+          if [ "$PRERELEASE" = "true" ]; then
+            echo "## 🧪 Pre-release $GITHUB_REF_NAME" > RELEASE_NOTES.md
+          else
+            echo "## 🚀 Release $GITHUB_REF_NAME" > RELEASE_NOTES.md
+          fi
           echo "" >> RELEASE_NOTES.md
-          cat CHANGELOG_BODY.md >> RELEASE_NOTES.md
 
-          echo "🔖 Generated notes:"
+          body="$(git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME")"
+          # A lightweight or older tag has no body. Point at the history rather
+          # than publishing an empty release page.
+          if [ -n "${body//[[:space:]]/}" ]; then
+            printf '%s\n' "$body" >> RELEASE_NOTES.md
+          else
+            printf 'See the [commit history](%s/commits/%s) for what changed.\n' \
+              "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" >> RELEASE_NOTES.md
+          fi
+
           cat RELEASE_NOTES.md
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.get_tag.outputs.VERSION }}
+          tag_name: ${{ github.ref_name }}
           body_path: RELEASE_NOTES.md
+          prerelease: ${{ needs.verify.outputs.PRERELEASE }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

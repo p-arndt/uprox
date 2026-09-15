@@ -4,3 +4,8 @@ release:
   tag: '{{ version }}' # "{{ version }}" for tags without a v prefix
   commit: 'version: {{ tag }}'
   push: true
+changelog:
+  file: CHANGELOG.md # entries from `stamp note`, rendered on release
+  dir: .stamp/changelog
+  fallback: commits # drafts from conventional commits when nothing was noted
+  tag_body: true # the release pipeline publishes the tag message as notes
