@@ -6,8 +6,8 @@
  * database that has every migration from ./drizzle applied. Each test file
  * gets its own module registry and therefore its own empty database.
  *
- * Runs after tests/setup/server.ts, which seeds the env the server modules
- * read at import time.
+ * Test env defaults (ENCRYPTION_KEY, POSTGRES_*) are seeded in vite.config.ts,
+ * because SvelteKit snapshots `$env/dynamic/private` when the config loads.
  */
 import path from 'node:path';
 import { vi } from 'vitest';
