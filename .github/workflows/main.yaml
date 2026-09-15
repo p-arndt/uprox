@@ -96,6 +96,11 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
+      # On a tag push, checkout recreates the tag as a lightweight ref pointing at
+      # the commit, which has no message. Fetch the real annotated tag over it.
+      - name: Fetch annotated tag
+        run: git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+
       # `stamp release` renders the changelog section into the annotated tag
       # message, so the tag already carries its own release notes. Nothing is
       # generated here.
