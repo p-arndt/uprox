@@ -12,7 +12,6 @@ const svc = (over: Record<string, unknown> = {}) =>
 		dailyBudgetUsd: null,
 		monthlyBudgetUsd: null,
 		cacheTtlSeconds: null,
-		tracingEnabled: null,
 		...over
 	}) as unknown as ResolveInput['service'];
 
@@ -25,7 +24,6 @@ const tok = (over: Record<string, unknown> = {}) =>
 		dailyBudgetUsd: null,
 		monthlyBudgetUsd: null,
 		cacheTtlSeconds: null,
-		tracingEnabled: null,
 		...over
 	}) as unknown as ResolveInput['token'];
 
@@ -38,13 +36,11 @@ const preset = (over: Record<string, unknown> = {}) =>
 		dailyBudgetUsd: '0',
 		monthlyBudgetUsd: '0',
 		cacheTtlSeconds: null,
-		tracingEnabled: null,
 		...over
 	}) as unknown as NonNullable<ResolveInput['tokenPolicy']>;
 
 const defaults = {
 	cacheTtlSeconds: 60,
-	tracingEnabled: false,
 	dailyBudgetUsd: 0,
 	monthlyBudgetUsd: 0
 };
@@ -64,7 +60,6 @@ describe('scalar override cascade (first defined wins)', () => {
 		const eff = resolve();
 		expect(eff.rateLimitPerMinute).toBe(0);
 		expect(eff.cacheTtlSeconds).toBe(60);
-		expect(eff.tracingEnabled).toBe(false);
 	});
 
 	it('a service inline value overrides its preset and the default', () => {
@@ -104,14 +99,6 @@ describe('scalar override cascade (first defined wins)', () => {
 	it('cache TTL of 0 (force off) overrides the non-zero instance default', () => {
 		const eff = resolve({ service: svc({ cacheTtlSeconds: 0 }) });
 		expect(eff.cacheTtlSeconds).toBe(0);
-	});
-
-	it('tracing false overrides a true coming from a lower layer', () => {
-		const eff = resolve({
-			token: tok({ tracingEnabled: false }),
-			service: svc({ tracingEnabled: true })
-		});
-		expect(eff.tracingEnabled).toBe(false);
 	});
 });
 

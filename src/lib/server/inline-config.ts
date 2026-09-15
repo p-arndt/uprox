@@ -14,7 +14,6 @@ export interface InlineConfigInput {
 	dailyBudgetUsd?: number | null;
 	monthlyBudgetUsd?: number | null;
 	cacheTtlSeconds?: number | null;
-	tracingEnabled?: boolean | null;
 }
 
 /**
@@ -35,6 +34,5 @@ export function inlineConfigColumns(input: InlineConfigInput): Record<string, un
 		set.monthlyBudgetUsd = input.monthlyBudgetUsd === null ? null : String(input.monthlyBudgetUsd);
 	}
 	if (input.cacheTtlSeconds !== undefined) set.cacheTtlSeconds = input.cacheTtlSeconds;
-	if (input.tracingEnabled !== undefined) set.tracingEnabled = input.tracingEnabled;
 	return set;
 }

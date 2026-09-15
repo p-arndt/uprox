@@ -245,8 +245,6 @@ async function reset(): Promise<void> {
 	`;
 	const ids = services.map((s) => s.id);
 	if (ids.length > 0) {
-		await sql`delete from request_trace where service_id in ${sql(ids)}`;
-		await sql`delete from trace_span where service_id in ${sql(ids)}`;
 		await sql`delete from audit_log where service_id in ${sql(ids)}`;
 		await sql`delete from machine_token where service_id in ${sql(ids)}`;
 		await sql`delete from service where id in ${sql(ids)}`;
@@ -322,9 +320,9 @@ async function seedUser(): Promise<string> {
 
 async function seedSettings(): Promise<void> {
 	await sql`
-		insert into settings (id, cache_ttl_seconds, tracing_enabled, tracing_retention_days,
+		insert into settings (id, cache_ttl_seconds, 
 			members_can_manage_tokens, members_can_manage_services)
-		values (1, 300, true, 30, true, false)
+		values (1, 300, true, false)
 		on conflict (id) do nothing
 	`;
 }
@@ -673,65 +671,6 @@ async function insertAuditRows(rows: AuditRow[]): Promise<string[]> {
 	return ids;
 }
 
-/**
- * Traces for a sample of successful chat requests, so the trace viewer has
- * something to render. Grouped a few at a time under one trace group id to
- * exercise the multi-call timeline.
- */
-async function seedTraces(rows: AuditRow[], ids: string[]): Promise<void> {
-	const traceable = ids
-		.map((id, i) => ({ id, row: rows[i] }))
-		.filter(({ row }) => row.status === 'ok' && row.action.startsWith('gateway.'))
-		// the newest ones: the trace viewer's own window defaults to recent activity
-		.slice(-200);
-
-	let group = randomBytes(16).toString('hex');
-	const values = traceable.map(({ id, row }, i) => {
-		if (i % 4 === 0) group = randomBytes(16).toString('hex');
-		return {
-			audit_log_id: id,
-			service_id: row.service_id,
-			trace_group_id: group,
-			metadata: JSON.stringify({
-				chatId: `chat_${randInt(1000, 9999)}`,
-				env: pick(['prod', 'staging'])
-			}),
-			request_body: JSON.stringify({
-				model: row.model,
-				messages: [
-					{ role: 'system', content: 'You are a helpful assistant.' },
-					{ role: 'user', content: 'Summarize the attached support ticket in three bullets.' }
-				],
-				temperature: 0.2
-			}),
-			response_body: JSON.stringify({
-				id: `chatcmpl_${randomBytes(8).toString('hex')}`,
-				model: row.model,
-				choices: [
-					{
-						index: 0,
-						message: {
-							role: 'assistant',
-							content: '- Customer cannot log in\n- Reset link expired\n- Needs a new invite'
-						},
-						finish_reason: 'stop'
-					}
-				],
-				usage: {
-					prompt_tokens: row.input_tokens ?? 0,
-					completion_tokens: row.output_tokens ?? 0,
-					total_tokens: (row.input_tokens ?? 0) + (row.output_tokens ?? 0)
-				}
-			}),
-			response_format: 'json',
-			created_at: row.created_at
-		};
-	});
-	if (values.length === 0) return;
-	await sql`insert into request_trace ${sql(values)}`;
-	console.log(`traces: ${values.length}`);
-}
-
 // ---------------------------------------------------------------- main
 
 async function main(): Promise<void> {
@@ -751,7 +690,6 @@ async function main(): Promise<void> {
 	].sort((a, b) => a.created_at.getTime() - b.created_at.getTime());
 	const ids = await insertAuditRows(rows);
 	console.log(`audit log: ${ids.length} rows over ${DAYS} days, ${OPENAI_MODELS.length} models`);
-	await seedTraces(rows, ids);
 
 	const spend = rows.reduce((sum, r) => sum + Number(r.cost_usd ?? 0), 0);
 	const saved = rows.reduce((sum, r) => sum + Number(r.saved_usd ?? 0), 0);

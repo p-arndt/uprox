@@ -76,19 +76,5 @@ export const actions: Actions = {
 			budgetAlertEmail: email
 		});
 		return { success: true };
-	},
-	updateTracing: async (event) => {
-		await requirePermission(event, 'settings:manage');
-		const data = await event.request.formData();
-		const enabled = isOn(data.get('tracingEnabled'));
-		const days = Number(data.get('tracingRetentionDays'));
-		if (enabled && (!Number.isFinite(days) || days < 1)) {
-			return fail(400, { message: 'Retention must be at least 1 day' });
-		}
-		await updateSettings({
-			tracingEnabled: enabled,
-			tracingRetentionDays: days
-		});
-		return { success: true };
 	}
 };

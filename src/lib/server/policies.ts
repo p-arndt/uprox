@@ -19,8 +19,6 @@ export async function createPolicy(input: {
 	monthlyBudgetUsd?: number;
 	// null = inherit instance default, 0 = off, >0 = override
 	cacheTtlSeconds?: number | null;
-	// null = inherit instance default; true/false force tracing on/off
-	tracingEnabled?: boolean | null;
 }) {
 	const [row] = await db
 		.insert(policy)
@@ -32,8 +30,7 @@ export async function createPolicy(input: {
 			rateLimitPerMinute: input.rateLimitPerMinute ?? 0,
 			dailyBudgetUsd: String(input.dailyBudgetUsd ?? 0),
 			monthlyBudgetUsd: String(input.monthlyBudgetUsd ?? 0),
-			cacheTtlSeconds: input.cacheTtlSeconds ?? null,
-			tracingEnabled: input.tracingEnabled ?? null
+			cacheTtlSeconds: input.cacheTtlSeconds ?? null
 		})
 		.returning();
 	return row;
@@ -50,7 +47,6 @@ export async function updatePolicy(
 		dailyBudgetUsd?: number;
 		monthlyBudgetUsd?: number;
 		cacheTtlSeconds?: number | null;
-		tracingEnabled?: boolean | null;
 	}
 ) {
 	// numeric columns round-trip as strings in drizzle/pg

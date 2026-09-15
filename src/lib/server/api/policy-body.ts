@@ -5,7 +5,6 @@
 import type { createPolicy, updatePolicy } from '$lib/server/policies';
 import {
 	definedOnly,
-	optionalBoolean,
 	optionalNumber,
 	optionalString,
 	optionalStringArray,
@@ -28,15 +27,14 @@ export function parsePolicyCreate(body: JsonBody): PolicyCreateInput {
 		dailyBudgetUsd: optionalNumber(body, 'dailyBudgetUsd') ?? 0,
 		monthlyBudgetUsd: optionalNumber(body, 'monthlyBudgetUsd') ?? 0,
 		// null/absent = inherit the instance default; a number overrides it
-		cacheTtlSeconds: optionalNumber(body, 'cacheTtlSeconds', { integer: true }) ?? null,
-		tracingEnabled: optionalBoolean(body, 'tracingEnabled') ?? null
+		cacheTtlSeconds: optionalNumber(body, 'cacheTtlSeconds', { integer: true }) ?? null
 	};
 }
 
 /**
  * PATCH /api/policies/[id]. Only accepted fields that are present are updated.
- * Non-nullable columns reject `null`; `preferredProvider`, `cacheTtlSeconds` and
- * `tracingEnabled` accept `null` to clear back to "inherit".
+ * Non-nullable columns reject `null`; `preferredProvider` and `cacheTtlSeconds`
+ * accept `null` to clear back to "inherit".
  */
 export function parsePolicyPatch(body: JsonBody): PolicyPatch {
 	const patch = definedOnly<PolicyPatch>({
@@ -50,8 +48,7 @@ export function parsePolicyPatch(body: JsonBody): PolicyPatch {
 		}),
 		dailyBudgetUsd: optionalNumber(body, 'dailyBudgetUsd', { nullable: false }),
 		monthlyBudgetUsd: optionalNumber(body, 'monthlyBudgetUsd', { nullable: false }),
-		cacheTtlSeconds: optionalNumber(body, 'cacheTtlSeconds', { integer: true }),
-		tracingEnabled: optionalBoolean(body, 'tracingEnabled')
+		cacheTtlSeconds: optionalNumber(body, 'cacheTtlSeconds', { integer: true })
 	});
 	requireSomeField(patch);
 	return patch;

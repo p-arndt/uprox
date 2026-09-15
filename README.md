@@ -18,8 +18,8 @@ raw provider keys, enforce per-service limits and budgets, and log every request
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/screenshots/dashboard-dark.png" alt="uprox dashboard, dark mode" /></td>
-    <td width="50%"><img src="docs/screenshots/usage.png" alt="uprox usage" /></td>
+    <td width="50%"><img src="docs/screenshots/cost-analysis.png" alt="uprox cost analysis" /></td>
+    <td width="50%"><img src="docs/screenshots/services.png" alt="uprox services" /></td>
   </tr>
 </table>
 
@@ -39,30 +39,41 @@ const client = new OpenAI({
 	baseURL: 'http://localhost:5173/v1'
 });
 
-await client.chat.completions.create({
-	model: 'gpt-4o', // claude-* → Anthropic, gemini-* → Google, all routed automatically
-	messages: [{ role: 'user', content: 'Hello' }]
-});
+await client.responses.create({ model: 'gpt-5.4-mini', input: 'Hello' });
+// or: client.chat.completions.create({ model: 'claude-sonnet-4-5', messages: [...] })
 ```
 
-Prefer a provider's own SDK? uprox also speaks the **native Google Gemini** API, so
-the `@google/genai` client works unchanged — point its `baseUrl` at
-`http://localhost:5173/v1beta` and use an `uprox_live_…` token. See
-[`examples/use-gateway-gemini.ts`](examples/use-gateway-gemini.ts).
+## Which endpoint when
+
+One token, several doors. Pick the one your client already speaks:
+
+| You have…                                   | Base URL         | Use                                                          |
+| ------------------------------------------- | ---------------- | ------------------------------------------------------------ |
+| New OpenAI code (tools, reasoning)          | `{uprox}/v1`     | `POST /responses`                                            |
+| Anything OpenAI-compatible, or mixed models | `{uprox}/v1`     | `POST /chat/completions` — `gpt-*`, `claude-*`, `gemini-*`   |
+| Embeddings, images, speech-to-text          | `{uprox}/v1`     | `/embeddings`, `/images/*`, `/audio/transcriptions`          |
+| Browser voice (Realtime)                    | `{uprox}/v1`     | `POST /realtime/client_secrets` → client talks to OpenAI     |
+| An Azure OpenAI client                      | `{uprox}`        | SDK builds `/openai/deployments/{model}/…` or `/openai/v1/…` |
+| The `@google/genai` SDK                     | `{uprox}/v1beta` | `models/{model}:generateContent` — keeps Gemini-only fields  |
+
+The key goes where each SDK expects it: `Authorization: Bearer`, `api-key` (Azure) or
+`x-goog-api-key` (Gemini) — uprox accepts all three. When you create a token, the dashboard
+shows a ready-to-copy snippet for each of these (also under **Gateway → Connect**):
+
+<img src="docs/screenshots/connect-token.png" alt="Token dialog with a snippet per client" width="720" />
 
 ## What you get
 
-|                    |                                                                                                         |
-| ------------------ | ------------------------------------------------------------------------------------------------------- |
-| **Machine tokens** | Revocable `uprox_live_…` tokens per service. Stored as a hash; shown once.                              |
-| **Multi-provider** | OpenAI, Anthropic, Azure OpenAI, and Google Gemini behind one endpoint, routed by model.                |
-| **Policies**       | Limit which providers/models a service may call, plus per-token rate limits.                            |
-| **Budgets**        | Daily/monthly USD ceilings per service — over budget returns `402`.                                     |
-| **Response cache** | Exact-match cache (streaming included) replays responses at zero cost.                                  |
-| **Encrypted keys** | Provider keys sealed with AES-256-GCM; never exposed to clients.                                        |
-| **Audit log**      | Every request logged with status, cost, and latency.                                                    |
-| **Tracing**        | Opt-in capture of prompts, responses & tool calls; session trees, plus OTLP ingest for full app traces. |
-| **Teams & SSO**    | Invite-only orgs and roles, with email/password or OIDC sign-in.                                        |
+|                    |                                                                                          |
+| ------------------ | ---------------------------------------------------------------------------------------- |
+| **Machine tokens** | Revocable `uprox_live_…` tokens per service. Stored as a hash; shown once.               |
+| **Multi-provider** | OpenAI, Anthropic, Azure OpenAI, and Google Gemini behind one endpoint, routed by model. |
+| **Policies**       | Limit which providers/models a service may call, plus per-token rate limits.             |
+| **Budgets**        | Daily/monthly USD ceilings per service — over budget returns `402`.                      |
+| **Response cache** | Exact-match cache (streaming included) replays responses at zero cost.                   |
+| **Encrypted keys** | Provider keys sealed with AES-256-GCM; never exposed to clients.                         |
+| **Audit log**      | Every request logged with status, cost, and latency.                                     |
+| **Teams & SSO**    | Invite-only orgs and roles, with email/password or OIDC sign-in.                         |
 
 ## Quick start
 
@@ -91,7 +102,7 @@ docker build -t uprox . && docker run -p 3000:3000 --env-file .env uprox
 
 ## Endpoints
 
-OpenAI-compatible gateway, authenticated with a `Bearer uprox_live_…` token (or
+Full reference. OpenAI-compatible gateway, authenticated with a `Bearer uprox_live_…` token (or
 `api-key: uprox_live_…` for Azure-SDK clients):
 
 | Endpoint                                                            | Notes                                                                                  |
@@ -183,78 +194,6 @@ request/response fields.
 
 Everything else (services, tokens, providers, policies, audit) is managed in the dashboard or
 via the session-authenticated REST API under `/api`.
-
-## Tracing & observability
-
-A built-in, Phoenix-style trace viewer — no external observability service required. The
-**Traces** page in the dashboard captures what flows through the gateway and renders it as
-a conversation (prompts, the model's reply, **tool calls and results**), with tokens, cost,
-and latency per call.
-
-**Opt-in & private.** Tracing captures full prompt/response payloads, so it's **off by
-default**. Turn it on instance-wide under **Settings → Request tracing** (with a retention
-window), or override it per policy (inherit / always-on / always-off) under a policy's
-**Tracing** tab. Captured payloads are pruned automatically once past the retention window.
-
-**Sessions — no client changes needed.** Each call is traced on its own; related calls (e.g.
-a tool-use loop) collapse into one **session** when they share a correlation id — a waterfall
-of the calls plus a **full-session view** that stitches every call's conversation onto one
-page. uprox resolves the correlation id automatically, so you usually change nothing:
-
-1. an explicit `x-uprox-trace-id` (or `x-uprox-session-id`) request header, if you set one; else
-2. the W3C **`traceparent`** header your OpenTelemetry-instrumented app already sends — uprox
-   uses its trace-id, which is also how proxy calls stitch into the app trace below.
-
-In the Traces list, a session's calls **collapse into one row** (open it for the waterfall +
-full transcript); standalone calls stay individual.
-
-**Custom metadata.** Attach free-form key/values to a trace — a chat id, end-user id, tenant,
-experiment, tags, anything (the OpenInference `metadata` equivalent). Send a JSON object in
-`x-uprox-metadata`, and/or one `x-uprox-meta-<key>: <value>` header per field. It shows on the
-trace and is searchable. uprox never special-cases particular keys.
-
-```ts
-// optional: force a session id + attach metadata for a run (see examples/use-gateway.ts)
-const client = new OpenAI({
-	apiKey: 'uprox_live_…',
-	baseURL: 'http://localhost:5173/v1',
-	defaultHeaders: {
-		'x-uprox-trace-id': crypto.randomUUID(),
-		'x-uprox-metadata': JSON.stringify({ chat_id: 'abc', user_id: 'u_42' })
-	}
-});
-```
-
-### Full app traces via OpenTelemetry (OTLP ingest)
-
-The proxy only sees the calls that pass through it — not your app's internal steps
-(retriever, embedder, agent, reranker…). To get the **full nested tree**, point your app's
-OpenInference/OpenTelemetry exporter at uprox's OTLP endpoint:
-
-| Endpoint          | Notes                                                                                   |
-| ----------------- | --------------------------------------------------------------------------------------- |
-| `POST /v1/traces` | OTLP/HTTP span ingest — accepts **protobuf** and **JSON** (gzip ok); OTel-standard path |
-
-Authenticate with the same machine token, as a bearer. Because uprox auto-groups its proxy
-calls by the same `traceparent` trace-id, your app's spans and uprox's captured LLM calls
-**line up under one trace** — the app's spans give the deep tree, uprox's capture fills in the
-prompt/response/cost.
-
-```sh
-# point any OTel/OpenInference exporter at uprox. Use the BASE url — the exporter
-# appends "/v1/traces" itself (→ http://localhost:5173/v1/traces).
-export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:5173
-export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer uprox_live_…"
-# protobuf is the default; JSON also works:
-# export OTEL_EXPORTER_OTLP_PROTOCOL=http/json
-```
-
-Ingest respects the instance tracing switch (when tracing is off, spans are accepted and
-dropped), and ingested traces appear under **Distributed traces** on the Traces page with the
-full span waterfall and per-span attributes.
-
-See [`examples/use-gateway.ts`](examples/use-gateway.ts) for a tool-use round-trip that shows
-up as one grouped session.
 
 ## Tokens & security
 

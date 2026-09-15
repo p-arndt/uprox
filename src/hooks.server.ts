@@ -100,7 +100,7 @@ const handleSetup: Handle = async ({ event, resolve }) => {
  * better-auth exposes `POST /api/auth/sign-up/email` (under the `/api/auth/sign-up`
  * prefix) whenever email/password auth is enabled, and we deliberately do not set
  * `disableSignUp`. Left open, anyone could self-register a `member` account and read
- * sensitive dashboard data (captured traces, audit logs, usage).
+ * sensitive dashboard data (audit logs, usage).
  *
  * The legitimate email-signup flows (first admin in `/setup`, invited users in
  * `/invite/[id]`) call `auth.api.signUpEmail(...)` as a direct server function. Those

@@ -70,7 +70,7 @@ export async function insertAudit(executor: AuditExecutor, entry: AuditEntry): P
 /**
  * Append a row to the audit trail. Never throws — auditing must not break the
  * request it is recording. Returns the new row's id (or null if the insert
- * failed), so a caller can attach a request trace to it; see recordTrace.
+ * failed).
  */
 export async function audit(entry: AuditEntry): Promise<string | null> {
 	try {

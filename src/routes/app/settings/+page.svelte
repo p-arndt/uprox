@@ -9,7 +9,6 @@
 	import TokenSecurityCard from './token-security-card.svelte';
 	import InstanceBudgetCard from './instance-budget-card.svelte';
 	import BudgetAlertsCard from './budget-alerts-card.svelte';
-	import TracingSettingsCard from './tracing-settings-card.svelte';
 	import SsoSignupCard from './sso-signup-card.svelte';
 
 	let { data, form } = $props();
@@ -37,6 +36,5 @@
 		<TokenSecurityCard tokensRecopyableDefault={data.settings.tokensRecopyableDefault} />
 		<InstanceBudgetCard settings={data.settings} />
 		<BudgetAlertsCard settings={data.settings} />
-		<TracingSettingsCard settings={data.settings} />
 	{/if}
 </PageShell>

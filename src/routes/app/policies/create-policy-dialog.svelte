@@ -24,8 +24,7 @@
 		rateLimitPerMinute: 0,
 		dailyBudgetUsd: 0,
 		monthlyBudgetUsd: 0,
-		cacheTtlSeconds: '',
-		tracingEnabled: ''
+		cacheTtlSeconds: ''
 	};
 </script>
 

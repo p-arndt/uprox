@@ -62,7 +62,6 @@ export function listTokens() {
 				dailyBudgetUsd: machineToken.dailyBudgetUsd,
 				monthlyBudgetUsd: machineToken.monthlyBudgetUsd,
 				cacheTtlSeconds: machineToken.cacheTtlSeconds,
-				tracingEnabled: machineToken.tracingEnabled,
 				// true when the raw token was kept (encrypted) and can be revealed again;
 				// the ciphertext itself is never sent to the client
 				recopyable: sql<boolean>`${machineToken.encryptedToken} is not null`,
@@ -141,8 +140,7 @@ export async function createToken(
 					rateLimitPerMinute: input.rateLimitPerMinute,
 					dailyBudgetUsd: input.dailyBudgetUsd,
 					monthlyBudgetUsd: input.monthlyBudgetUsd,
-					cacheTtlSeconds: input.cacheTtlSeconds,
-					tracingEnabled: input.tracingEnabled
+					cacheTtlSeconds: input.cacheTtlSeconds
 				})
 			})
 			.returning();
@@ -225,8 +223,7 @@ export async function updateToken(
 			rateLimitPerMinute: patch.rateLimitPerMinute,
 			dailyBudgetUsd: patch.dailyBudgetUsd,
 			monthlyBudgetUsd: patch.monthlyBudgetUsd,
-			cacheTtlSeconds: patch.cacheTtlSeconds,
-			tracingEnabled: patch.tracingEnabled
+			cacheTtlSeconds: patch.cacheTtlSeconds
 		})
 	);
 	if (Object.keys(set).length === 0) return null;

@@ -52,8 +52,6 @@ describe('getSettings', () => {
 			budgetAlertsEnabled: false,
 			budgetAlertThresholdPct: 80,
 			budgetAlertEmail: null,
-			tracingEnabled: false,
-			tracingRetentionDays: 30,
 			ssoSignupEnabled: true
 		});
 	});
@@ -66,8 +64,7 @@ describe('getSettings', () => {
 			dailyBudgetUsd: '12.50',
 			monthlyBudgetUsd: null,
 			budgetAlertThresholdPct: 90,
-			budgetAlertEmail: 'ops@example.com',
-			tracingRetentionDays: 7
+			budgetAlertEmail: 'ops@example.com'
 		};
 
 		expect(await getSettings()).toMatchObject({
@@ -77,8 +74,7 @@ describe('getSettings', () => {
 			dailyBudgetUsd: 12.5,
 			monthlyBudgetUsd: null,
 			budgetAlertThresholdPct: 90,
-			budgetAlertEmail: 'ops@example.com',
-			tracingRetentionDays: 7
+			budgetAlertEmail: 'ops@example.com'
 		});
 	});
 
@@ -108,10 +104,10 @@ describe('getSettings', () => {
 describe('updateSettings', () => {
 	it('invalidates the cache so the next read sees the write', async () => {
 		await getSettings();
-		row = { id: 1, tracingEnabled: true };
-		await updateSettings({ tracingEnabled: true });
+		row = { id: 1, ssoSignupEnabled: false };
+		await updateSettings({ ssoSignupEnabled: false });
 
-		expect((await getSettings()).tracingEnabled).toBe(true);
+		expect((await getSettings()).ssoSignupEnabled).toBe(false);
 		expect(selects).toBe(2);
 	});
 
@@ -121,8 +117,7 @@ describe('updateSettings', () => {
 			dailyBudgetUsd: 0,
 			monthlyBudgetUsd: 250,
 			budgetAlertThresholdPct: 150,
-			budgetAlertEmail: '  ',
-			tracingRetentionDays: Number.NaN
+			budgetAlertEmail: '  '
 		});
 
 		const expected = {
@@ -130,8 +125,7 @@ describe('updateSettings', () => {
 			dailyBudgetUsd: null,
 			monthlyBudgetUsd: '250',
 			budgetAlertThresholdPct: 100,
-			budgetAlertEmail: null,
-			tracingRetentionDays: 30
+			budgetAlertEmail: null
 		};
 		expect(inserted).toEqual({ values: { id: 1, ...expected }, set: expected });
 	});
@@ -140,7 +134,7 @@ describe('updateSettings', () => {
 		await updateSettings({ budgetAlertThresholdPct: 0.5 });
 		expect(inserted?.set).toEqual({ budgetAlertThresholdPct: 1 });
 
-		await updateSettings({ budgetAlertThresholdPct: Number.NaN, tracingRetentionDays: 0 });
-		expect(inserted?.set).toEqual({ budgetAlertThresholdPct: 80, tracingRetentionDays: 1 });
+		await updateSettings({ budgetAlertThresholdPct: Number.NaN });
+		expect(inserted?.set).toEqual({ budgetAlertThresholdPct: 80 });
 	});
 });

@@ -7,7 +7,7 @@
  *
  * Two field kinds behave differently:
  *
- *   • Scalar OVERRIDE (rate limit, cache TTL, tracing, preferred provider):
+ *   • Scalar OVERRIDE (rate limit, cache TTL, preferred provider):
  *     the first layer that sets a value wins; lower layers are ignored.
  *
  *   • Allowlist INTERSECTION (providers, models): every layer that sets a
@@ -48,8 +48,6 @@ export interface EffectiveConfig {
 	rateLimitPerMinute: number;
 	/** resolved cache TTL in seconds (already merged with the instance default). */
 	cacheTtlSeconds: number;
-	/** resolved tracing flag (already merged with the instance default). */
-	tracingEnabled: boolean;
 	/** this token's personal spend cap (a budget of 0 in a field = unlimited). */
 	tokenBudget: ResolvedBudget;
 	/** the service-wide spend ceiling across all of its tokens. */
@@ -60,7 +58,6 @@ export interface EffectiveConfig {
 
 export interface InstanceDefaults {
 	cacheTtlSeconds: number;
-	tracingEnabled: boolean;
 	/** instance-wide spend ceilings (0 = unlimited); summed across all traffic. */
 	dailyBudgetUsd: number;
 	monthlyBudgetUsd: number;
@@ -151,13 +148,6 @@ export function resolveEffectiveConfig(input: ResolveInput): EffectiveConfig {
 					servicePolicy?.cacheTtlSeconds
 				)
 			) ?? defaults.cacheTtlSeconds,
-		tracingEnabled:
-			firstDefined(
-				token.tracingEnabled,
-				tokenPolicy?.tracingEnabled,
-				service.tracingEnabled,
-				servicePolicy?.tracingEnabled
-			) ?? defaults.tracingEnabled,
 		tokenBudget: resolveBudget(token, tokenPolicy),
 		serviceBudget: resolveBudget(service, servicePolicy),
 		// not a cascade — a single instance-wide value carried straight through

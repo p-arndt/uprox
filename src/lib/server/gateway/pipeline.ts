@@ -124,7 +124,6 @@ async function recordBuffered(
 		ok: x.upstream.ok,
 		usage: usageFromText(text, opts.extract),
 		response: text,
-		format: 'json',
 		...(opts.detail ? { detail: opts.detail } : {}),
 		cache: x.cache,
 		complete: true,
@@ -250,8 +249,7 @@ export async function proxyToProvider(event: RequestEvent, opts: ProxyOptions): 
 	const ctx = createContext(event, opts.auth, {
 		scope,
 		model,
-		envelope: openAiEnvelope,
-		traceRequest: opts.body
+		envelope: openAiEnvelope
 	});
 
 	const provider = await resolveRoutedProvider(ctx, opts.preferProvider);
@@ -322,13 +320,10 @@ export async function proxyMultipartToProvider(
 	opts: MultipartProxyOptions
 ): Promise<Response> {
 	const { auth, scope, model, path, form, preferProvider } = opts;
-	// never store the raw multipart body (binary audio/images) on the trace —
-	// record a compact request summary instead
 	const ctx = createContext(event, auth, {
 		scope,
 		model,
-		envelope: openAiEnvelope,
-		traceRequest: { endpoint: path, model }
+		envelope: openAiEnvelope
 	});
 
 	const provider = await resolveRoutedProvider(ctx, preferProvider);
@@ -451,8 +446,7 @@ export async function proxyGeminiNative(
 	const ctx = createContext(event, opts.auth, {
 		scope,
 		model,
-		envelope: geminiEnvelope,
-		traceRequest: body
+		envelope: geminiEnvelope
 	});
 
 	const cache = nativeCacheTarget(ctx, provider, opts);

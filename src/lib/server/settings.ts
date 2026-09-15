@@ -14,8 +14,6 @@ export interface Settings {
 	budgetAlertsEnabled: boolean;
 	budgetAlertThresholdPct: number;
 	budgetAlertEmail: string | null;
-	tracingEnabled: boolean;
-	tracingRetentionDays: number;
 	// whether SSO sign-in may create accounts for users who aren't members yet
 	ssoSignupEnabled: boolean;
 }
@@ -62,15 +60,6 @@ const FIELDS: Record<keyof Settings, FieldCodec> = {
 		fallback: null,
 		write: (input: string | null) => input?.trim() || null
 	},
-	tracingEnabled: { fallback: false },
-	tracingRetentionDays: {
-		fallback: 30,
-		// at least 1 day; NaN falls back to the 30-day default
-		write: (input: number) => {
-			const days = Math.floor(input);
-			return Number.isFinite(days) ? Math.max(1, days) : 30;
-		}
-	},
 	ssoSignupEnabled: { fallback: true }
 };
 
@@ -89,7 +78,7 @@ function fromRow(row: typeof settings.$inferSelect | undefined): Settings {
 
 /**
  * How long a settings read is served from memory. getSettings runs on most
- * requests (every permission check, token resolution, trace pruning), while the
+ * requests (every permission check, token resolution), while the
  * row changes only from the settings page. Writes through {@link updateSettings}
  * invalidate immediately; the TTL only bounds how stale another process can be.
  */

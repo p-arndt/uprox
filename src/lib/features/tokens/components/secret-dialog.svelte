@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import EntityDialog from '$lib/components/form/entity-dialog.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import ConnectSnippets from '$lib/features/tokens/components/connect-snippets.svelte';
 	import type { RevealedSecret } from '$lib/features/tokens/tokens';
 	import Copy from '@lucide/svelte/icons/copy';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
@@ -19,14 +19,6 @@
 	async function copy(text: string, msg = 'Copied to clipboard') {
 		await navigator.clipboard.writeText(text);
 		toast.success(msg);
-	}
-
-	const apiBase = $derived(`${page.url.origin}/v1`);
-	function curlFor(token: string) {
-		return `curl ${apiBase}/chat/completions \\
-  -H "Authorization: Bearer ${token}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Hello"}]}'`;
 	}
 </script>
 
@@ -45,7 +37,7 @@
 	{onClose}
 	title={secret?.recopyable ? 'Token secret' : 'Token created'}
 	{description}
-	class="sm:max-w-lg"
+	class="sm:max-w-2xl"
 >
 	<div
 		class="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
@@ -73,21 +65,8 @@
 	</div>
 
 	<div class="min-w-0 space-y-1.5">
-		<p class="text-xs font-medium text-muted-foreground">Drop it straight into a request</p>
-		<div class="relative min-w-0">
-			<pre class="overflow-x-auto rounded-lg bg-muted p-3 pr-10 text-xs leading-relaxed"><code
-					>{secret ? curlFor(secret.plaintext) : ''}</code
-				></pre>
-			<Button
-				size="icon"
-				variant="ghost"
-				class="absolute top-1.5 right-1.5 size-7"
-				onclick={() => secret && copy(curlFor(secret.plaintext), 'Command copied')}
-				title="Copy command"
-			>
-				<Copy class="size-3.5" />
-			</Button>
-		</div>
+		<p class="text-xs font-medium text-muted-foreground">Where to send it</p>
+		{#if secret}<ConnectSnippets token={secret.plaintext} />{/if}
 	</div>
 	<Dialog.Footer>
 		<Button onclick={onClose}>Done</Button>

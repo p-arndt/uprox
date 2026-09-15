@@ -82,7 +82,6 @@ export async function updateService(
 		dailyBudgetUsd,
 		monthlyBudgetUsd,
 		cacheTtlSeconds,
-		tracingEnabled,
 		...base
 	} = patch;
 	const set = {
@@ -94,8 +93,7 @@ export async function updateService(
 			rateLimitPerMinute,
 			dailyBudgetUsd,
 			monthlyBudgetUsd,
-			cacheTtlSeconds,
-			tracingEnabled
+			cacheTtlSeconds
 		})
 	};
 	const [row] = await db

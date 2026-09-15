@@ -88,7 +88,7 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 		return null;
 	}
 
-	// instance-wide defaults (cache TTL, tracing, budgets) from the settings singleton
+	// instance-wide defaults (cache TTL, budgets) from the settings singleton
 	const instance = await getSettings();
 
 	// best-effort last-used bookkeeping; don't block the request on it
@@ -111,7 +111,6 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 			servicePolicy: row.servicePolicy,
 			defaults: {
 				cacheTtlSeconds: instance.cacheTtlSeconds,
-				tracingEnabled: instance.tracingEnabled,
 				dailyBudgetUsd: instance.dailyBudgetUsd ?? 0,
 				monthlyBudgetUsd: instance.monthlyBudgetUsd ?? 0
 			}

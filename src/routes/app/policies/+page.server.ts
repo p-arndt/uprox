@@ -16,7 +16,7 @@ export const load: PageServerLoad = async (event) => {
 /**
  * A preset's fields from the shared limits form. Unlike the inline overrides on
  * services and tokens, a preset's lists, rate limit and budgets are always set:
- * blank means "allow all" / unlimited (0). The cache TTL and tracing keep the
+ * blank means "allow all" / unlimited (0). The cache TTL keeps the
  * tri-state, where blank inherits the instance default.
  */
 function policyFromForm(data: FormData) {
@@ -28,8 +28,7 @@ function policyFromForm(data: FormData) {
 		rateLimitPerMinute: inline.rateLimitPerMinute ?? 0,
 		dailyBudgetUsd: inline.dailyBudgetUsd ?? 0,
 		monthlyBudgetUsd: inline.monthlyBudgetUsd ?? 0,
-		cacheTtlSeconds: inline.cacheTtlSeconds ?? null,
-		tracingEnabled: inline.tracingEnabled ?? null
+		cacheTtlSeconds: inline.cacheTtlSeconds ?? null
 	};
 }
 

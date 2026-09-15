@@ -23,8 +23,7 @@ describe('parsePolicyCreate', () => {
 			rateLimitPerMinute: 0,
 			dailyBudgetUsd: 0,
 			monthlyBudgetUsd: 0,
-			cacheTtlSeconds: null,
-			tracingEnabled: null
+			cacheTtlSeconds: null
 		});
 	});
 
@@ -37,8 +36,7 @@ describe('parsePolicyCreate', () => {
 				rateLimitPerMinute: 60,
 				dailyBudgetUsd: '1.5',
 				monthlyBudgetUsd: 20,
-				cacheTtlSeconds: 0,
-				tracingEnabled: true
+				cacheTtlSeconds: 0
 			})
 		).toMatchObject({
 			allowedModels: ['gpt-4o'],
@@ -46,8 +44,7 @@ describe('parsePolicyCreate', () => {
 			rateLimitPerMinute: 60,
 			dailyBudgetUsd: 1.5,
 			monthlyBudgetUsd: 20,
-			cacheTtlSeconds: 0,
-			tracingEnabled: true
+			cacheTtlSeconds: 0
 		});
 	});
 

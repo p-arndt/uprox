@@ -9,11 +9,10 @@
 	import Gauge from '@lucide/svelte/icons/gauge';
 	import Wallet from '@lucide/svelte/icons/wallet';
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
-	import Waypoints from '@lucide/svelte/icons/waypoints';
 	import { formatBudget } from '$lib/format';
 	import type { PageData } from './$types';
 
-	// One preset: its access lists and a one-line summary of limits, cache and tracing.
+	// One preset: its access lists and a one-line summary of limits and cache.
 
 	let {
 		policy: p,
@@ -101,14 +100,6 @@
 					: p.cacheTtlSeconds === 0
 						? 'Cache: off'
 						: `Cache ${p.cacheTtlSeconds}s`}
-			</span>
-			<span class="flex items-center gap-1.5">
-				<Waypoints class="size-3.5" />
-				{p.tracingEnabled == null
-					? 'Trace: inherit'
-					: p.tracingEnabled
-						? 'Trace: on'
-						: 'Trace: off'}
 			</span>
 		</div>
 	</Card.Content>

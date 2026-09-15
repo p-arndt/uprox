@@ -76,28 +76,25 @@ export async function replayCached(
 ): Promise<Response | null> {
 	const hit = await getCached(cacheKey);
 	if (!hit) return null;
-	await ctx.auditTrace(
-		{
-			action: `gateway.${ctx.scope}`,
-			status: 'ok',
-			serviceId: ctx.token.serviceId,
-			tokenId: ctx.token.tokenId,
-			provider: provider.id,
-			model: ctx.model,
-			statusCode: hit.statusCode,
-			costUsd: 0,
-			// exact savings: what this request would have cost upstream
-			savedUsd: hit.costUsd,
-			// tokens the miss consumed — replayed here as "saved" so analytics can
-			// show cache impact without double-counting consumption.
-			savedInputTokens: hit.inputTokens,
-			savedOutputTokens: hit.outputTokens,
-			latencyMs: Date.now() - ctx.started,
-			ip: ctx.ip,
-			detail: `${detailPrefix}cache hit${stream ? ' (stream)' : ''}`
-		},
-		{ response: hit.response, format: stream ? 'sse' : 'json' }
-	);
+	await ctx.audit({
+		action: `gateway.${ctx.scope}`,
+		status: 'ok',
+		serviceId: ctx.token.serviceId,
+		tokenId: ctx.token.tokenId,
+		provider: provider.id,
+		model: ctx.model,
+		statusCode: hit.statusCode,
+		costUsd: 0,
+		// exact savings: what this request would have cost upstream
+		savedUsd: hit.costUsd,
+		// tokens the miss consumed — replayed here as "saved" so analytics can
+		// show cache impact without double-counting consumption.
+		savedInputTokens: hit.inputTokens,
+		savedOutputTokens: hit.outputTokens,
+		latencyMs: Date.now() - ctx.started,
+		ip: ctx.ip,
+		detail: `${detailPrefix}cache hit${stream ? ' (stream)' : ''}`
+	});
 	return new Response(hit.response, {
 		status: hit.statusCode,
 		headers: stream

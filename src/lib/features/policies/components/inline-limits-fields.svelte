@@ -71,9 +71,7 @@
 			values.allowedModels !== '' ||
 			values.preferredProvider !== ''
 	);
-	const advancedActive = untrack(
-		() => extraAdvancedActive || values.cacheTtlSeconds !== '' || values.tracingEnabled !== ''
-	);
+	const advancedActive = untrack(() => extraAdvancedActive || values.cacheTtlSeconds !== '');
 	const summary = (active: boolean) => (isPolicy ? undefined : active ? 'Custom' : 'Inherited');
 
 	// OpenAI and Azure share the "gpt-*"/o-series namespace; pick which serves it.
@@ -84,14 +82,6 @@
 			.map((p) => ({ value: p.id, label: p.label }))
 	]);
 	let preferred = $state(untrack(() => values.preferredProvider));
-
-	const tracingInherit = isPolicy ? 'Inherit org default' : 'Inherit';
-	const tracingOptions = [
-		{ value: '', label: tracingInherit },
-		{ value: 'true', label: 'Always on' },
-		{ value: 'false', label: 'Always off' }
-	];
-	let tracing = $state(untrack(() => values.tracingEnabled));
 </script>
 
 <div class="space-y-4">
@@ -211,16 +201,6 @@
 					min="0"
 					placeholder={limitPlaceholder}
 					value={values.cacheTtlSeconds}
-				/>
-			</div>
-			<div class="space-y-2">
-				<FieldLabel for={id('tracingEnabled')} label="Request tracing" hint={help.tracing} />
-				<SelectField
-					id={id('tracingEnabled')}
-					name="tracingEnabled"
-					bind:value={tracing}
-					options={tracingOptions}
-					fallback={tracingInherit}
 				/>
 			</div>
 		</div>

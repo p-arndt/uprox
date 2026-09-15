@@ -21,8 +21,6 @@
 		monthlyBudgetUsd: number | string;
 		/** '' = inherit org default */
 		cacheTtlSeconds: string;
-		/** '' = inherit org default | 'true' = on | 'false' = off */
-		tracingEnabled: string;
 	}
 
 	let {
@@ -53,8 +51,7 @@
 		rateLimitPerMinute: String(values.rateLimitPerMinute),
 		dailyBudgetUsd: String(values.dailyBudgetUsd),
 		monthlyBudgetUsd: String(values.monthlyBudgetUsd),
-		cacheTtlSeconds: values.cacheTtlSeconds,
-		tracingEnabled: values.tracingEnabled
+		cacheTtlSeconds: values.cacheTtlSeconds
 	}));
 </script>
 

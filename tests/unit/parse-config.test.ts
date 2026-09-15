@@ -23,8 +23,7 @@ describe('inlineFromForm', () => {
 		['rateLimitPerMinute', '60'],
 		['dailyBudgetUsd', ''],
 		['monthlyBudgetUsd', '12.5'],
-		['cacheTtlSeconds', '0'],
-		['tracingEnabled', 'true']
+		['cacheTtlSeconds', '0']
 	]);
 
 	it('parses every field, blanks clearing the override', () => {
@@ -35,8 +34,7 @@ describe('inlineFromForm', () => {
 			rateLimitPerMinute: 60,
 			dailyBudgetUsd: null,
 			monthlyBudgetUsd: 12.5,
-			cacheTtlSeconds: 0,
-			tracingEnabled: true
+			cacheTtlSeconds: 0
 		});
 	});
 

@@ -6,39 +6,22 @@
  *   - baseURL → your uprox instance + /v1
  *
  * uprox validates the token, enforces policy, swaps in the org's real provider
- * key, proxies the request, records it in the audit log, and — when tracing is
- * enabled — captures the prompt/response for the in-app trace viewer.
- *
- * This example also sets an `x-uprox-trace-id` header (a per-run session id) on
- * every call, so the whole run — including the multi-step tool-use loop below —
- * shows up as ONE grouped session in the Traces view.
+ * key, proxies the request and records it in the audit log.
  *
  * Run:
  *   pnpm add -D openai tsx
  *   UPROX_TOKEN=uprox_live_… pnpm tsx examples/use-gateway.ts
  */
-import { randomUUID } from 'node:crypto';
 import OpenAI from 'openai';
-
-// One id for this whole run; uprox groups every traced call under it.
-const sessionId = randomUUID();
 
 const client = new OpenAI({
 	apiKey: process.env.UPROX_TOKEN || 'uprox_live_REPLACE_ME',
-	baseURL: process.env.UPROX_URL || 'http://localhost:5173/v1',
-	defaultHeaders: {
-		// all calls share one trace session…
-		'x-uprox-trace-id': sessionId,
-		// …and carry free-form metadata (anything you like — chat id, user, tenant, tags).
-		'x-uprox-metadata': JSON.stringify({ chat_id: sessionId, user_id: 'demo-user' })
-	}
+	baseURL: process.env.UPROX_URL || 'http://localhost:5173/v1'
 });
 
 const MODEL = process.env.UPROX_MODEL || 'gpt-5.6-luna';
 
 async function main() {
-	console.log('Trace session id:', sessionId, '\n');
-
 	// 1. A normal chat completion. Model routing is automatic:
 	//    gpt-* → OpenAI, claude-* → Anthropic.
 	const completion = await client.chat.completions.create({
@@ -52,8 +35,7 @@ async function main() {
 
 	// 2. Tool use (function calling). The model decides to call our tool; we run
 	//    it, feed the result back, and it produces the final answer. Both round
-	//    trips are separate gateway calls — in the trace viewer they appear as two
-	//    spans under this run's session, with the tool call and result rendered.
+	//    trips are separate gateway calls.
 	await toolUseRoundTrip();
 
 	// // 3. The same chat call, streamed. uprox passes the SSE stream straight through.
@@ -67,8 +49,6 @@ async function main() {
 	// 	process.stdout.write(chunk.choices[0]?.delta?.content ?? '');
 	// }
 	// console.log('\n');
-
-	// console.log('\nDone. Open the Traces view and filter by session', sessionId);
 }
 
 /** A toy tool the model can call. In a real app this would hit a weather API. */

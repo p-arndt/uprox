@@ -19,8 +19,6 @@ export interface InlineLimitValues {
 	monthlyBudgetUsd: string;
 	/** seconds; '' = inherit, 0 = off */
 	cacheTtlSeconds: string;
-	/** '' = inherit | 'true' = on | 'false' = off */
-	tracingEnabled: string;
 }
 
 /** Empty/default inline values (everything inherits). */
@@ -31,8 +29,7 @@ export const emptyInlineLimits = (): InlineLimitValues => ({
 	rateLimitPerMinute: '',
 	dailyBudgetUsd: '',
 	monthlyBudgetUsd: '',
-	cacheTtlSeconds: '',
-	tracingEnabled: ''
+	cacheTtlSeconds: ''
 });
 
 /** The inline override columns as they come back on a service/token/preset row. */
@@ -45,7 +42,6 @@ export interface InlineLimitRow {
 	dailyBudgetUsd?: number | string | null;
 	monthlyBudgetUsd?: number | string | null;
 	cacheTtlSeconds?: number | null;
-	tracingEnabled?: boolean | null;
 }
 
 /** A null column becomes '' (inherit); numeric strings are normalized for display. */
@@ -60,7 +56,6 @@ export function inlineLimitsFromRow(row: InlineLimitRow): InlineLimitValues {
 		rateLimitPerMinute: row.rateLimitPerMinute == null ? '' : String(row.rateLimitPerMinute),
 		dailyBudgetUsd: numStr(row.dailyBudgetUsd),
 		monthlyBudgetUsd: numStr(row.monthlyBudgetUsd),
-		cacheTtlSeconds: row.cacheTtlSeconds == null ? '' : String(row.cacheTtlSeconds),
-		tracingEnabled: row.tracingEnabled == null ? '' : String(row.tracingEnabled)
+		cacheTtlSeconds: row.cacheTtlSeconds == null ? '' : String(row.cacheTtlSeconds)
 	};
 }

@@ -1,6 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
-import { openAiEnvelope, geminiEnvelope, makeAuditTrace } from '$lib/server/gateway';
-import type { AuditEntry } from '$lib/server/audit';
+import { describe, it, expect } from 'vitest';
+import { openAiEnvelope, geminiEnvelope } from '$lib/server/gateway';
 
 describe('error envelopes', () => {
 	it('builds the OpenAI error shape with the mapped error type', async () => {
@@ -41,62 +40,5 @@ describe('error envelopes', () => {
 				status: 'RESOURCE_EXHAUSTED'
 			}
 		});
-	});
-});
-
-describe('makeAuditTrace', () => {
-	const entry: AuditEntry = { action: 'gateway.chat', status: 'ok' };
-	const base = {
-		serviceId: 'svc-1',
-		groupId: 'group-1',
-		metadata: { chat: 'c1' },
-		request: { model: 'gpt-4o' }
-	};
-
-	it('always audits, and records a trace with the response when tracing is on', async () => {
-		const audit = vi.fn(async () => 'audit-1');
-		const recordTrace = vi.fn(async () => {});
-		const trace = makeAuditTrace({ ...base, tracingEnabled: true }, { audit, recordTrace });
-
-		await trace(entry, { response: '{"ok":true}', format: 'json' });
-
-		expect(audit).toHaveBeenCalledWith(entry);
-		expect(recordTrace).toHaveBeenCalledWith({
-			auditLogId: 'audit-1',
-			serviceId: 'svc-1',
-			groupId: 'group-1',
-			metadata: { chat: 'c1' },
-			request: { model: 'gpt-4o' },
-			response: '{"ok":true}',
-			format: 'json'
-		});
-	});
-
-	it('records a request-only trace when no response is passed', async () => {
-		const recordTrace = vi.fn(async () => {});
-		const trace = makeAuditTrace(
-			{ ...base, tracingEnabled: true },
-			{ audit: async () => 'audit-2', recordTrace }
-		);
-
-		await trace(entry);
-
-		expect(recordTrace).toHaveBeenCalledWith(
-			expect.objectContaining({ auditLogId: 'audit-2', response: null, format: null })
-		);
-	});
-
-	it('skips the trace when tracing is off or the audit insert failed', async () => {
-		const recordTrace = vi.fn(async () => {});
-		await makeAuditTrace(
-			{ ...base, tracingEnabled: false },
-			{ audit: async () => 'audit-3', recordTrace }
-		)(entry);
-		await makeAuditTrace(
-			{ ...base, tracingEnabled: true },
-			{ audit: async () => null, recordTrace }
-		)(entry);
-
-		expect(recordTrace).not.toHaveBeenCalled();
 	});
 });

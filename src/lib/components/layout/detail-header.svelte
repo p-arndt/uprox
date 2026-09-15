@@ -2,8 +2,8 @@
 	import type { Component, Snippet } from 'svelte';
 
 	// The identity block at the top of a detail page: what kind of thing this is,
-	// what it's called, and the facts that identify it. Services, tokens and
-	// traces each grew their own near-copy of this, drifting on icon size, heading
+	// what it's called, and the facts that identify it. Services and tokens
+	// each grew their own near-copy of this, drifting on icon size, heading
 	// level and back-link wording; the up-navigation now lives in the breadcrumb
 	// in the app header, so this is purely identity.
 
@@ -22,7 +22,7 @@
 		/** the entity's type, e.g. "Service" — small caps above the name */
 		eyebrow: string;
 		title: string;
-		/** names that are identifiers (model ids, trace ids) read better monospaced */
+		/** names that are identifiers (model ids, token ids) read better monospaced */
 		mono?: boolean;
 		/** status dots, badges and inline controls, on the title's own line */
 		badges?: Snippet;

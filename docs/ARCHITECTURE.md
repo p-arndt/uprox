@@ -19,7 +19,6 @@ src/
       gateway/               request pipeline driven by endpoint descriptors
       adapters/              upstream provider adapters
       api/                   REST body parsers and error shapes for /api
-      otlp/                  OTLP trace decoding
       usage-queries/         cost-analysis SQL, one module per query family
     features/<domain>/       domain logic, types and components (see below)
     components/              UI building blocks shared across features
@@ -57,11 +56,11 @@ unit tested without mocks. I/O wrappers stay thin and call into them.
 ### Server modules by domain
 
 - `src/lib/server/<domain>.ts` (or `src/lib/server/<domain>/`) per domain: services,
-  tokens, providers, policies, pricing, budgets, usage, traces, members, settings.
+  tokens, providers, policies, pricing, budgets, usage, members, settings.
 - There is no catch-all barrel. Import each function from the module that defines it.
 - The gateway is a request pipeline
   (authenticate -> resolve endpoint -> policy/budget/rate limit -> cache -> upstream
-  adapter -> meter/audit/trace) driven by **endpoint descriptors**: one declarative
+  adapter -> meter/audit) driven by **endpoint descriptors**: one declarative
   entry per public endpoint (path, request kind, model extraction, streaming,
   metering). A new endpoint should be a descriptor plus, if needed, an adapter, not
   a copied route handler.
@@ -87,8 +86,6 @@ src/lib/features/
                 headline, metric, efficiency, token-meters, types, meter-types,
                 view.svelte.ts (URL-backed view state)
     components/ usage-workbench, usage-headline, usage-stacked-chart, usage-*, ...
-  traces/       trace.ts (payload parsing), otel.ts (span tree)
-    components/ trace-conversation, trace-metadata, trace-waterfall, raw-payload-tabs
   tokens/       tokens.ts
     components/ token-form, token-row, create-token-dialog, edit-token-dialog, secret-dialog
   providers/    providers.ts
@@ -146,7 +143,7 @@ and nesting depth 4. A warning means: split before adding more.
 
 ## Database and analytics performance
 
-`audit_log`, `request_trace` and `trace_span` grow without bound. Queries over them
+`audit_log` grows without bound. Queries over it
 must stay index-friendly:
 
 - **Always bound `created_at`** with a lower (and usually upper) limit in the `WHERE`

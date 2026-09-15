@@ -178,13 +178,12 @@ All policies, newest first.
 | `dailyBudgetUsd`     | number >= 0            | `0` (unlimited)  |
 | `monthlyBudgetUsd`   | number >= 0            | `0` (unlimited)  |
 | `cacheTtlSeconds`    | integer >= 0, nullable | `null` (inherit) |
-| `tracingEnabled`     | boolean, nullable      | `null` (inherit) |
 
 Returns `201` with the policy row.
 
 ### `PATCH /api/policies/:id` (`policies:manage`)
 
-Same fields, all optional. Only `preferredProvider`, `cacheTtlSeconds` and `tracingEnabled` accept
+Same fields, all optional. Only `preferredProvider` and `cacheTtlSeconds` accept
 `null`. Returns the updated row.
 
 ### `DELETE /api/policies/:id` (`policies:manage`)
@@ -245,7 +244,6 @@ Services and tokens accept these override fields directly (all nullable; `null` 
 | `dailyBudgetUsd`     | number >= 0  |
 | `monthlyBudgetUsd`   | number >= 0  |
 | `cacheTtlSeconds`    | integer >= 0 |
-| `tracingEnabled`     | boolean      |
 
 See `src/lib/server/effective-config.ts` for how the layers (instance, service policy, service,
 token policy, token) combine.

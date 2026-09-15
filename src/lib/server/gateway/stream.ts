@@ -8,7 +8,7 @@ import { recordCompletion, type CacheTarget, type UsageExtractor } from './recor
 export interface DrainedSse {
 	usage: NormalizedUsage | null;
 	/**
-	 * The verbatim SSE body, reassembled — used to cache and trace a streamed
+	 * The verbatim SSE body, reassembled — used to cache a streamed
 	 * response. Empty unless `keepRaw` was set; stops growing past
 	 * {@link MAX_RAW_SSE_CHARS}, which is already beyond what the cache stores.
 	 */
@@ -19,14 +19,14 @@ export interface DrainedSse {
 
 /**
  * Accumulating more than this is pointless: the response cache skips bodies
- * over 1 MB and request traces are clamped far below that.
+ * over 1 MB.
  */
 const MAX_RAW_SSE_CHARS = 1_000_000;
 
 /**
  * Pass an SSE stream through to the client unchanged while watching it: every
  * complete `data:` line is fed to the usage extractor (the last usage seen
- * wins), and the raw body is kept only when asked to (for caching or tracing).
+ * wins), and the raw body is kept only when asked to (for caching).
  *
  * Unlike `tee()`, nothing is buffered for a second consumer: bytes flow at the
  * client's pace, and when the client goes away the cancellation is forwarded to
@@ -119,12 +119,11 @@ export interface StreamRecording {
 /**
  * Hand a streamed response to the client while its usage is captured in-line
  * and recorded once the stream finishes (or the client disconnects). The raw
- * body is only kept when something will use it: the response cache or the
- * request trace.
+ * body is only kept when the response cache will use it.
  */
 export function streamWithRecording(ctx: RequestContext, s: StreamRecording): Response {
 	const tap = tapSseStream(s.source, s.extract, {
-		keepRaw: s.cache !== null || ctx.token.effective.tracingEnabled
+		keepRaw: s.cache !== null
 	});
 	void tap.done
 		.then(({ usage, raw, complete }) =>
@@ -134,7 +133,6 @@ export function streamWithRecording(ctx: RequestContext, s: StreamRecording): Re
 				ok: true,
 				usage,
 				response: raw,
-				format: 'sse',
 				detail: s.detail,
 				cache: s.cache,
 				complete,

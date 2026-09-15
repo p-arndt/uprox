@@ -6,7 +6,7 @@
  *   envelope          error response shapes (OpenAI, native Gemini)
  *   authenticate      machine-token auth and request headers
  *   credentials       upstream provider secrets
- *   context           per-request context, audit trace, audited rejections
+ *   context           per-request context, audit writer, audited rejections
  *   resolve-provider  model-based provider routing
  *   guards            capability, policy, rate limit, cache replay, budget
  *   upstream          upstream fetch and failure handling
@@ -25,12 +25,6 @@ export {
 } from './envelope';
 export { authenticateGateway, type GatewayAuth } from './authenticate';
 export { loadProviderCreds } from './credentials';
-export {
-	makeAuditTrace,
-	type AuditTrace,
-	type AuditTraceOptions,
-	type TraceResponse
-} from './context';
 export type { UsageExtractor } from './record-usage';
 export { tapSseStream, type DrainedSse } from './stream';
 export {

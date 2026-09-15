@@ -18,7 +18,6 @@ export interface Token {
 	dailyBudgetUsd: string | null;
 	monthlyBudgetUsd: string | null;
 	cacheTtlSeconds: number | null;
-	tracingEnabled: boolean | null;
 	recopyable: boolean;
 	lastUsedAt: Date | string | null;
 	expiresAt: Date | string | null;

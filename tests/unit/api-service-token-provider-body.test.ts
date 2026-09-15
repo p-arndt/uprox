@@ -25,14 +25,12 @@ describe('parseInlineConfigBody', () => {
 				allowedProviders: ['openai'],
 				rateLimitPerMinute: 30,
 				dailyBudgetUsd: null,
-				tracingEnabled: false,
 				allowedModels: ['ignored-here']
 			})
 		).toEqual({
 			allowedProviders: ['openai'],
 			rateLimitPerMinute: 30,
-			dailyBudgetUsd: null,
-			tracingEnabled: false
+			dailyBudgetUsd: null
 		});
 		expect(parseInlineConfigBody({})).toEqual({});
 	});

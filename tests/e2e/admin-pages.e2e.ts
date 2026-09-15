@@ -67,8 +67,7 @@ test.describe('admin pages', () => {
 			'Member permissions',
 			'Token security',
 			'Instance budget',
-			'Budget alerts',
-			'Request tracing'
+			'Budget alerts'
 		]) {
 			await expect(page.getByText(card, { exact: true }).first()).toBeVisible();
 		}
@@ -140,13 +139,6 @@ test.describe('admin pages', () => {
 		await expect(openai.locator('[data-slot="card-description"]')).toContainText(
 			/\d+\s+keys? configured/
 		);
-	});
-
-	test('traces: the list renders', async ({ page }) => {
-		await page.goto('/app/traces');
-		await expect(page.getByRole('heading', { name: 'Traces' })).toBeVisible();
-		// either the feed or the empty state, never an error page
-		await expect(page.getByText('No traces yet').or(page.getByText('Gateway calls'))).toBeVisible();
 	});
 
 	test('service and token detail pages show the usage toolbar', async ({ page }) => {

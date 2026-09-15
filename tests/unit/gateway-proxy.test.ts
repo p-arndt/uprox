@@ -66,7 +66,6 @@ function makeToken(overrides: Partial<ResolvedToken['effective']> = {}): Resolve
 		providerSecretId: 'secret-1',
 		effective: {
 			cacheTtlSeconds: 60,
-			tracingEnabled: false,
 			preferredProvider: null,
 			...overrides
 		} as ResolvedToken['effective']
@@ -238,7 +237,6 @@ describe('characterization — proxyToProvider', () => {
 			ok: true,
 			usage: usageFromText(text, bufferedOpenAiUsageExtractor),
 			response: text,
-			format: 'json',
 			cache,
 			complete: true,
 			release: grant.release
@@ -542,7 +540,6 @@ describe('characterization — proxyGeminiNative', () => {
 			ok: true,
 			usage: usageFromText(text, geminiNativeUsage),
 			response: text,
-			format: 'json',
 			detail: 'native',
 			cache: {
 				key: cacheKeyFor('gemini', '/models/gemini-2.5-flash:generateContent', body, 'secret-1'),

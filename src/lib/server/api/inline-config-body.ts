@@ -8,7 +8,6 @@
 import type { InlineConfigInput } from '$lib/server/inline-config';
 import {
 	definedOnly,
-	optionalBoolean,
 	optionalNumber,
 	optionalString,
 	optionalStringArray,
@@ -24,7 +23,6 @@ export function parseInlineConfigBody(body: JsonBody): InlineConfigBody {
 		rateLimitPerMinute: optionalNumber(body, 'rateLimitPerMinute', { integer: true }),
 		dailyBudgetUsd: optionalNumber(body, 'dailyBudgetUsd'),
 		monthlyBudgetUsd: optionalNumber(body, 'monthlyBudgetUsd'),
-		cacheTtlSeconds: optionalNumber(body, 'cacheTtlSeconds', { integer: true }),
-		tracingEnabled: optionalBoolean(body, 'tracingEnabled')
+		cacheTtlSeconds: optionalNumber(body, 'cacheTtlSeconds', { integer: true })
 	});
 }

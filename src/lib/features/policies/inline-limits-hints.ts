@@ -9,7 +9,6 @@ export interface InlineLimitHints {
 	rate: string;
 	budget: string;
 	cache: string;
-	tracing: string;
 }
 
 /**
@@ -38,9 +37,6 @@ export function inlineLimitHints(scope: InlineLimitScope): InlineLimitHints {
 			(isPolicy ? ' 0 = unlimited. UTC windows.' : ' Blank = inherit, 0 = unlimited. UTC windows.'),
 		cache: isPolicy
 			? 'Overrides the org default. Blank = inherit, 0 = off, >0 = TTL.'
-			: 'Blank = inherit, 0 = force off, >0 = TTL.',
-		tracing: isPolicy
-			? 'Overrides the org default. Capturing payloads stores prompt & response content.'
-			: 'Capturing payloads stores prompt & response content. Blank = inherit.'
+			: 'Blank = inherit, 0 = force off, >0 = TTL.'
 	};
 }

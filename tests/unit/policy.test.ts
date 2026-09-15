@@ -11,7 +11,6 @@ function eff(over: Partial<EffectiveConfig> = {}): EffectiveConfig {
 		preferredProvider: null,
 		rateLimitPerMinute: 0,
 		cacheTtlSeconds: 0,
-		tracingEnabled: false,
 		tokenBudget: { dailyBudgetUsd: 0, monthlyBudgetUsd: 0 },
 		serviceBudget: { dailyBudgetUsd: 0, monthlyBudgetUsd: 0 },
 		instanceBudget: { dailyBudgetUsd: 0, monthlyBudgetUsd: 0 },

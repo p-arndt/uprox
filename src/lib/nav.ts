@@ -6,6 +6,7 @@
 import type { ResolvedPathname } from '$app/types';
 import type { Component } from 'svelte';
 import Boxes from '@lucide/svelte/icons/boxes';
+import Cable from '@lucide/svelte/icons/cable';
 import ChartColumn from '@lucide/svelte/icons/chart-column';
 import Coins from '@lucide/svelte/icons/coins';
 import KeyRound from '@lucide/svelte/icons/key-round';
@@ -14,7 +15,6 @@ import ScrollText from '@lucide/svelte/icons/scroll-text';
 import Settings from '@lucide/svelte/icons/settings';
 import ShieldHalf from '@lucide/svelte/icons/shield-half';
 import Users from '@lucide/svelte/icons/users';
-import Waypoints from '@lucide/svelte/icons/waypoints';
 
 export interface NavItem {
 	href: ResolvedPathname;
@@ -35,14 +35,14 @@ export const NAV_SECTIONS: NavSection[] = [
 		items: [
 			{ href: '/app/services', label: 'Services', icon: Boxes },
 			{ href: '/app/tokens', label: 'Machine Tokens', icon: KeyRound },
-			{ href: '/app/providers', label: 'Providers', icon: Plug }
+			{ href: '/app/providers', label: 'Providers', icon: Plug },
+			{ href: '/app/connect', label: 'Connect', icon: Cable }
 		]
 	},
 	{
 		label: 'Monitor',
 		items: [
 			{ href: '/app/usage', label: 'Cost analysis', icon: ChartColumn },
-			{ href: '/app/traces', label: 'Traces', icon: Waypoints },
 			{ href: '/app/audit', label: 'Audit Log', icon: ScrollText }
 		]
 	},

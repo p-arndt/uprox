@@ -31,14 +31,6 @@ function parseStr(v: unknown): string | null | undefined {
 	return String(v);
 }
 
-function parseBoolTri(v: unknown): boolean | null | undefined {
-	if (v === undefined) return undefined;
-	if (v === null || v === '') return null;
-	if (v === true || v === 'true') return true;
-	if (v === false || v === 'false') return false;
-	return undefined;
-}
-
 export function parseInlineConfig(
 	body: Record<string, unknown>,
 	opts: { includeModels: true }
@@ -63,7 +55,6 @@ export function parseInlineConfig(
 	set('dailyBudgetUsd', parseNum(body.dailyBudgetUsd));
 	set('monthlyBudgetUsd', parseNum(body.monthlyBudgetUsd));
 	set('cacheTtlSeconds', parseNum(body.cacheTtlSeconds));
-	set('tracingEnabled', parseBoolTri(body.tracingEnabled));
 	return out;
 }
 
@@ -96,8 +87,7 @@ export function inlineFromForm(
 		rateLimitPerMinute: data.get('rateLimitPerMinute'),
 		dailyBudgetUsd: data.get('dailyBudgetUsd'),
 		monthlyBudgetUsd: data.get('monthlyBudgetUsd'),
-		cacheTtlSeconds: data.get('cacheTtlSeconds'),
-		tracingEnabled: data.get('tracingEnabled')
+		cacheTtlSeconds: data.get('cacheTtlSeconds')
 	};
 	return opts.includeModels
 		? parseInlineConfig(body, { includeModels: true })

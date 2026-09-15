@@ -64,9 +64,8 @@ export interface CompletionRecord {
 	statusCode: number;
 	ok: boolean;
 	usage: NormalizedUsage | null;
-	/** response payload for the trace and the cache */
+	/** response payload for the cache */
 	response: string;
-	format?: 'json' | 'sse';
 	detail?: string;
 	/** null when the request isn't cacheable */
 	cache: CacheTarget | null;
@@ -94,7 +93,7 @@ async function costOf(model: string, usage: NormalizedUsage | null): Promise<Cos
 }
 
 /**
- * The single usage -> cost -> audit (+ trace) -> cache recorder shared by every
+ * The single usage -> cost -> audit -> cache recorder shared by every
  * pipeline, buffered and streamed. Always releases the budget reservation once
  * the real cost is in the audit log, and populates the cache on a clean success.
  */
@@ -102,27 +101,24 @@ export async function recordCompletion(ctx: RequestContext, r: CompletionRecord)
 	const { usage } = r;
 	try {
 		const { costUsd, tier } = await costOf(ctx.model, usage);
-		await ctx.auditTrace(
-			{
-				action: `gateway.${ctx.scope}`,
-				status: r.ok ? 'ok' : 'error',
-				serviceId: ctx.token.serviceId,
-				tokenId: ctx.token.tokenId,
-				provider: r.provider.id,
-				model: ctx.model,
-				statusCode: r.statusCode,
-				costUsd,
-				inputTokens: usage?.input ?? null,
-				outputTokens: usage?.output ?? null,
-				providerCachedTokens: usage?.cacheRead ?? null,
-				cacheWriteTokens: usage?.cacheWrite ?? null,
-				contextTier: tier,
-				latencyMs: Date.now() - ctx.started,
-				ip: ctx.ip,
-				...(r.detail ? { detail: r.detail } : {})
-			},
-			{ response: r.response, format: r.format }
-		);
+		await ctx.audit({
+			action: `gateway.${ctx.scope}`,
+			status: r.ok ? 'ok' : 'error',
+			serviceId: ctx.token.serviceId,
+			tokenId: ctx.token.tokenId,
+			provider: r.provider.id,
+			model: ctx.model,
+			statusCode: r.statusCode,
+			costUsd,
+			inputTokens: usage?.input ?? null,
+			outputTokens: usage?.output ?? null,
+			providerCachedTokens: usage?.cacheRead ?? null,
+			cacheWriteTokens: usage?.cacheWrite ?? null,
+			contextTier: tier,
+			latencyMs: Date.now() - ctx.started,
+			ip: ctx.ip,
+			...(r.detail ? { detail: r.detail } : {})
+		});
 		if (r.cache && r.ok && r.complete && r.response) {
 			await putCached({
 				cacheKey: r.cache.key,

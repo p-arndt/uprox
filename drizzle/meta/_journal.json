@@ -134,6 +134,13 @@
       "when": 1789490146793,
       "tag": "0018_sso_signup_enabled",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1789495600308,
+      "tag": "0019_drop_tracing",
+      "breakpoints": true
     }
   ]
 }

@@ -1,56 +1,10 @@
-/** Per-request context, the audit+trace writer and audited rejections. */
+/** Per-request context, the audit writer and audited rejections. */
 import type { RequestEvent } from '@sveltejs/kit';
 import type { ResolvedToken } from '$lib/server/tokens';
 import type { GatewayScope } from '$lib/scopes';
-import { audit, type AuditEntry } from '$lib/server/audit';
-import { recordTrace } from '$lib/server/trace';
+import { audit } from '$lib/server/audit';
 import type { ErrorEnvelope } from './envelope';
-import { readTraceGroup, readTraceMetadata, type GatewayAuth } from './authenticate';
-
-/** Response payload attached to a request trace. */
-export interface TraceResponse {
-	response?: string | null;
-	format?: 'json' | 'sse';
-}
-
-/** Writes an audit row and, when tracing is on, the paired request trace. */
-export type AuditTrace = (entry: AuditEntry, resp?: TraceResponse) => Promise<void>;
-
-export interface AuditTraceOptions {
-	serviceId: string;
-	/** request tracing switch resolved from the effective config */
-	tracingEnabled: boolean;
-	groupId: string | null;
-	metadata: Record<string, unknown> | null;
-	/** the request payload stored on the trace (the body, or a summary of it) */
-	request: unknown;
-}
-
-/**
- * Build the audit+trace writer for one request. Every audit row is written; when
- * tracing is enabled (policy override wins over the instance default) the row is
- * paired with a request trace — the prompt plus, on the paths that produced one,
- * the response payload — for the in-app trace viewer.
- */
-export function makeAuditTrace(
-	opts: AuditTraceOptions,
-	deps: { audit: typeof audit; recordTrace: typeof recordTrace } = { audit, recordTrace }
-): AuditTrace {
-	return async (entry, resp) => {
-		const auditLogId = await deps.audit(entry);
-		if (opts.tracingEnabled && auditLogId) {
-			await deps.recordTrace({
-				auditLogId,
-				serviceId: opts.serviceId,
-				groupId: opts.groupId,
-				metadata: opts.metadata,
-				request: opts.request,
-				response: resp?.response ?? null,
-				format: resp?.format ?? null
-			});
-		}
-	};
-}
+import type { GatewayAuth } from './authenticate';
 
 /** Everything the shared pipeline steps need to know about one gateway request. */
 export interface RequestContext {
@@ -61,13 +15,13 @@ export interface RequestContext {
 	scope: GatewayScope;
 	model: string;
 	envelope: ErrorEnvelope;
-	auditTrace: AuditTrace;
+	audit: typeof audit;
 }
 
 export function createContext(
 	event: RequestEvent,
 	auth: GatewayAuth,
-	init: { scope: GatewayScope; model: string; envelope: ErrorEnvelope; traceRequest: unknown }
+	init: { scope: GatewayScope; model: string; envelope: ErrorEnvelope }
 ): RequestContext {
 	const { token, ip } = auth;
 	return {
@@ -78,13 +32,7 @@ export function createContext(
 		scope: init.scope,
 		model: init.model,
 		envelope: init.envelope,
-		auditTrace: makeAuditTrace({
-			serviceId: token.serviceId,
-			tracingEnabled: token.effective.tracingEnabled,
-			groupId: readTraceGroup(event),
-			metadata: readTraceMetadata(event),
-			request: init.traceRequest
-		})
+		audit
 	};
 }
 
@@ -105,7 +53,7 @@ export async function reject(
 	info: RejectionAudit,
 	response: Response
 ): Promise<Response> {
-	await ctx.auditTrace({
+	await ctx.audit({
 		action: info.deny ? 'policy.deny' : `gateway.${ctx.scope}`,
 		status: info.deny ? 'deny' : 'error',
 		serviceId: ctx.token.serviceId,

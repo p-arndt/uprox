@@ -11,8 +11,7 @@ describe('inlineLimitsFromRow', () => {
 				rateLimitPerMinute: null,
 				dailyBudgetUsd: null,
 				monthlyBudgetUsd: null,
-				cacheTtlSeconds: null,
-				tracingEnabled: null
+				cacheTtlSeconds: null
 			})
 		).toEqual(emptyInlineLimits());
 	});
@@ -26,8 +25,7 @@ describe('inlineLimitsFromRow', () => {
 			rateLimitPerMinute: 0,
 			dailyBudgetUsd: '5.00',
 			monthlyBudgetUsd: 20,
-			cacheTtlSeconds: 300,
-			tracingEnabled: false
+			cacheTtlSeconds: 300
 		});
 		expect(values).toEqual({
 			allowedProviders: ['openai'],
@@ -36,8 +34,7 @@ describe('inlineLimitsFromRow', () => {
 			rateLimitPerMinute: '0',
 			dailyBudgetUsd: '5',
 			monthlyBudgetUsd: '20',
-			cacheTtlSeconds: '300',
-			tracingEnabled: 'false'
+			cacheTtlSeconds: '300'
 		});
 		// the form edits its own copy
 		expect(values.allowedProviders).not.toBe(providers);
