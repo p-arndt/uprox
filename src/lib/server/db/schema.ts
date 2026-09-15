@@ -283,6 +283,10 @@ export const settings = pgTable('settings', {
 	// how many days captured traces are retained before being pruned. Payloads
 	// are bulky, so this is bounded rather than append-forever like the audit log.
 	tracingRetentionDays: integer('tracing_retention_days').notNull().default(30),
+	// when off, SSO sign-in no longer auto-provisions unknown users: only existing
+	// members, invited addresses and the very first (bootstrap) account get in.
+	// On by default, matching the original auto-provisioning behaviour.
+	ssoSignupEnabled: boolean('sso_signup_enabled').notNull().default(true),
 	updatedAt: timestamp('updated_at')
 		.defaultNow()
 		.$onUpdate(() => new Date())

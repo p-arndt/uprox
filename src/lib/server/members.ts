@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { user, invitation } from '$lib/server/db/schema';
 
@@ -134,6 +134,20 @@ export async function revokeInvitation(invitationId: string): Promise<void> {
 export async function findInvitation(id: string): Promise<Invitation | null> {
 	const [row] = await db.select().from(invitation).where(eq(invitation.id, id)).limit(1);
 	return row ?? null;
+}
+
+/** True when `email` has a pending, unexpired invitation (case-insensitive). */
+export async function hasValidInvitation(email: string): Promise<boolean> {
+	const rows = await db
+		.select({ status: invitation.status, expiresAt: invitation.expiresAt })
+		.from(invitation)
+		.where(
+			and(
+				eq(sql`lower(${invitation.email})`, email.toLowerCase()),
+				eq(invitation.status, 'pending')
+			)
+		);
+	return rows.some((inv) => invitationProblem(inv) === null);
 }
 
 /** Why an invitation can't be used, or null when it's valid. */

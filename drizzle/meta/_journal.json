@@ -127,6 +127,13 @@
       "when": 1789423256815,
       "tag": "0017_budget_alert_state_pk",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789490146793,
+      "tag": "0018_sso_signup_enabled",
+      "breakpoints": true
     }
   ]
 }

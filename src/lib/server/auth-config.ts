@@ -90,6 +90,34 @@ export function getEnabledProviders(): EnabledProviders {
 	};
 }
 
+/**
+ * Error message better-auth turns into `?error=signup_disabled` on the OAuth
+ * error redirect (spaces become underscores). Same code as its own disableSignUp.
+ */
+export const SIGNUP_DISABLED_MESSAGE = 'signup disabled';
+
+/**
+ * Whether a new account may be created. With SSO sign-up turned off, only the
+ * first account (instance bootstrap) and invited addresses are let in. Email
+ * sign-up is already invitation-only, so in practice this gates SSO.
+ */
+export function mayCreateAccount(input: {
+	ssoSignupEnabled: boolean;
+	isFirstAccount: boolean;
+	isInvited: boolean;
+}): boolean {
+	return input.ssoSignupEnabled || input.isFirstAccount || input.isInvited;
+}
+
+/** User-facing message for the `error` query param of a failed OAuth redirect. */
+export function oauthErrorMessage(code: string | null): string | null {
+	if (!code) return null;
+	if (code === 'signup_disabled') {
+		return 'Your account has not been set up yet. Ask an admin to invite you.';
+	}
+	return 'SSO sign-in failed. Please try again.';
+}
+
 /** Only allow internal, single-slash paths to prevent open redirects. */
 export function safeRedirect(target: string | null | undefined): string {
 	if (target && target.startsWith('/') && !target.startsWith('//')) return target;

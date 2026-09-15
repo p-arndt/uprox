@@ -6,6 +6,7 @@ import {
 	getEnabledProviders,
 	getOidcConfig,
 	isEmailAuthEnabled,
+	oauthErrorMessage,
 	safeRedirect
 } from '$lib/server/auth-config';
 
@@ -14,6 +15,7 @@ export const load: PageServerLoad = (event) => {
 	if (event.locals.user) redirect(302, redirectTo);
 	return {
 		redirectTo,
+		oauthError: oauthErrorMessage(event.url.searchParams.get('error')),
 		enabledProviders: getEnabledProviders(),
 		oidcLabel: getOidcConfig()?.providerName ?? null
 	};

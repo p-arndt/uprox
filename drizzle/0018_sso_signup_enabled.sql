@@ -1,0 +1,1 @@
+ALTER TABLE "settings" ADD COLUMN "sso_signup_enabled" boolean DEFAULT true NOT NULL;

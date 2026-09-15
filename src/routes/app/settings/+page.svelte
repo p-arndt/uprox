@@ -10,6 +10,7 @@
 	import InstanceBudgetCard from './instance-budget-card.svelte';
 	import BudgetAlertsCard from './budget-alerts-card.svelte';
 	import TracingSettingsCard from './tracing-settings-card.svelte';
+	import SsoSignupCard from './sso-signup-card.svelte';
 
 	let { data, form } = $props();
 
@@ -30,6 +31,9 @@
 
 	{#if canManageSettings}
 		<MemberPermissionsCard settings={data.settings} />
+		{#if data.oidcEnabled}
+			<SsoSignupCard ssoSignupEnabled={data.settings.ssoSignupEnabled} />
+		{/if}
 		<TokenSecurityCard tokensRecopyableDefault={data.settings.tokensRecopyableDefault} />
 		<InstanceBudgetCard settings={data.settings} />
 		<BudgetAlertsCard settings={data.settings} />

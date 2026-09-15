@@ -284,6 +284,8 @@ Auth0, …) using this redirect/callback URL:
 ```
 
 then set the three `OIDC_*` vars and restart. OIDC users are auto-provisioned on first sign-in.
+To stop that, turn off **Settings → Single sign-on → Allow new members to sign up via SSO**:
+SSO then only admits existing members and invited addresses.
 
 > **Note:** keep email auth enabled until the first admin exists. If you disable it on an empty
 > database the `/setup` wizard can't create an account and you'll be locked out.

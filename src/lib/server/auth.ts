@@ -2,11 +2,19 @@ import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { sveltekitCookies } from 'better-auth/svelte-kit';
 import { genericOAuth } from 'better-auth/plugins';
+import { APIError } from 'better-auth/api';
 import { env } from '$env/dynamic/private';
 import { getRequestEvent } from '$app/server';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { getOidcConfig, isEmailAuthEnabled } from '$lib/server/auth-config';
+import {
+	getOidcConfig,
+	isEmailAuthEnabled,
+	mayCreateAccount,
+	SIGNUP_DISABLED_MESSAGE
+} from '$lib/server/auth-config';
+import { getSettings } from '$lib/server/settings';
+import { hasValidInvitation } from '$lib/server/members';
 import {
 	user as authUser,
 	session as authSession,
@@ -40,6 +48,19 @@ export const auth = betterAuth({
 	databaseHooks: {
 		user: {
 			create: {
+				// Enforce the "SSO sign-up" setting. Throwing aborts the OAuth callback,
+				// which redirects to its errorCallbackURL with ?error=signup_disabled.
+				before: async (newUser) => {
+					const { ssoSignupEnabled } = await getSettings();
+					if (ssoSignupEnabled) return;
+					const [existing] = await db.select({ id: authUser.id }).from(authUser).limit(1);
+					const allowed = mayCreateAccount({
+						ssoSignupEnabled,
+						isFirstAccount: !existing,
+						isInvited: await hasValidInvitation(newUser.email)
+					});
+					if (!allowed) throw new APIError('FORBIDDEN', { message: SIGNUP_DISABLED_MESSAGE });
+				},
 				// The whole self-hosted instance is a single workspace. The first
 				// account to be created bootstraps it and becomes the owner; everyone
 				// after keeps the column default ('member'). Invited users have their
@@ -58,8 +79,9 @@ export const auth = betterAuth({
 	},
 	plugins: [
 		// A single OIDC provider, only registered when fully configured. Users
-		// signing in this way are auto-provisioned as instance members (the first
-		// one becomes the owner via the user.create hook above).
+		// signing in this way are auto-provisioned as instance members unless the
+		// ssoSignupEnabled setting is off (the first one becomes the owner via the
+		// user.create hook above).
 		...(oidcConfig
 			? [
 					genericOAuth({

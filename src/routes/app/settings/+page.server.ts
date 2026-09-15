@@ -3,13 +3,20 @@ import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
 import { getSettings, updateSettings } from '$lib/server/settings';
 import { isOn, parseOptionalPrice } from '$lib/server/form';
+import { isOidcEnabled } from '$lib/server/auth-config';
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
-	return { settings: await getSettings() };
+	return { settings: await getSettings(), oidcEnabled: isOidcEnabled() };
 };
 
 export const actions: Actions = {
+	updateSsoSignup: async (event) => {
+		await requirePermission(event, 'settings:manage');
+		const data = await event.request.formData();
+		await updateSettings({ ssoSignupEnabled: isOn(data.get('ssoSignupEnabled')) });
+		return { success: true };
+	},
 	updateCache: async (event) => {
 		await requirePermission(event, 'settings:manage');
 		const data = await event.request.formData();

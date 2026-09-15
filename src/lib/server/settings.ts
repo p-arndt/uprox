@@ -16,6 +16,8 @@ export interface Settings {
 	budgetAlertEmail: string | null;
 	tracingEnabled: boolean;
 	tracingRetentionDays: number;
+	// whether SSO sign-in may create accounts for users who aren't members yet
+	ssoSignupEnabled: boolean;
 }
 
 /**
@@ -68,7 +70,8 @@ const FIELDS: Record<keyof Settings, FieldCodec> = {
 			const days = Math.floor(input);
 			return Number.isFinite(days) ? Math.max(1, days) : 30;
 		}
-	}
+	},
+	ssoSignupEnabled: { fallback: true }
 };
 
 const FIELD_KEYS = Object.keys(FIELDS) as (keyof Settings)[];

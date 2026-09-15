@@ -53,7 +53,8 @@ describe('getSettings', () => {
 			budgetAlertThresholdPct: 80,
 			budgetAlertEmail: null,
 			tracingEnabled: false,
-			tracingRetentionDays: 30
+			tracingRetentionDays: 30,
+			ssoSignupEnabled: true
 		});
 	});
 

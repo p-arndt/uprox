@@ -19,6 +19,10 @@
 <AuthShell title="Welcome back">
 	{#snippet description()}Sign in to manage your services and tokens.{/snippet}
 
+	{#if data.oauthError}
+		<p class="text-sm text-destructive">{data.oauthError}</p>
+	{/if}
+
 	{#if providers.oidc}
 		<OidcSignInForm
 			label={data.oidcLabel ?? 'SSO'}
