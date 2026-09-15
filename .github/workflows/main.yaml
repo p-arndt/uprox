@@ -21,31 +21,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
-      VERSION: ${{ steps.version.outputs.VERSION }}
-      PRERELEASE: ${{ steps.version.outputs.PRERELEASE }}
+      VERSION: ${{ steps.stamp.outputs.version }}
+      PRERELEASE: ${{ steps.stamp.outputs.prerelease }}
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Install stamp
-        run: curl -fsSL https://raw.githubusercontent.com/p-arndt/stamp/main/install.sh | sh -s -- --bin-dir /usr/local/bin
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/checkout@v7
 
       - name: Verify the tag against the committed version
-        run: stamp verify --tag "$GITHUB_REF_NAME"
-
-      - name: Resolve version
-        id: version
-        shell: bash
-        run: |
-          set -euo pipefail
-          VERSION="$GITHUB_REF_NAME"
-          # Semver pre-release tags (e.g. 0.27.0-beta.1) are flagged automatically.
-          if [[ "$VERSION" == *-* ]]; then PRERELEASE=true; else PRERELEASE=false; fi
-          echo "VERSION=$VERSION"       >> "$GITHUB_OUTPUT"
-          echo "PRERELEASE=$PRERELEASE" >> "$GITHUB_OUTPUT"
+        id: stamp
+        uses: p-arndt/stamp@v0
 
   # Nothing gets published from a commit that fails the regular CI suite.
   ci:
@@ -59,7 +44,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -91,49 +76,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-
-      # On a tag push, checkout recreates the tag as a lightweight ref pointing at
-      # the commit, which has no message. Fetch the real annotated tag over it.
-      - name: Fetch annotated tag
-        run: git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+        uses: actions/checkout@v7
 
       # `stamp release` renders the changelog section into the annotated tag
-      # message, so the tag already carries its own release notes. Nothing is
-      # generated here.
-      - name: Assemble release notes
-        shell: bash
-        env:
-          PRERELEASE: ${{ needs.verify.outputs.PRERELEASE }}
-        run: |
-          set -euo pipefail
-          if [ "$PRERELEASE" = "true" ]; then
-            echo "## 🧪 Pre-release $GITHUB_REF_NAME" > RELEASE_NOTES.md
-          else
-            echo "## 🚀 Release $GITHUB_REF_NAME" > RELEASE_NOTES.md
-          fi
-          echo "" >> RELEASE_NOTES.md
-
-          body="$(git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME")"
-          # A lightweight or older tag has no body. Point at the history rather
-          # than publishing an empty release page.
-          if [ -n "${body//[[:space:]]/}" ]; then
-            printf '%s\n' "$body" >> RELEASE_NOTES.md
-          else
-            printf 'See the [commit history](%s/commits/%s) for what changed.\n' \
-              "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" >> RELEASE_NOTES.md
-          fi
-
-          cat RELEASE_NOTES.md
+      # message; the action reads it back into a file. Nothing is generated here.
+      - name: Read release notes from the tag
+        id: stamp
+        uses: p-arndt/stamp@v0
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          body_path: RELEASE_NOTES.md
+          body_path: ${{ steps.stamp.outputs.notes-file }}
           prerelease: ${{ needs.verify.outputs.PRERELEASE }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
