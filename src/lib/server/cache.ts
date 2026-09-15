@@ -21,6 +21,7 @@ import { and, eq, gt, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { responseCache } from '$lib/server/db/schema';
 import { sha256 } from '$lib/server/crypto';
+import { isRecord } from '$lib/server/json';
 
 /**
  * Top-level request fields that don't affect the model's output, so they're
@@ -30,10 +31,6 @@ import { sha256 } from '$lib/server/crypto';
  * server-side persistence, not the content.
  */
 const IGNORED_KEYS = new Set(['user', 'metadata', 'store']);
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-	return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
 
 /**
  * Whether a request's output is *meant* to be reproducible, so replaying a

@@ -32,13 +32,13 @@ export const init: ServerInit = async () => {
  * one of these is an API client hitting a missing/misspelled endpoint, so it
  * should get a machine-readable JSON error, not SvelteKit's HTML 404 page.
  */
-const GATEWAY_PREFIXES = ['/v1/', '/openai/'];
+const GATEWAY_PREFIXES = ['/v1/', '/v1beta/', '/openai/'];
 
 /**
  * Same-origin CSRF guard for the cookie-authenticated dashboard.
  *
  * SvelteKit's built-in origin check is disabled in svelte.config.js
- * (`csrf.trustedOrigins: ['*']`) because the gateway surface (/v1, /openai) must
+ * (`csrf.trustedOrigins: ['*']`) because the gateway surface (/v1, /v1beta, /openai) must
  * accept `multipart/form-data` uploads — e.g. audio transcription — from
  * server-to-server API clients that send no `Origin` header; the built-in guard
  * rejects those as "Cross-site … form submissions are forbidden". Those routes
@@ -58,7 +58,9 @@ const CSRF_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 function isFormPost(request: Request): boolean {
 	if (!CSRF_METHODS.has(request.method)) return false;
-	const type = (request.headers.get('content-type') ?? '').split(';', 1)[0].trim().toLowerCase();
+	const type = ((request.headers.get('content-type') ?? '').split(';', 1)[0] ?? '')
+		.trim()
+		.toLowerCase();
 	return FORM_CONTENT_TYPES.includes(type);
 }
 

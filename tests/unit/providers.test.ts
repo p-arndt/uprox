@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, assert } from 'vitest';
 import {
 	PROVIDERS,
 	providerSupports,
@@ -265,6 +265,7 @@ describe('embedding default prices', () => {
 
 	it('prices an embedding request on its input tokens only (no output cost)', () => {
 		const small = DEFAULT_MODEL_PRICES['text-embedding-3-small'];
+		assert(small);
 		// 1M input tokens @ $0.02; embeddings report 0 completion tokens
 		expect(costFromPrice(small, 1_000_000, 0)).toBe(0.02);
 	});
@@ -302,6 +303,7 @@ describe('costFromPrice with cache tokens', () => {
 
 describe('long-context pricing', () => {
 	const sol = DEFAULT_MODEL_PRICES['gpt-5.6-sol'];
+	assert(sol);
 
 	it('bills the standard card right up to the threshold', () => {
 		// 1 token below: 271_999 @ $5/1M
@@ -327,12 +329,14 @@ describe('long-context pricing', () => {
 
 	it('keeps single-rate-card models on the standard rates at any prompt size', () => {
 		const nano = DEFAULT_MODEL_PRICES['gpt-5.4-nano'];
+		assert(nano);
 		expect(nano.longIn).toBeUndefined();
 		expect(costFromPrice(nano, 1_000_000, 0)).toBe(0.2);
 	});
 
 	it('labels the tier the request billed against', () => {
 		const nano = DEFAULT_MODEL_PRICES['gpt-5.4-nano'];
+		assert(nano);
 		expect(contextTierForPromptTokens(sol, LONG_CONTEXT_MIN_PROMPT_TOKENS - 1)).toBe('standard');
 		expect(contextTierForPromptTokens(sol, LONG_CONTEXT_MIN_PROMPT_TOKENS)).toBe('long');
 		// a single-rate-card model never leaves the standard tier, however long the
@@ -461,6 +465,7 @@ describe('cache default prices', () => {
 
 	it('prices a GPT-5.6 request with both cache reads and writes', () => {
 		const price = DEFAULT_MODEL_PRICES['gpt-5.6-sol'];
+		assert(price);
 		// prompt_tokens 10k = 6k cache reads + 3k cache writes + 1k fresh input.
 		// 1k @ $5 + 6k @ $0.5 + 3k @ $6.25 + 500 out @ $30
 		// = 5000 + 3000 + 18750 + 15000 = 41750 per 1M = $0.04175
@@ -469,6 +474,7 @@ describe('cache default prices', () => {
 
 	it('bills a pre-5.6 OpenAI cache write as plain input, never at the 1.25× fallback', () => {
 		const price = DEFAULT_MODEL_PRICES['gpt-5.5'];
+		assert(price);
 		expect(price.cacheWrite).toBe(price.in);
 		expect(price.longCacheWrite).toBe(price.longIn);
 		// 200k written tokens must cost the same as 200k ordinary input tokens,
@@ -481,6 +487,7 @@ describe('cache default prices', () => {
 	it('leaves the pro tiers without a cache discount — they bill cache traffic as input', () => {
 		for (const model of ['gpt-5.5-pro', 'gpt-5.4-pro']) {
 			const price = DEFAULT_MODEL_PRICES[model];
+			assert(price);
 			expect(price.cacheRead).toBe(price.in);
 			expect(price.cacheWrite).toBe(price.in);
 		}
@@ -532,6 +539,27 @@ describe('gemini price lookup by longest prefix', () => {
 		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'gemini-3.1-pro-preview')).toBe(
 			DEFAULT_MODEL_PRICES['gemini-3.1-pro']
 		);
+	});
+});
+
+describe('resolvePrice exact and prefix matching', () => {
+	it('prefers an exact key over a shorter prefix key', () => {
+		const prices = { o3: { in: 2, out: 8 }, 'o3-mini': { in: 1, out: 4 } };
+		expect(resolvePrice(prices, 'o3')).toBe(prices.o3);
+		expect(resolvePrice(prices, 'o3-mini')).toBe(prices['o3-mini']);
+		expect(resolvePrice(prices, 'o3-mini-high')).toBe(prices['o3-mini']);
+		expect(resolvePrice(prices, 'o3-pro')).toBe(prices.o3);
+	});
+
+	it('does not match a key that is only a prefix of the model the other way round', () => {
+		expect(resolvePrice({ 'gpt-5.4-mini': { in: 1, out: 1 } }, 'gpt-5.4')).toBeNull();
+	});
+
+	it('sees keys added to a fresh map object', () => {
+		const first = { 'gpt-4o': { in: 1, out: 1 } };
+		expect(resolvePrice(first, 'gpt-4o-mini')).toBe(first['gpt-4o']);
+		const second = { ...first, 'gpt-4o-mini': { in: 2, out: 2 } };
+		expect(resolvePrice(second, 'gpt-4o-mini')).toBe(second['gpt-4o-mini']);
 	});
 });
 
@@ -588,6 +616,7 @@ describe('resolvePrice', () => {
 
 	it('costs a gpt-image-1 edit from its reported token usage', () => {
 		const price = DEFAULT_MODEL_PRICES['gpt-image-1'];
+		assert(price);
 		// $5/Mtok input, $40/Mtok image output
 		expect(costFromPrice(price, 1_000_000, 1_000_000)).toBe(45);
 	});

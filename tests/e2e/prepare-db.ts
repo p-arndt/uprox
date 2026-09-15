@@ -20,8 +20,9 @@ async function main() {
 	const admin = postgres({
 		host: process.env.POSTGRES_HOST ?? 'localhost',
 		port: Number(process.env.POSTGRES_PORT ?? 5432),
-		user: process.env.POSTGRES_USER ?? 'uprox',
-		password: process.env.POSTGRES_PASSWORD ?? 'uprox',
+		// defaults mirror .env.example; the webServer command loads .env if present
+		user: process.env.POSTGRES_USER ?? 'root',
+		password: process.env.POSTGRES_PASSWORD ?? 'mysecretpassword',
 		database: 'postgres',
 		max: 1,
 		onnotice: () => {}

@@ -41,8 +41,10 @@ export const GET: RequestHandler = async (event) => {
 		// adapter supplies both. Pass-through providers use the OpenAI `/models`.
 		const adapter = getAdapter(def.id);
 		try {
+			// tied to the client request so an abandoned listing stops the upstream calls
 			const res = await fetch(adapter ? adapter.modelsUrl(base) : `${base}/models`, {
-				headers: authHeaders(def, decrypt(secret.encryptedSecret))
+				headers: authHeaders(def, decrypt(secret.encryptedSecret)),
+				signal: event.request.signal
 			});
 			if (!res.ok) continue;
 			const listed = adapter

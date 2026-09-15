@@ -89,3 +89,9 @@ export function getEnabledProviders(): EnabledProviders {
 		oidc: isOidcEnabled()
 	};
 }
+
+/** Only allow internal, single-slash paths to prevent open redirects. */
+export function safeRedirect(target: string | null | undefined): string {
+	if (target && target.startsWith('/') && !target.startsWith('//')) return target;
+	return '/app';
+}

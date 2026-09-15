@@ -7,16 +7,14 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import ShieldCheck from '@lucide/svelte/icons/shield-check';
 	import MailWarning from '@lucide/svelte/icons/mail-warning';
-	import LogIn from '@lucide/svelte/icons/log-in';
 	import Loader2 from '@lucide/svelte/icons/loader-circle';
+	import OidcSignInForm from '$lib/features/auth/components/oidc-sign-in-form.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	let loading = $state(false);
 	let registerLoading = $state(false);
-	let oidcLoading = $state(false);
 
 	const providers = $derived(data.enabledProviders ?? { email: false, oidc: false });
-	const oidcLabel = $derived(data.oidcLabel ?? 'SSO');
 </script>
 
 <svelte:head><title>Invitation · uprox</title></svelte:head>
@@ -163,33 +161,11 @@
 							</form>
 						{/if}
 
-						{#if providers.email && providers.oidc}
-							<div class="flex items-center gap-3">
-								<span class="h-px flex-1 bg-border"></span>
-								<span class="text-xs text-muted-foreground uppercase">or</span>
-								<span class="h-px flex-1 bg-border"></span>
-							</div>
-						{/if}
-
 						{#if providers.oidc}
-							<form
-								method="post"
-								action="?/oidc"
-								use:enhance={() => {
-									oidcLoading = true;
-									return async ({ update }) => {
-										await update();
-										oidcLoading = false;
-									};
-								}}
-							>
-								<Button type="submit" variant="outline" class="w-full" disabled={oidcLoading}>
-									{#if oidcLoading}<Loader2 class="size-4 animate-spin" />{:else}<LogIn
-											class="size-4"
-										/>{/if}
-									Sign in with {oidcLabel}
-								</Button>
-							</form>
+							<OidcSignInForm
+								label={data.oidcLabel ?? 'SSO'}
+								divider={providers.email ? 'before' : undefined}
+							/>
 						{/if}
 
 						{#if !providers.email && providers.oidc && form?.message}

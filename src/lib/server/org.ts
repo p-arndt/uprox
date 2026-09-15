@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { user } from '$lib/server/db/schema';
 import { can, type Capability } from '$lib/permissions';
-import { getSettings } from '$lib/server/data';
+import { getSettings } from '$lib/server/settings';
 
 /**
  * Access context for the current request. The whole self-hosted instance is a

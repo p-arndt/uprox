@@ -17,4 +17,4 @@ export const GATEWAY_SCOPES = [
 	'realtime'
 ] as const;
 
-export type Capability = (typeof GATEWAY_SCOPES)[number];
+export type GatewayScope = (typeof GATEWAY_SCOPES)[number];

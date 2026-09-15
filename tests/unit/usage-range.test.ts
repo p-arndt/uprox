@@ -9,7 +9,7 @@ import {
 	MAX_SERIES_BUCKETS,
 	USAGE_RANGES,
 	DEFAULT_USAGE_RANGE
-} from '$lib/usage-range';
+} from '$lib/features/usage/range';
 
 // Pin "now" to a mid-month, mid-day UTC instant so calendar buckets are
 // unambiguous. June has 30 days; the surrounding months let us check rollover.

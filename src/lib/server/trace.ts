@@ -1,6 +1,7 @@
-import { eq, lt } from 'drizzle-orm';
+import { lt } from 'drizzle-orm';
 import { db } from '$lib/server/db';
-import { requestTrace, settings, traceSpan } from '$lib/server/db/schema';
+import { requestTrace, traceSpan } from '$lib/server/db/schema';
+import { getSettings } from '$lib/server/settings';
 import type { ParsedSpan } from '$lib/server/otlp/decode';
 
 /** A captured request/response pair, linked to its audit row. */
@@ -121,8 +122,7 @@ export async function pruneTracesIfDue(): Promise<void> {
 	if (now - lastPruneAt < PRUNE_INTERVAL_MS) return;
 	lastPruneAt = now;
 	try {
-		const [row] = await db.select().from(settings).where(eq(settings.id, 1)).limit(1);
-		const days = row?.tracingRetentionDays ?? 30;
+		const days = (await getSettings()).tracingRetentionDays;
 		if (days <= 0) return;
 		const cutoff = new Date(now - days * 24 * 60 * 60 * 1000);
 		await db.delete(requestTrace).where(lt(requestTrace.createdAt, cutoff));

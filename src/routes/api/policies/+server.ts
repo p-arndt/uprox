@@ -1,26 +1,18 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireOrgApi, requirePermission } from '$lib/server/org';
-import { listPolicies, createPolicy } from '$lib/server/data';
+import { listPolicies, createPolicy } from '$lib/server/policies';
+import { apiHandler } from '$lib/server/api/errors';
+import { readJson } from '$lib/server/api/fields';
+import { parsePolicyCreate } from '$lib/server/api/policy-body';
 
-export const GET: RequestHandler = async (event) => {
+export const GET: RequestHandler = apiHandler(async (event) => {
 	await requireOrgApi(event);
 	return json(await listPolicies());
-};
+});
 
-export const POST: RequestHandler = async (event) => {
+export const POST: RequestHandler = apiHandler(async (event) => {
 	await requirePermission(event, 'policies:manage');
-	const body = await event.request.json();
-	if (!body?.name) return json({ error: 'name is required' }, { status: 400 });
-	const row = await createPolicy({
-		name: body.name,
-		allowedProviders: Array.isArray(body.allowedProviders) ? body.allowedProviders : [],
-		allowedModels: Array.isArray(body.allowedModels) ? body.allowedModels : [],
-		rateLimitPerMinute: Number(body.rateLimitPerMinute) || 0,
-		dailyBudgetUsd: Number(body.dailyBudgetUsd) || 0,
-		monthlyBudgetUsd: Number(body.monthlyBudgetUsd) || 0,
-		// null/absent = inherit the org default; a number overrides it
-		cacheTtlSeconds: body.cacheTtlSeconds == null ? null : Number(body.cacheTtlSeconds) || 0
-	});
-	return json(row, { status: 201 });
-};
+	const input = parsePolicyCreate(await readJson(event.request));
+	return json(await createPolicy(input), { status: 201 });
+});

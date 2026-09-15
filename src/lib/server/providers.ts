@@ -2,10 +2,10 @@
  * Upstream provider registry. Every provider here speaks (or has) an
  * OpenAI-compatible surface, so the gateway can proxy a single request shape.
  */
-import type { Capability } from '$lib/scopes';
-import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/pricing';
+import type { GatewayScope } from '$lib/scopes';
+import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/features/pricing/pricing';
 
-export type { Capability };
+export type { GatewayScope };
 
 export interface ProviderDef {
 	id: string;
@@ -19,7 +19,7 @@ export interface ProviderDef {
 	/** model-name prefixes used to route a request to this provider */
 	modelPrefixes: string[];
 	/** gateway endpoints this provider's upstream actually implements */
-	capabilities: Capability[];
+	capabilities: GatewayScope[];
 	/**
 	 * How the upstream authenticates. 'bearer' sends `Authorization: Bearer <key>`
 	 * (OpenAI, Anthropic); 'api-key' sends an `api-key: <key>` header (Azure);
@@ -66,7 +66,7 @@ const OPENAI_MODEL_PREFIXES = [
 	'whisper'
 ];
 
-export const PROVIDERS: Record<string, ProviderDef> = {
+const PROVIDER_DEFS = {
 	openai: {
 		id: 'openai',
 		label: 'OpenAI',
@@ -181,10 +181,13 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 		requiresEndpoint: true,
 		acceptsAnyModel: true
 	}
-};
+} satisfies Record<string, ProviderDef>;
+
+// Known keys resolve to a definite definition; lookups by an arbitrary string may miss.
+export const PROVIDERS: Record<string, ProviderDef> & typeof PROVIDER_DEFS = PROVIDER_DEFS;
 
 /** Whether a provider implements a given gateway capability. */
-export function providerSupports(provider: ProviderDef, capability: Capability): boolean {
+export function providerSupports(provider: ProviderDef, capability: GatewayScope): boolean {
 	return provider.capabilities.includes(capability);
 }
 
@@ -260,6 +263,11 @@ export function authHeaders(provider: ProviderDef, apiKey: string): Record<strin
 }
 
 export const PROVIDER_IDS = Object.keys(PROVIDERS);
+
+/** The provider registered under `id`, or undefined for an unknown (or inherited) key. */
+export function getProvider(id: string): ProviderDef | undefined {
+	return Object.hasOwn(PROVIDERS, id) ? PROVIDERS[id] : undefined;
+}
 
 /** Whether a provider claims a model name by one of its `modelPrefixes`. */
 function matchesByPrefix(def: ProviderDef, model: string): boolean {
@@ -576,75 +584,31 @@ export function costFromPrice(
 	return Math.round(cost * 1e8) / 1e8;
 }
 
+/** Price-map keys, longest first, memoized per map object. */
+const sortedKeysCache = new WeakMap<Record<string, ModelPrice>, string[]>();
+
+function keysLongestFirst(prices: Record<string, ModelPrice>): string[] {
+	let keys = sortedKeysCache.get(prices);
+	if (!keys) {
+		keys = Object.keys(prices).sort((a, b) => b.length - a.length);
+		sortedKeysCache.set(prices, keys);
+	}
+	return keys;
+}
+
 /**
- * Resolve the longest-prefix price for a model from a price map, matching the
- * legacy lookup: e.g. "gpt-5.4-mini" wins over "gpt-5.4".
+ * Resolve the longest-prefix price for a model from a price map: an exact key
+ * wins, otherwise the longest key the model name starts with — e.g.
+ * "gpt-5.4-mini-2026" resolves to "gpt-5.4-mini", not "gpt-5.4". The model name
+ * is matched case-insensitively; keys are expected lower-case (as stored).
+ *
+ * This is the single price resolver: the gateway's cost estimate and the usage
+ * analytics' rate cards both go through it. The sorted key list is memoized per
+ * map object, so treat a price map as immutable once it has been resolved against.
  */
 export function resolvePrice(prices: Record<string, ModelPrice>, model: string): ModelPrice | null {
 	const m = model.toLowerCase();
-	const key = Object.keys(prices)
-		.sort((a, b) => b.length - a.length)
-		.find((k) => m.startsWith(k));
-	return key ? prices[key] : null;
-}
-
-/** What a request cost, and which rate card it was billed against. */
-export interface CostEstimate {
-	costUsd: number | null;
-	/** null exactly when `costUsd` is: nothing was priced, so no card applied */
-	tier: ContextTier | null;
-}
-
-/**
- * Estimate a request's USD cost. Reads the instance's effective price map
- * (custom overrides layered over platform defaults) from the database via a
- * short-lived in-memory cache, then matches the model by longest prefix.
- * `promptTokens` is the total input volume; `cacheReadTokens`/`cacheWriteTokens`
- * are the cache subsets within it, priced separately. Returns a null cost when
- * the model has no price or no prompt tokens were reported.
- *
- * The tier comes back alongside the cost because it's decided here, from the
- * resolved price — the caller has the model name but not the rate card, so it
- * can't tell a long-context request from a standard one on its own.
- */
-export async function estimateCost(
-	model: string | undefined,
-	promptTokens: number | undefined,
-	completionTokens: number | undefined,
-	cacheReadTokens = 0,
-	cacheWriteTokens = 0
-): Promise<CostEstimate> {
-	if (!model || promptTokens == null) return { costUsd: null, tier: null };
-	const { getEffectivePriceMap } = await import('$lib/server/pricing');
-	const prices = await getEffectivePriceMap();
-	const price = resolvePrice(prices, model);
-	if (!price) return { costUsd: null, tier: null };
-	return {
-		costUsd: costFromPrice(
-			price,
-			promptTokens,
-			completionTokens ?? 0,
-			cacheReadTokens,
-			cacheWriteTokens
-		),
-		tier: contextTierForPromptTokens(price, promptTokens)
-	};
-}
-
-/** {@link estimateCost} for callers that only need the money. */
-export async function estimateCostUsd(
-	model: string | undefined,
-	promptTokens: number | undefined,
-	completionTokens: number | undefined,
-	cacheReadTokens = 0,
-	cacheWriteTokens = 0
-): Promise<number | null> {
-	const { costUsd } = await estimateCost(
-		model,
-		promptTokens,
-		completionTokens,
-		cacheReadTokens,
-		cacheWriteTokens
-	);
-	return costUsd;
+	if (Object.hasOwn(prices, m)) return prices[m] ?? null;
+	const key = keysLongestFirst(prices).find((k) => m.startsWith(k));
+	return key ? (prices[key] ?? null) : null;
 }

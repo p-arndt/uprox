@@ -1,22 +1,18 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireOrgApi, requirePermission } from '$lib/server/org';
-import { listServices, createService } from '$lib/server/data';
+import { listServices, createService } from '$lib/server/services';
+import { apiHandler } from '$lib/server/api/errors';
+import { readJson } from '$lib/server/api/fields';
+import { parseServiceCreate } from '$lib/server/api/service-body';
 
-export const GET: RequestHandler = async (event) => {
+export const GET: RequestHandler = apiHandler(async (event) => {
 	await requireOrgApi(event);
 	return json(await listServices());
-};
+});
 
-export const POST: RequestHandler = async (event) => {
+export const POST: RequestHandler = apiHandler(async (event) => {
 	await requirePermission(event, 'services:manage');
-	const body = await event.request.json();
-	if (!body?.name) return json({ error: 'name is required' }, { status: 400 });
-	const row = await createService({
-		name: body.name,
-		type: body.type,
-		description: body.description,
-		policyId: body.policyId
-	});
-	return json(row, { status: 201 });
-};
+	const input = parseServiceCreate(await readJson(event.request));
+	return json(await createService(input), { status: 201 });
+});

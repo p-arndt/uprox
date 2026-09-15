@@ -4,148 +4,69 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import ShieldCheck from '@lucide/svelte/icons/shield-check';
-	import KeyRound from '@lucide/svelte/icons/key-round';
-	import Boxes from '@lucide/svelte/icons/boxes';
-	import ScrollText from '@lucide/svelte/icons/scroll-text';
-	import LogIn from '@lucide/svelte/icons/log-in';
 	import Loader2 from '@lucide/svelte/icons/loader-circle';
+	import AuthShell from '$lib/features/auth/components/auth-shell.svelte';
+	import OidcSignInForm from '$lib/features/auth/components/oidc-sign-in-form.svelte';
 
 	let { data, form }: { data: PageData; form: ActionData } = $props();
 	let loading = $state(false);
-	let oidcLoading = $state(false);
-
-	const features = [
-		{ icon: KeyRound, text: 'Issue scoped, revocable machine tokens' },
-		{ icon: Boxes, text: 'One OpenAI-compatible gateway for every provider' },
-		{ icon: ScrollText, text: 'Policy enforcement and full audit trail' }
-	];
 
 	const providers = $derived(data.enabledProviders);
-	const oidcLabel = $derived(data.oidcLabel ?? 'SSO');
 </script>
 
 <svelte:head><title>Sign in · uprox</title></svelte:head>
 
-<div class="grid min-h-svh lg:grid-cols-2">
-	<!-- brand panel -->
-	<div
-		class="relative hidden flex-col justify-between overflow-hidden bg-foreground p-12 text-background lg:flex"
-	>
-		<div
-			class="pointer-events-none absolute -top-24 -right-24 size-96 rounded-full bg-background/5 blur-2xl"
-		></div>
-		<div
-			class="pointer-events-none absolute -bottom-32 -left-20 size-96 rounded-full bg-background/5 blur-2xl"
-		></div>
-		<div class="relative flex items-center gap-2 text-lg font-semibold tracking-tight">
-			<ShieldCheck class="size-6" />
-			uprox
-		</div>
-		<div class="relative space-y-6">
-			<h1 class="max-w-md text-3xl leading-tight font-semibold tracking-tight">
-				The identity &amp; access gateway for your AI workloads.
-			</h1>
-			<ul class="space-y-3">
-				{#each features as f (f.text)}
-					<li class="flex items-center gap-3 text-background/80">
-						<span class="flex size-9 items-center justify-center rounded-lg bg-background/10">
-							<f.icon class="size-4.5" />
-						</span>
-						{f.text}
-					</li>
-				{/each}
-			</ul>
-		</div>
-		<p class="relative text-sm text-background/50">Human &amp; machine identity, unified.</p>
-	</div>
+<AuthShell title="Welcome back">
+	{#snippet description()}Sign in to manage your services and tokens.{/snippet}
 
-	<!-- form panel -->
-	<div class="flex items-center justify-center p-6 sm:p-12">
-		<div class="w-full max-w-sm space-y-8">
-			<div class="space-y-2 lg:hidden">
-				<div class="flex items-center gap-2 text-lg font-semibold">
-					<ShieldCheck class="size-6" /> uprox
-				</div>
-			</div>
+	{#if providers.oidc}
+		<OidcSignInForm
+			label={data.oidcLabel ?? 'SSO'}
+			redirectTo={data.redirectTo}
+			divider={providers.email ? 'after' : undefined}
+		/>
+	{/if}
 
+	{#if providers.email}
+		<form
+			method="post"
+			action="?/signIn"
+			use:enhance={() => {
+				loading = true;
+				return async ({ update }) => {
+					await update();
+					loading = false;
+				};
+			}}
+			class="space-y-4"
+		>
+			<input type="hidden" name="redirectTo" value={data.redirectTo} />
 			<div class="space-y-2">
-				<h2 class="text-2xl font-semibold tracking-tight">Welcome back</h2>
-				<p class="text-sm text-muted-foreground">Sign in to manage your services and tokens.</p>
+				<Label for="email">Email</Label>
+				<Input
+					id="email"
+					name="email"
+					type="email"
+					placeholder="you@company.com"
+					value={form && 'email' in form ? form.email : ''}
+					required
+				/>
+			</div>
+			<div class="space-y-2">
+				<Label for="password">Password</Label>
+				<Input id="password" name="password" type="password" placeholder="••••••••" required />
 			</div>
 
-			{#if providers.oidc}
-				<form
-					method="post"
-					action="?/oidc"
-					use:enhance={() => {
-						oidcLoading = true;
-						return async ({ update }) => {
-							await update();
-							oidcLoading = false;
-						};
-					}}
-				>
-					<input type="hidden" name="redirectTo" value={data.redirectTo} />
-					<Button type="submit" variant="outline" class="w-full" disabled={oidcLoading}>
-						{#if oidcLoading}<Loader2 class="size-4 animate-spin" />{:else}<LogIn
-								class="size-4"
-							/>{/if}
-						Sign in with {oidcLabel}
-					</Button>
-				</form>
-			{/if}
-
-			{#if providers.oidc && providers.email}
-				<div class="flex items-center gap-3">
-					<span class="h-px flex-1 bg-border"></span>
-					<span class="text-xs text-muted-foreground uppercase">or</span>
-					<span class="h-px flex-1 bg-border"></span>
-				</div>
-			{/if}
-
-			{#if providers.email}
-				<form
-					method="post"
-					action="?/signIn"
-					use:enhance={() => {
-						loading = true;
-						return async ({ update }) => {
-							await update();
-							loading = false;
-						};
-					}}
-					class="space-y-4"
-				>
-					<input type="hidden" name="redirectTo" value={data.redirectTo} />
-					<div class="space-y-2">
-						<Label for="email">Email</Label>
-						<Input
-							id="email"
-							name="email"
-							type="email"
-							placeholder="you@company.com"
-							value={form && 'email' in form ? form.email : ''}
-							required
-						/>
-					</div>
-					<div class="space-y-2">
-						<Label for="password">Password</Label>
-						<Input id="password" name="password" type="password" placeholder="••••••••" required />
-					</div>
-
-					{#if form?.message}
-						<p class="text-sm text-destructive">{form.message}</p>
-					{/if}
-
-					<Button type="submit" class="w-full" disabled={loading}>
-						{#if loading}<Loader2 class="size-4 animate-spin" />{/if}
-						Sign in
-					</Button>
-				</form>
-			{:else if form?.message}
+			{#if form?.message}
 				<p class="text-sm text-destructive">{form.message}</p>
 			{/if}
-		</div>
-	</div>
-</div>
+
+			<Button type="submit" class="w-full" disabled={loading}>
+				{#if loading}<Loader2 class="size-4 animate-spin" />{/if}
+				Sign in
+			</Button>
+		</form>
+	{:else if form?.message}
+		<p class="text-sm text-destructive">{form.message}</p>
+	{/if}
+</AuthShell>

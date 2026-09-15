@@ -2,44 +2,30 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { invalidateAll } from '$app/navigation';
-	import PageHeader from '$lib/components/page-header.svelte';
-	import ProviderSecretRow from '$lib/components/provider-secret-row.svelte';
-	import ProviderKeyDialog from '$lib/components/provider-key-dialog.svelte';
-	import RotateKeyDialog from '$lib/components/rotate-key-dialog.svelte';
-	import EditMetaDialog from '$lib/components/edit-meta-dialog.svelte';
-	import type { ProviderSecret } from '$lib/providers';
+	import PageHeader from '$lib/components/layout/page-header.svelte';
+	import ProviderSecretRow from '$lib/features/providers/components/provider-secret-row.svelte';
+	import ProviderKeyDialog from '$lib/features/providers/components/provider-key-dialog.svelte';
+	import RotateKeyDialog from '$lib/features/providers/components/rotate-key-dialog.svelte';
+	import EditMetaDialog from '$lib/features/providers/components/edit-meta-dialog.svelte';
+	import type {
+		ProviderKeyDraft,
+		ProviderMetaDraft,
+		ProviderSecret,
+		RotateKeyDraft
+	} from '$lib/features/providers/providers';
 	import { can } from '$lib/permissions';
 	import Plug from '@lucide/svelte/icons/plug';
 	import Plus from '@lucide/svelte/icons/plus';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
 
 	let { data, form } = $props();
 
 	// add a new key (per provider)
-	let adding = $state<{
-		provider: string;
-		label: string;
-		requiresEndpoint: boolean;
-		authScheme: string;
-		optionalAuth: boolean;
-	} | null>(null);
+	let adding = $state<ProviderKeyDraft | null>(null);
 	// rotate an existing key
-	let rotating = $state<{
-		id: string;
-		label: string;
-		provider: string;
-		authScheme: string;
-		optionalAuth: boolean;
-	} | null>(null);
+	let rotating = $state<RotateKeyDraft | null>(null);
 	// edit label / endpoint / priority of an existing secret
-	let editingMeta = $state<{
-		id: string;
-		provider: string;
-		label: string;
-		requiresEndpoint: boolean;
-		baseUrl: string;
-		priority: number;
-	} | null>(null);
+	let editingMeta = $state<ProviderMetaDraft | null>(null);
 
 	// secrets grouped by provider, preserving the load order (priority desc)
 	const byProvider = $derived(
@@ -110,9 +96,8 @@
 					{:else}
 						{#each secrets as s (s.id)}
 							<ProviderSecretRow
-								{s}
-								label={p.label}
-								requiresEndpoint={p.requiresEndpoint}
+								secret={s}
+								provider={p}
 								showPriority={secrets.length > 1}
 								{canManage}
 								onRotate={() =>

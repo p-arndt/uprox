@@ -2,27 +2,28 @@
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
-	import UsageRangePicker from '$lib/components/usage-range-picker.svelte';
-	import UsageWorkbench from '$lib/components/usage-workbench.svelte';
+	import UsageWorkbench from '$lib/features/usage/components/usage-workbench.svelte';
 	import { resolve } from '$app/paths';
 	import { enhance } from '$app/forms';
-	import { goto, invalidateAll } from '$app/navigation';
-	import type { ResolvedPathname } from '$app/types';
-	import { buildUsageHref, type UsageUrlOverrides } from '$lib/usage-url';
-	import type { UsageDimension, UsageFilter } from '$lib/usage-group';
-	import type { DimensionUsageRow } from '$lib/server/data';
+	import { createUsageView } from '$lib/features/usage/view.svelte';
+	import type { UsageDimension } from '$lib/features/usage/group';
+	import type { DimensionUsageRow } from '$lib/features/usage/types';
 	import { toast } from 'svelte-sonner';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import KeyRound from '@lucide/svelte/icons/key-round';
-	import DetailHeader from '$lib/components/detail-header.svelte';
-	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+	import DetailHeader from '$lib/components/layout/detail-header.svelte';
 	import Eye from '@lucide/svelte/icons/eye';
 	import Copy from '@lucide/svelte/icons/copy';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
-	import PageShell from '$lib/components/page-shell.svelte';
+	import PageShell from '$lib/components/layout/page-shell.svelte';
 
 	let { data, form } = $props();
+
+	const view = createUsageView({
+		data: () => data,
+		basePath: () => resolve('/app/tokens/[id]', { id: data.token.id })
+	});
 
 	const canManage = $derived(can(data.role, 'tokens:manage', data.memberPermissions));
 
@@ -36,46 +37,6 @@
 		toast.success(msg);
 	}
 
-	const rangeLabel = $derived(
-		data.range === 'custom'
-			? `${data.customFrom} – ${data.customTo}`
-			: (data.ranges.find((r) => r.key === data.range)?.label ?? data.range)
-	);
-
-	// Preserve the params we aren't explicitly changing. Page-owned so the
-	// resolve()/navigation lint rule is satisfied at the source.
-	function hrefWith(overrides: UsageUrlOverrides): ResolvedPathname {
-		return buildUsageHref(
-			resolve('/app/tokens/[id]', { id: data.token.id }),
-			{
-				range: data.range,
-				bucket: data.bucket,
-				customFrom: data.customFrom,
-				customTo: data.customTo,
-				groupBy: data.groupBy,
-				filters: data.filters
-			},
-			overrides
-		) as ResolvedPathname;
-	}
-
-	function applyCustom(from: string, to: string) {
-		goto(hrefWith({ range: 'custom', from, to }), { noScroll: true });
-	}
-
-	// Re-runs the page load (re-querying usage) without a full reload, so operators
-	// can pull fresh figures in place. invalidateAll resolves once the new data lands.
-	let refreshing = $state(false);
-	async function refresh() {
-		if (refreshing) return;
-		refreshing = true;
-		try {
-			await invalidateAll();
-		} finally {
-			refreshing = false;
-		}
-	}
-
 	// Active / expired / revoked, mirroring the tokens list badge.
 	const tokenStatus = $derived.by(() => {
 		const t = data.token;
@@ -84,15 +45,6 @@
 			return { label: 'expired', dot: 'bg-amber-500' };
 		return { label: 'active', dot: 'bg-emerald-500', pulse: true };
 	});
-
-	// Group-by and filters are URL state here too, so a drilled-in token view is
-	// just as shareable as the org-wide one.
-	function setGroupBy(dim: UsageDimension) {
-		goto(hrefWith({ groupBy: dim }), { noScroll: true, keepFocus: true });
-	}
-	function setFilters(filters: UsageFilter[]) {
-		goto(hrefWith({ filters }), { noScroll: true, keepFocus: true });
-	}
 </script>
 
 {#snippet rowLabel(row: DimensionUsageRow, dim: UsageDimension)}
@@ -101,30 +53,6 @@
 	{:else}
 		<span class="truncate font-medium" title={row.label}>{row.label}</span>
 	{/if}
-{/snippet}
-
-{#snippet leading()}
-	<UsageRangePicker
-		ranges={data.ranges}
-		range={data.range}
-		{hrefWith}
-		customFrom={data.customFrom}
-		customTo={data.customTo}
-		onApplyCustom={applyCustom}
-	/>
-{/snippet}
-
-{#snippet trailing()}
-	<Button
-		variant="ghost"
-		size="icon"
-		class="size-8"
-		onclick={refresh}
-		disabled={refreshing}
-		aria-label="Refresh usage"
-	>
-		<RefreshCw class="size-4 {refreshing ? 'animate-spin' : ''}" />
-	</Button>
 {/snippet}
 
 <PageShell width="wide">
@@ -178,16 +106,7 @@
 		{/snippet}
 	</DetailHeader>
 
-	<UsageWorkbench
-		analysis={data}
-		{rangeLabel}
-		bucketHref={(b) => hrefWith({ bucket: b })}
-		onGroupBy={setGroupBy}
-		onFilters={setFilters}
-		{rowLabel}
-		{leading}
-		{trailing}
-	/>
+	<UsageWorkbench analysis={data} {view} {rowLabel} />
 </PageShell>
 
 <!-- re-copy reveal: shows the stored secret again for a re-copyable token -->

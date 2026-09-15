@@ -298,6 +298,14 @@ Every organization has three roles, backed by better-auth's organization plugin:
 | **admin**  | manage providers, policies, services, tokens, pricing, settings, members |
 | **member** | read-only — unless an admin grants token/service permissions in Settings |
 
+## Architecture & contributing
+
+Thin routes call server modules grouped by domain. Business logic lives in pure, unit-tested
+modules, and client code never value-imports `$lib/server`. Tests come in three layers: unit,
+real-SQL on PGlite, and E2E. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the
+structure, rules, and query performance conventions.
+The admin REST API is documented in [`docs/API.md`](docs/API.md).
+
 ## Built with
 
 SvelteKit · TypeScript · Tailwind v4 + shadcn-svelte · better-auth · Postgres + Drizzle ORM · Node crypto
@@ -305,12 +313,14 @@ SvelteKit · TypeScript · Tailwind v4 + shadcn-svelte · better-auth · Postgre
 <details>
 <summary><strong>Scripts</strong></summary>
 
-| Command                                     | Description                       |
-| ------------------------------------------- | --------------------------------- |
-| `pnpm dev` / `build` / `preview`            | dev / production build / preview  |
-| `pnpm check`                                | typecheck                         |
-| `pnpm test`                                 | unit (Vitest) + E2E (Playwright)  |
-| `pnpm db:migrate` / `db:push` / `db:studio` | database                          |
-| `pnpm auth:schema`                          | regenerate the better-auth schema |
+| Command                                     | Description                          |
+| ------------------------------------------- | ------------------------------------ |
+| `pnpm dev` / `build` / `preview`            | dev / production build / preview     |
+| `pnpm check` / `lint`                       | typecheck / prettier + eslint        |
+| `pnpm test`                                 | unit + DB + E2E                      |
+| `pnpm test:unit` / `test:db`                | Vitest unit / real SQL on PGlite     |
+| `pnpm test:e2e`                             | Playwright (`test:e2e:install` once) |
+| `pnpm db:migrate` / `db:push` / `db:studio` | database                             |
+| `pnpm auth:schema`                          | regenerate the better-auth schema    |
 
 </details>

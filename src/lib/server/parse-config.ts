@@ -9,7 +9,7 @@
  * any other value sets the override. An empty array is a real value — "allow
  * all" — distinct from `null` (inherit).
  */
-import type { InlineConfigInput } from '$lib/server/data';
+import type { InlineConfigInput } from '$lib/server/inline-config';
 
 function parseArray(v: unknown): string[] | null | undefined {
 	if (v === undefined) return undefined;
@@ -65,4 +65,41 @@ export function parseInlineConfig(
 	set('cacheTtlSeconds', parseNum(body.cacheTtlSeconds));
 	set('tracingEnabled', parseBoolTri(body.tracingEnabled));
 	return out;
+}
+
+/** Split a comma-separated form field (e.g. model patterns) into a clean list. */
+export function splitList(raw: FormDataEntryValue | null): string[] {
+	return (raw?.toString() ?? '')
+		.split(',')
+		.map((m) => m.trim())
+		.filter(Boolean);
+}
+
+/**
+ * Pull the inline limit & access fields out of a form submission (the shared
+ * inline-limits-fields component). `allowedModels` is a comma-separated text
+ * field and is only read when `includeModels` is set.
+ */
+export function inlineFromForm(data: FormData, opts: { includeModels: true }): InlineConfigInput;
+export function inlineFromForm(
+	data: FormData,
+	opts?: { includeModels?: false }
+): Omit<InlineConfigInput, 'allowedModels'>;
+export function inlineFromForm(
+	data: FormData,
+	opts: { includeModels?: boolean } = {}
+): InlineConfigInput {
+	const body = {
+		allowedProviders: data.getAll('allowedProviders').map((p) => p.toString()),
+		allowedModels: opts.includeModels ? splitList(data.get('allowedModels')) : undefined,
+		preferredProvider: data.get('preferredProvider'),
+		rateLimitPerMinute: data.get('rateLimitPerMinute'),
+		dailyBudgetUsd: data.get('dailyBudgetUsd'),
+		monthlyBudgetUsd: data.get('monthlyBudgetUsd'),
+		cacheTtlSeconds: data.get('cacheTtlSeconds'),
+		tracingEnabled: data.get('tracingEnabled')
+	};
+	return opts.includeModels
+		? parseInlineConfig(body, { includeModels: true })
+		: parseInlineConfig(body);
 }

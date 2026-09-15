@@ -2,8 +2,9 @@ import { randomBytes } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { db } from '$lib/server/db';
-import { machineToken, service, policy, settings } from '$lib/server/db/schema';
+import { machineToken, service, policy } from '$lib/server/db/schema';
 import { sha256 } from '$lib/server/crypto';
+import { getSettings } from '$lib/server/settings';
 import { resolveEffectiveConfig, type EffectiveConfig } from '$lib/server/effective-config';
 
 export const TOKEN_PREFIX = 'uprox_live_';
@@ -87,8 +88,8 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 		return null;
 	}
 
-	// instance-wide default cache TTL from the singleton settings row
-	const [settingsRow] = await db.select().from(settings).where(eq(settings.id, 1)).limit(1);
+	// instance-wide defaults (cache TTL, tracing, budgets) from the settings singleton
+	const instance = await getSettings();
 
 	// best-effort last-used bookkeeping; don't block the request on it
 	void db
@@ -109,10 +110,10 @@ export async function resolveToken(plaintext: string): Promise<ResolvedToken | n
 			tokenPolicy: row.tokenPolicy,
 			servicePolicy: row.servicePolicy,
 			defaults: {
-				cacheTtlSeconds: settingsRow?.cacheTtlSeconds ?? 0,
-				tracingEnabled: settingsRow?.tracingEnabled ?? false,
-				dailyBudgetUsd: Number(settingsRow?.dailyBudgetUsd ?? 0),
-				monthlyBudgetUsd: Number(settingsRow?.monthlyBudgetUsd ?? 0)
+				cacheTtlSeconds: instance.cacheTtlSeconds,
+				tracingEnabled: instance.tracingEnabled,
+				dailyBudgetUsd: instance.dailyBudgetUsd ?? 0,
+				monthlyBudgetUsd: instance.monthlyBudgetUsd ?? 0
 			}
 		})
 	};

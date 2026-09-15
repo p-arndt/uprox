@@ -1,29 +1,23 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requirePermission } from '$lib/server/org';
-import { updateService, deleteService } from '$lib/server/data';
-import { parseInlineConfig } from '$lib/server/parse-config';
+import { updateService, deleteService } from '$lib/server/services';
+import { apiHandler, notFound } from '$lib/server/api/errors';
+import { pathId, readJson } from '$lib/server/api/fields';
+import { parseServicePatch } from '$lib/server/api/service-body';
 
-export const PATCH: RequestHandler = async (event) => {
+export const PATCH: RequestHandler = apiHandler(async (event) => {
 	await requirePermission(event, 'services:manage');
-	const body = await event.request.json();
-	// inline limits/access + the basic metadata fields (services have a model
-	// allowlist of their own, so includeModels)
-	const patch: Parameters<typeof updateService>[1] = parseInlineConfig(body ?? {}, {
-		includeModels: true
-	});
-	if (typeof body?.name === 'string') patch.name = body.name.trim();
-	if (typeof body?.type === 'string') patch.type = body.type.trim();
-	if (body?.description !== undefined) patch.description = body.description || null;
-	if (body?.policyId !== undefined) patch.policyId = body.policyId || null;
-	if (body?.providerSecretId !== undefined) patch.providerSecretId = body.providerSecretId || null;
-	const row = await updateService(event.params.id, patch);
-	if (!row) return json({ error: 'Not found' }, { status: 404 });
+	const id = pathId(event.params.id);
+	const patch = parseServicePatch(await readJson(event.request));
+	const row = await updateService(id, patch);
+	if (!row) throw notFound();
 	return json(row);
-};
+});
 
-export const DELETE: RequestHandler = async (event) => {
+// Retire (soft-delete) a service and revoke its tokens.
+export const DELETE: RequestHandler = apiHandler(async (event) => {
 	await requirePermission(event, 'services:manage');
-	await deleteService(event.params.id);
+	await deleteService(pathId(event.params.id));
 	return new Response(null, { status: 204 });
-};
+});

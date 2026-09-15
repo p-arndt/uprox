@@ -3,16 +3,17 @@ import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
 import {
 	listTokens,
-	listServices,
-	listPolicies,
 	createToken,
 	updateToken,
 	revokeToken,
 	deleteToken,
-	revealToken,
-	getSettings
-} from '$lib/server/data';
-import { parseInlineConfig } from '$lib/server/parse-config';
+	revealToken
+} from '$lib/server/tokens-admin';
+import { listServices } from '$lib/server/services';
+import { listPolicies } from '$lib/server/policies';
+import { getSettings } from '$lib/server/settings';
+import { inlineFromForm, splitList } from '$lib/server/parse-config';
+import { isOn } from '$lib/server/form';
 import { PROVIDERS } from '$lib/server/providers';
 
 export const load: PageServerLoad = async (event) => {
@@ -33,27 +34,6 @@ export const load: PageServerLoad = async (event) => {
 	};
 };
 
-/** Parse the shared comma-separated "allowed models" field into a clean list. */
-function parseModels(raw: FormDataEntryValue | null): string[] {
-	return (raw?.toString() ?? '')
-		.split(',')
-		.map((m) => m.trim())
-		.filter(Boolean);
-}
-
-/** Pull the inline limit/access overrides out of a form submission. */
-function inlineFromForm(data: FormData) {
-	return parseInlineConfig({
-		allowedProviders: data.getAll('allowedProviders').map((p) => p.toString()),
-		preferredProvider: data.get('preferredProvider'),
-		rateLimitPerMinute: data.get('rateLimitPerMinute'),
-		dailyBudgetUsd: data.get('dailyBudgetUsd'),
-		monthlyBudgetUsd: data.get('monthlyBudgetUsd'),
-		cacheTtlSeconds: data.get('cacheTtlSeconds'),
-		tracingEnabled: data.get('tracingEnabled')
-	});
-}
-
 export const actions: Actions = {
 	create: async (event) => {
 		const { userId } = await requirePermission(event, 'tokens:manage');
@@ -64,14 +44,14 @@ export const actions: Actions = {
 		if (!name) return fail(400, { message: 'Name is required' });
 
 		const scopes = data.getAll('scopes').map((s) => s.toString());
-		const allowedModels = parseModels(data.get('allowedModels'));
+		const allowedModels = splitList(data.get('allowedModels'));
 		// blank = inherit the service's policy
 		const policyId = data.get('policyId')?.toString() || null;
 		const days = Number(data.get('expiresInDays')) || 0;
 		const expiresAt = days > 0 ? new Date(Date.now() + days * 86_400_000) : null;
 		// checkbox: present only when ticked. When on, the raw token is stored
 		// encrypted so it can be revealed/copied again later.
-		const recopyable = data.get('recopyable') === 'on' || data.get('recopyable') === 'true';
+		const recopyable = isOn(data.get('recopyable'));
 
 		try {
 			const { plaintext } = await createToken(userId, {
@@ -113,7 +93,7 @@ export const actions: Actions = {
 			name,
 			...(serviceId ? { serviceId } : {}),
 			scopes: data.getAll('scopes').map((s) => s.toString()),
-			allowedModels: parseModels(data.get('allowedModels')),
+			allowedModels: splitList(data.get('allowedModels')),
 			policyId: data.get('policyId')?.toString() || null,
 			...inlineFromForm(data)
 		});

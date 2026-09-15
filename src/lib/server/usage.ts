@@ -7,10 +7,7 @@
  * {@link normalizeUsage}. Lives apart from gateway.ts so it can be unit-tested
  * without pulling in the database and request plumbing.
  */
-
-function isRecord(v: unknown): v is Record<string, unknown> {
-	return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
+import { isRecord } from '$lib/server/json';
 
 /** Token usage from an upstream response, normalized across provider shapes. */
 export interface NormalizedUsage {

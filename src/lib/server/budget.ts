@@ -12,6 +12,7 @@
 import { and, eq, gte, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { auditLog } from '$lib/server/db/schema';
+import { startOfUtcDay, startOfUtcMonth } from '$lib/features/budget/budget';
 
 export interface BudgetLimits {
 	dailyBudgetUsd: string | number;
@@ -90,14 +91,6 @@ export function release(
 	const next = (reservations.get(key) ?? 0) - amountUsd;
 	if (next > 0) reservations.set(key, next);
 	else reservations.delete(key);
-}
-
-function startOfUtcDay(now = new Date()): Date {
-	return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-}
-
-function startOfUtcMonth(now = new Date()): Date {
-	return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 }
 
 export interface SpendWindows {

@@ -12,9 +12,62 @@ import { and, eq, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { modelPrice } from '$lib/server/db/schema';
 import { audit } from '$lib/server/audit';
-import { DEFAULT_MODEL_PRICES, providerForModel, type ModelPrice } from '$lib/server/providers';
+import {
+	DEFAULT_MODEL_PRICES,
+	providerForModel,
+	resolvePrice,
+	costFromPrice,
+	contextTierForPromptTokens,
+	type ContextTier,
+	type ModelPrice
+} from '$lib/server/providers';
 
 type PriceMap = Record<string, ModelPrice>;
+
+/** What a request cost, and which rate card it was billed against. */
+export interface CostEstimate {
+	costUsd: number | null;
+	/** null exactly when `costUsd` is: nothing was priced, so no card applied */
+	tier: ContextTier | null;
+}
+
+/**
+ * Estimate a request's USD cost. Reads the instance's effective price map
+ * (custom overrides layered over platform defaults) via a short-lived in-memory
+ * cache, then matches the model by longest prefix. `promptTokens` is the total
+ * input volume; `cacheReadTokens`/`cacheWriteTokens` are the cache subsets within
+ * it, priced separately. Returns a null cost when the model has no price or no
+ * prompt tokens were reported.
+ *
+ * The tier comes back alongside the cost because it's decided here, from the
+ * resolved price — the caller has the model name but not the rate card, so it
+ * can't tell a long-context request from a standard one on its own.
+ *
+ * Lives here rather than in providers.ts so the dependency runs one way only
+ * (pricing -> providers): providers.ts stays pure and database-free.
+ */
+export async function estimateCost(
+	model: string | undefined,
+	promptTokens: number | undefined,
+	completionTokens: number | undefined,
+	cacheReadTokens = 0,
+	cacheWriteTokens = 0
+): Promise<CostEstimate> {
+	if (!model || promptTokens == null) return { costUsd: null, tier: null };
+	const prices = await getEffectivePriceMap();
+	const price = resolvePrice(prices, model);
+	if (!price) return { costUsd: null, tier: null };
+	return {
+		costUsd: costFromPrice(
+			price,
+			promptTokens,
+			completionTokens ?? 0,
+			cacheReadTokens,
+			cacheWriteTokens
+		),
+		tier: contextTierForPromptTokens(price, promptTokens)
+	};
+}
 
 const CACHE_TTL_MS = 30_000;
 
@@ -82,8 +135,13 @@ function selectVisible() {
 
 /**
  * The instance's effective price map: platform defaults overlaid with custom
- * (isDefault = false) rows (custom wins per model). Cached globally for
- * {@link CACHE_TTL_MS}.
+ * (isDefault = false) rows (custom wins per model), keyed by lower-cased model.
+ * Cached globally for {@link CACHE_TTL_MS} and dropped by every pricing write.
+ *
+ * This is the one loader of resolved prices: gateway cost estimation and the
+ * usage analytics' rate cards (usage-queries/rate-cards.ts) both read it and
+ * match models with `resolvePrice`, so the two never disagree about a price.
+ * The returned map is shared — do not mutate it.
  */
 export async function getEffectivePriceMap(): Promise<PriceMap> {
 	if (cachedEntry && cachedEntry.expires > Date.now()) return cachedEntry.map;
@@ -102,10 +160,10 @@ export async function getEffectivePriceMap(): Promise<PriceMap> {
 	const map: PriceMap = {};
 	// defaults first, then custom rows override any matching model
 	for (const r of rows) {
-		if (r.isDefault) map[r.model] = toPrice(r);
+		if (r.isDefault) map[r.model.toLowerCase()] = toPrice(r);
 	}
 	for (const r of rows) {
-		if (!r.isDefault) map[r.model] = toPrice(r);
+		if (!r.isDefault) map[r.model.toLowerCase()] = toPrice(r);
 	}
 
 	cachedEntry = { map, expires: Date.now() + CACHE_TTL_MS };
