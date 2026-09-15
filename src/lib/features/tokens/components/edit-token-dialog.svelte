@@ -3,7 +3,6 @@
 		type TokenFormValues
 	} from '$lib/features/tokens/components/token-form.svelte';
 	import EntityDialog from '$lib/components/form/entity-dialog.svelte';
-	import FormError from '$lib/components/form/form-error.svelte';
 
 	let {
 		editing,
@@ -22,12 +21,12 @@
 	} = $props();
 </script>
 
-<!-- edit token: change its policy, model allowlist, scopes, and name in place -->
+<!-- edit token: change its name, service, limits and access in place -->
 <EntityDialog
 	open={editing !== null}
 	{onClose}
 	title="Edit token"
-	description="Adjust this token's access. The secret itself never changes."
+	description="Adjust this token's name, service, limits and access. The secret itself never changes."
 	class="max-h-[88vh] overflow-y-auto sm:max-w-lg"
 >
 	{#if editing}
@@ -40,11 +39,8 @@
 				{policies}
 				{providers}
 				{services}
-			>
-				{#snippet bottomFields()}
-					<FormError {message} />
-				{/snippet}
-			</TokenForm>
+				{message}
+			/>
 		{/key}
 	{/if}
 </EntityDialog>

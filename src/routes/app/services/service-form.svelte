@@ -107,28 +107,15 @@
 
 	<Separator />
 
-	<div class="space-y-2">
-		<FieldLabel
-			for={id('policyId')}
-			label="Preset"
-			hint="Optional reusable baseline. The fields below override it field-by-field."
-		/>
-		<SelectField
-			id={id('policyId')}
-			name="policyId"
-			bind:value={policyId}
-			options={presetOptions(policies)}
-		/>
-	</div>
-
 	<InlineLimitsFields
 		{providers}
 		{values}
 		idPrefix={id('inline')}
 		scope="service"
-		extraAdvancedActive={!!values.providerSecretId}
+		extraAccessActive={!!values.providerSecretId}
+		extraAdvancedActive={!!values.policyId}
 	>
-		{#snippet advanced()}
+		{#snippet accessExtra()}
 			{#if secretOptions.length > 0}
 				<div class="space-y-2">
 					<FieldLabel
@@ -144,6 +131,21 @@
 					/>
 				</div>
 			{/if}
+		{/snippet}
+		{#snippet advanced()}
+			<div class="space-y-2">
+				<FieldLabel
+					for={id('policyId')}
+					label="Preset"
+					hint="Optional reusable baseline. The other fields override it field-by-field."
+				/>
+				<SelectField
+					id={id('policyId')}
+					name="policyId"
+					bind:value={policyId}
+					options={presetOptions(policies)}
+				/>
+			</div>
 		{/snippet}
 	</InlineLimitsFields>
 

@@ -8,7 +8,6 @@
 	} from '$lib/features/tokens/components/token-form.svelte';
 	import { emptyInlineLimits } from '$lib/features/policies/inline-limits';
 	import SelectField from '$lib/components/form/select-field.svelte';
-	import FormError from '$lib/components/form/form-error.svelte';
 
 	let {
 		open = $bindable(false),
@@ -71,8 +70,9 @@
 			{providers}
 			{services}
 			resetOnSuccess
+			{message}
 		>
-			{#snippet bottomFields()}
+			{#snippet afterServiceFields()}
 				<div class="space-y-2">
 					<Label for="expiresInDays">Expires</Label>
 					<SelectField
@@ -82,6 +82,8 @@
 						options={expiryOptions}
 					/>
 				</div>
+			{/snippet}
+			{#snippet advancedFields()}
 				<input type="hidden" name="recopyable" value={String(recopyable)} />
 				<div class="space-y-1.5 rounded-lg border p-3">
 					<div class="flex items-center justify-between gap-4">
@@ -93,7 +95,6 @@
 						keeps it hash-only — shown once, then unrecoverable (more secure).
 					</p>
 				</div>
-				<FormError {message} />
 			{/snippet}
 		</TokenForm>
 	</Dialog.Content>

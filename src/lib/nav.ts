@@ -31,29 +31,26 @@ export interface NavSection {
 
 export const NAV_SECTIONS: NavSection[] = [
 	{
-		label: 'Monitor',
-		items: [
-			{ href: '/app/usage', label: 'Cost analysis', icon: ChartColumn },
-			{ href: '/app/traces', label: 'Traces', icon: Waypoints }
-		]
-	},
-	{
 		label: 'Gateway',
 		items: [
 			{ href: '/app/services', label: 'Services', icon: Boxes },
-			{ href: '/app/tokens', label: 'Machine Tokens', icon: KeyRound }
+			{ href: '/app/tokens', label: 'Machine Tokens', icon: KeyRound },
+			{ href: '/app/providers', label: 'Providers', icon: Plug }
 		]
 	},
 	{
-		label: 'Providers',
-		items: [{ href: '/app/providers', label: 'Providers', icon: Plug }]
+		label: 'Monitor',
+		items: [
+			{ href: '/app/usage', label: 'Cost analysis', icon: ChartColumn },
+			{ href: '/app/traces', label: 'Traces', icon: Waypoints },
+			{ href: '/app/audit', label: 'Audit Log', icon: ScrollText }
+		]
 	},
 	{
-		label: 'Governance',
+		label: 'Configure',
 		items: [
 			{ href: '/app/policies', label: 'Presets', icon: ShieldHalf },
-			{ href: '/app/pricing', label: 'Model Prices', icon: Coins },
-			{ href: '/app/audit', label: 'Audit Log', icon: ScrollText }
+			{ href: '/app/pricing', label: 'Model Prices', icon: Coins }
 		]
 	},
 	{

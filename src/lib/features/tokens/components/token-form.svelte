@@ -23,6 +23,7 @@
 	import InlineLimitsFields from '$lib/features/policies/components/inline-limits-fields.svelte';
 	import CheckboxGroup from '$lib/components/form/checkbox-group.svelte';
 	import FieldLabel from '$lib/components/form/field-label.svelte';
+	import FormError from '$lib/components/form/form-error.svelte';
 	import SelectField from '$lib/components/form/select-field.svelte';
 	import { presetOptions } from '$lib/components/form/form-options';
 	import { GATEWAY_SCOPES } from '$lib/scopes';
@@ -36,8 +37,10 @@
 		providers,
 		services = [],
 		resetOnSuccess = false,
+		message,
 		topFields,
-		bottomFields
+		afterServiceFields,
+		advancedFields
 	}: {
 		action: string;
 		submitLabel: string;
@@ -49,10 +52,14 @@
 		/** services the token can belong to; empty hides the picker entirely */
 		services?: { id: string; name: string }[];
 		resetOnSuccess?: boolean;
-		/** create-only fields rendered above the name (e.g. the service picker) */
+		/** server-side validation message, shown above the submit button */
+		message?: string;
+		/** fields rendered above the name */
 		topFields?: Snippet;
-		/** create-only fields rendered below (e.g. the expiry picker) */
-		bottomFields?: Snippet;
+		/** always-visible fields rendered right after the service picker (e.g. the expiry picker) */
+		afterServiceFields?: Snippet;
+		/** fields appended to the collapsed Advanced section (e.g. the re-copy switch) */
+		advancedFields?: Snippet;
 	} = $props();
 
 	// seeded once from the prop; the edit dialog remounts this form per token
@@ -104,21 +111,7 @@
 		</div>
 	{/if}
 
-	<div class="space-y-2">
-		<FieldLabel
-			for={id('policyId')}
-			label="Preset"
-			hint="Optional reusable baseline. The overrides below take priority field-by-field."
-		/>
-		<SelectField
-			id={id('policyId')}
-			name="policyId"
-			bind:value={policyId}
-			options={presetOptions(policies)}
-		/>
-	</div>
-
-	{@render bottomFields?.()}
+	{@render afterServiceFields?.()}
 
 	<Separator />
 
@@ -127,9 +120,10 @@
 		{values}
 		idPrefix={id('inline')}
 		scope="token"
-		extraAdvancedActive={values.scopes.length > 0}
+		extraAccessActive={values.scopes.length > 0}
+		extraAdvancedActive={!!values.policyId}
 	>
-		{#snippet advanced()}
+		{#snippet accessExtra()}
 			<div class="space-y-2">
 				<FieldLabel
 					label="Scopes"
@@ -144,7 +138,25 @@
 				/>
 			</div>
 		{/snippet}
+		{#snippet advanced()}
+			<div class="space-y-2">
+				<FieldLabel
+					for={id('policyId')}
+					label="Preset"
+					hint="Optional reusable baseline. The overrides take priority field-by-field."
+				/>
+				<SelectField
+					id={id('policyId')}
+					name="policyId"
+					bind:value={policyId}
+					options={presetOptions(policies)}
+				/>
+			</div>
+			{@render advancedFields?.()}
+		{/snippet}
 	</InlineLimitsFields>
+
+	<FormError {message} />
 
 	<Dialog.Footer>
 		<Button type="submit">{submitLabel}</Button>
