@@ -1,0 +1,1 @@
+Breaking: request tracing is gone: the trace viewer, the OTLP endpoint `/v1/traces` and the tracing switches on settings, policies, services and tokens. The `x-uprox-trace-id`, `x-uprox-session-id`, `x-uprox-metadata` and `x-uprox-meta-*` headers and the `tracingEnabled` API field are ignored
