@@ -1,5 +1,11 @@
 name: CI
 
+# Type check, lint, unit + DB (PGlite) tests and the production build run in the
+# shared SvelteKit workflow. The migration drift check and the Postgres-backed
+# E2E suite stay local: the shared workflow has no slot for either.
+#
+# pnpm's version comes from `packageManager` in package.json.
+
 on:
   push:
     branches: ['**']
@@ -15,44 +21,44 @@ permissions:
 
 jobs:
   verify:
-    name: Unit tests, migration drift, build
-    runs-on: ubuntu-latest
-    env:
+    name: Check, lint, unit/DB tests, build
+    uses: p-arndt/.github/.github/workflows/sveltekit-ci.yml@v1
+    with:
       # Build-time placeholders: SvelteKit's build imports server modules, and
       # the DB client / better-auth validate env at import time. No real
       # database is contacted during these steps.
+      env: |
+        POSTGRES_HOST=ci
+        POSTGRES_USER=ci
+        POSTGRES_PASSWORD=ci
+        POSTGRES_DB=ci
+        BETTER_AUTH_SECRET=ci-placeholder-secret-not-used-at-runtime
+        ORIGIN=http://localhost
+      test-command: pnpm test:unit --run && pnpm test:db
+      build: true
+
+  drift:
+    name: Migration drift check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # drizzle.config.ts requires these; generate never connects.
       POSTGRES_HOST: ci
       POSTGRES_USER: ci
       POSTGRES_PASSWORD: ci
       POSTGRES_DB: ci
-      BETTER_AUTH_SECRET: ci-placeholder-secret-not-used-at-runtime
-      ORIGIN: http://localhost
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: '10'
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
-          cache: 'pnpm'
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Type check
-        run: pnpm check
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Unit tests
-        run: pnpm test:unit --run
-
-      - name: DB tests (PGlite)
-        run: pnpm test:db
 
       - name: Migration drift check
         # Generating from the current schema must be a no-op. If drizzle-kit
@@ -65,12 +71,10 @@ jobs:
             exit 1
           fi
 
-      - name: Build
-        run: pnpm build
-
   e2e:
     name: E2E tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:18
@@ -95,16 +99,14 @@ jobs:
       # 32 zero bytes, base64: throwaway key for the ephemeral CI database.
       ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: pnpm/action-setup@v4
-        with:
-          version: '10'
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
-          cache: 'pnpm'
+          cache: pnpm
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

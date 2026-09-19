@@ -1,7 +1,16 @@
 name: Build and Publish Release
-permissions:
-  contents: write
-  packages: write
+
+# Tag pushes only. `stamp release` (or `just release`) bumps package.json, commits,
+# tags `<x.y.z>` (no "v" prefix, see .stamp.yml) and pushes; this pipeline is a
+# worker, not a controller. It never decides a version.
+#
+# The shared container-release workflow checks the tag against the committed
+# version, pushes ghcr.io/<owner>/uprox:<version> (plus <major>.<minor> and latest
+# unless it is a pre-release) and creates the GitHub Release from the notes
+# `stamp release` wrote into the annotated tag.
+on:
+  push:
+    tags: ['*']
 
 # Two release runs pushing images and notes for the same tag would race; queue
 # them instead (never cancel, a half-cancelled release leaves partial state).
@@ -9,86 +18,24 @@ concurrency:
   group: release
   cancel-in-progress: false
 
-# Tag pushes only. The version and the notes are decided by `stamp release`
-# before the tag exists; this pipeline is a worker, not a controller.
-on:
-  push:
-    tags: ['*']
+permissions:
+  contents: read
 
 jobs:
-  # The tag is the only input, and it has to agree with the committed version.
-  verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    outputs:
-      VERSION: ${{ steps.stamp.outputs.version }}
-      PRERELEASE: ${{ steps.stamp.outputs.prerelease }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Verify the tag against the committed version
-        id: stamp
-        uses: p-arndt/stamp@v0
-
   # Nothing gets published from a commit that fails the regular CI suite.
   ci:
-    needs: verify
     uses: ./.github/workflows/ci.yaml
 
-  publish:
-    needs: [verify, ci]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Pre-releases get their version tag only; `latest` stays on the last release.
-      - name: Build and push Docker image (GHCR)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository_owner }}/uprox:${{ needs.verify.outputs.VERSION }}
-            ${{ needs.verify.outputs.PRERELEASE == 'false' && format('ghcr.io/{0}/uprox:latest', github.repository_owner) || '' }}
-          cache-from: |
-            type=registry,ref=ghcr.io/${{ github.repository_owner }}/uprox:latest
-          cache-to: type=inline
-
   release:
-    needs: [verify, publish]
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      # `stamp release` renders the changelog section into the annotated tag
-      # message; the action reads it back into a file. Nothing is generated here.
-      - name: Read release notes from the tag
-        id: stamp
-        uses: p-arndt/stamp@v0
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          body_path: ${{ steps.stamp.outputs.notes-file }}
-          prerelease: ${{ needs.verify.outputs.PRERELEASE }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    needs: ci
+    uses: p-arndt/.github/.github/workflows/container-release.yml@v1
+    permissions:
+      contents: write
+      packages: write
+    with:
+      image: uprox
+      platforms: linux/amd64
+      # Inline cache on :latest, as before.
+      cache: registry
+      verify-tag: true
+      changelog: stamp
