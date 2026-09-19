@@ -1,4 +1,4 @@
-# docker.just — image and compose recipes. Synced from ~/coding/just-common.
+# docker.just — image and compose recipes. Synced from github.com/p-arndt/just-common.
 #
 # The importing justfile sets:
 #   IMAGE := "orbit"                           (required) image name
