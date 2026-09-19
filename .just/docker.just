@@ -21,8 +21,9 @@ _COMPOSE_FLAG := if COMPOSE == "" { "" } else { "-f " + COMPOSE }
 image TAG="dev":
     docker build -f {{DOCKERFILE}} {{_TARGET_FLAG}} -t {{_REF}}:{{TAG}} .
 
-# Build and push <tag> (and :latest for a release tag). CI normally does this on a
-# tag; this is for a manual push. Needs `docker login` for the registry.
+# CI normally does this on a tag; this is for a manual push. Needs `docker login`
+# for the registry.
+[doc('Build and push <tag> and :latest.')]
 push TAG:
     docker build -f {{DOCKERFILE}} {{_TARGET_FLAG}} -t {{_REF}}:{{TAG}} -t {{_REF}}:latest .
     docker push {{_REF}}:{{TAG}}
