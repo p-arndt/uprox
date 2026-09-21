@@ -46,7 +46,8 @@ describe('error envelopes', () => {
 });
 
 describe('v1Query', () => {
-	const q = (s: string) => v1Query(new URL(`https://x/openai/deployments/d/audio/transcriptions${s}`));
+	const q = (s: string) =>
+		v1Query(new URL(`https://x/openai/deployments/d/audio/transcriptions${s}`));
 
 	it('drops dated api-versions the v1 upstream rejects', () => {
 		expect(q('?api-version=2025-03-01-preview')).toBe('');
@@ -62,11 +63,18 @@ describe('v1Query', () => {
 
 describe('multipartUpstreamUrl', () => {
 	const azure = 'https://res.openai.azure.com/openai/v1';
-	const u = (qs = '') => new URL(`https://gw/openai/deployments/gpt-4o-transcribe/audio/transcriptions${qs}`);
+	const u = (qs = '') =>
+		new URL(`https://gw/openai/deployments/gpt-4o-transcribe/audio/transcriptions${qs}`);
 
 	it('sends Azure audio to the dated deployment route with the client version', () => {
 		expect(
-			multipartUpstreamUrl(PROVIDERS.azure, azure, 'gpt-4o-transcribe', '/audio/transcriptions', u('?api-version=2025-04-01-preview'))
+			multipartUpstreamUrl(
+				PROVIDERS.azure,
+				azure,
+				'gpt-4o-transcribe',
+				'/audio/transcriptions',
+				u('?api-version=2025-04-01-preview')
+			)
 		).toBe(
 			'https://res.openai.azure.com/openai/deployments/gpt-4o-transcribe/audio/transcriptions?api-version=2025-04-01-preview'
 		);
@@ -83,15 +91,29 @@ describe('multipartUpstreamUrl', () => {
 	});
 
 	it('rejects a model name unsafe for the URL path', () => {
-		expect(multipartUpstreamUrl(PROVIDERS.azure, azure, '../x', '/audio/transcriptions', u())).toBeNull();
+		expect(
+			multipartUpstreamUrl(PROVIDERS.azure, azure, '../x', '/audio/transcriptions', u())
+		).toBeNull();
 	});
 
 	it('keeps non-audio Azure and other providers on the v1 base url', () => {
 		expect(
-			multipartUpstreamUrl(PROVIDERS.azure, azure, 'gpt-image-1', '/images/edits', u('?api-version=2025-03-01-preview'))
+			multipartUpstreamUrl(
+				PROVIDERS.azure,
+				azure,
+				'gpt-image-1',
+				'/images/edits',
+				u('?api-version=2025-03-01-preview')
+			)
 		).toBe(`${azure}/images/edits`);
 		expect(
-			multipartUpstreamUrl(PROVIDERS.openai, 'https://api.openai.com/v1', 'whisper-1', '/audio/transcriptions', u())
+			multipartUpstreamUrl(
+				PROVIDERS.openai,
+				'https://api.openai.com/v1',
+				'whisper-1',
+				'/audio/transcriptions',
+				u()
+			)
 		).toBe('https://api.openai.com/v1/audio/transcriptions');
 	});
 });
