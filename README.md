@@ -145,7 +145,10 @@ for your uprox base URL and its `AZURE_OPENAI_API_KEY` for an `uprox_live_…` t
 | `GET  /openai/models`                                                       | Azure model listing                                   |
 | `POST /openai/v1/chat/completions` (and `/embeddings`, …)                   | newer Azure OpenAI v1 surface (`api_version=preview`) |
 
-The `api-version` query string is accepted and ignored. Model routing is identical
+Upstream, uprox talks Azure's v1 surface, so a dated `api-version` is dropped —
+except for audio transcriptions, which v1 doesn't serve: those go to Azure's
+`/openai/deployments/{model}/audio/transcriptions` with the client's dated
+`api-version` (default `2025-03-01-preview`). Model routing is identical
 to `/v1/*` — the deployment name acts as the model id, and uprox proxies to Azure
 when your org has Azure credentials configured (Azure accepts arbitrary deployment
 names; see provider settings).

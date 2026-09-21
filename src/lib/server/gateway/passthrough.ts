@@ -8,7 +8,7 @@ import { isRecord } from '$lib/server/json';
 import { gatewayError, geminiNativeError } from './envelope';
 import type { GatewayAuth } from './authenticate';
 import { loadProviderCreds } from './credentials';
-import { queryWithoutKey, SAFE_MODEL_NAME } from './pipeline';
+import { queryWithoutKey, SAFE_MODEL_NAME, v1Query } from './pipeline';
 
 function modelNotFound(model: string): Response {
 	return geminiNativeError(404, `Model "${model}" is not available`, 'NOT_FOUND');
@@ -168,8 +168,8 @@ export interface RawProxyOptions {
  * as the JSON path, but model routing, policy by-model, caching, budget
  * estimation, and rate limiting are skipped — there's no model to scope by.
  *
- * Query strings (e.g. Azure's `?api-version=…`) are forwarded as-is so the
- * upstream sees the version the client specified.
+ * Query strings are forwarded, except dated Azure `api-version`s, which the v1
+ * upstream rejects (see v1Query).
  */
 export async function proxyRawUpstream(
 	event: RequestEvent,
@@ -241,8 +241,8 @@ export async function proxyRawUpstream(
 		);
 	}
 
-	// Forward the original query string (api-version etc.) verbatim.
-	const upstreamUrl = `${baseUrl}${path}${event.url.search}`;
+	// Forward the original query string, minus dated api-versions (see v1Query).
+	const upstreamUrl = `${baseUrl}${path}${v1Query(event.url)}`;
 
 	// Build upstream headers: keep the client's content-type so multipart
 	// boundaries survive, drop hop-by-hop and host headers, override auth.

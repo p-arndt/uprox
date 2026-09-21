@@ -335,9 +335,12 @@ export async function proxyMultipartToProvider(
 	const grant = await acquireUpstream(ctx, provider);
 	if (grant instanceof Response) return grant;
 
-	// Forward the query string (Azure's ?api-version=… etc.) verbatim. Do NOT set
-	// content-type: fetch derives the multipart boundary from the FormData body.
-	const upstreamUrl = `${grant.baseUrl}${path}${event.url.search}`;
+	// Do NOT set content-type: fetch derives the multipart boundary from the FormData body.
+	const upstreamUrl = multipartUpstreamUrl(provider, grant.baseUrl, model, path, event.url);
+	if (!upstreamUrl) {
+		grant.release();
+		return ctx.envelope.error(400, 'Invalid model name', 'invalid_request');
+	}
 	const fetched = await fetchUpstream(ctx, provider, grant, upstreamUrl, {
 		method: 'POST',
 		headers: authHeaders(provider, grant.apiKey),
@@ -393,6 +396,54 @@ export function queryWithoutKey(url: URL): string {
 	search.delete('key');
 	const qs = search.toString();
 	return qs ? `?${qs}` : '';
+}
+
+/**
+ * The request's query string for an upstream on the v1 surface (Azure's base url
+ * always ends in `/openai/v1`, see resolveBaseUrl). Clients on the dated Azure
+ * routes (`/openai/deployments/…?api-version=2025-03-01-preview`) send a dated
+ * version, which v1 rejects with 400 "API version not supported" — it only takes
+ * `preview`/`latest`. Drop dated ones, forward the rest. Returns '' or `?…`.
+ */
+export function v1Query(url: URL): string {
+	const search = new URLSearchParams(url.search);
+	const version = search.get('api-version');
+	if (version !== null && version !== 'preview' && version !== 'latest') {
+		search.delete('api-version');
+	}
+	const qs = search.toString();
+	return qs ? `?${qs}` : '';
+}
+
+/** Default dated version for Azure deployment routes: the first with gpt-4o-transcribe. */
+export const AZURE_AUDIO_API_VERSION = '2025-03-01-preview';
+
+/**
+ * Upstream URL for a multipart request, or null for a model name that isn't safe
+ * in a URL path. Azure's v1 surface doesn't serve `audio/transcriptions` (404
+ * DeploymentNotFound for a deployment the dated route transcribes fine), so Azure
+ * audio goes to `/openai/deployments/{model}/…?api-version=…` — the client's
+ * dated version when it sent one, else {@link AZURE_AUDIO_API_VERSION}. Everything
+ * else goes to the v1 base url with {@link v1Query}.
+ */
+export function multipartUpstreamUrl(
+	provider: ProviderDef,
+	baseUrl: string,
+	model: string,
+	path: string,
+	url: URL
+): string | null {
+	if (provider.id !== 'azure' || !path.startsWith('/audio/')) {
+		return `${baseUrl}${path}${v1Query(url)}`;
+	}
+	if (!SAFE_MODEL_NAME.test(model)) return null;
+	const search = new URLSearchParams(url.search);
+	const version = search.get('api-version');
+	if (!version || version === 'preview' || version === 'latest') {
+		search.set('api-version', AZURE_AUDIO_API_VERSION);
+	}
+	const root = baseUrl.replace(/\/openai\/v1$/, '');
+	return `${root}/openai/deployments/${model}${path}?${search}`;
 }
 
 /**
