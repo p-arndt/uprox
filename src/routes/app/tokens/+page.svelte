@@ -77,7 +77,7 @@
 <PageShell width="default">
 	<PageHeader
 		title="Machine Tokens"
-		description="Opaque, hashed-at-rest tokens your services use to authenticate to the gateway."
+		description="Opaque bearer tokens your services use to authenticate to the gateway. Stored as a hash, plus an encrypted copy only if re-copying is allowed."
 	>
 		{#snippet action()}
 			{#if canManage}
@@ -137,7 +137,7 @@
 						<Table.Head>Token</Table.Head>
 						<Table.Head>Service</Table.Head>
 						<Table.Head>Scopes</Table.Head>
-						<Table.Head>Policy / Models</Table.Head>
+						<Table.Head>Preset / Models</Table.Head>
 						<Table.Head>Last used</Table.Head>
 						<Table.Head>Status</Table.Head>
 						<Table.Head class="w-10"></Table.Head>
@@ -175,5 +175,5 @@
 	policies={data.policies}
 	providers={data.providers}
 	services={data.services}
-	message={form?.message}
+	message={form?.action === 'update' ? form.message : undefined}
 />

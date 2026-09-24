@@ -65,7 +65,11 @@
 	<Dialog.Content class="max-h-[88vh] overflow-y-auto sm:max-w-lg">
 		<Dialog.Header>
 			<Dialog.Title>Create machine token</Dialog.Title>
-			<Dialog.Description>The secret is shown once — store it safely.</Dialog.Description>
+			<Dialog.Description>
+				{recopyable
+					? 'The secret is stored encrypted, so you can reveal and copy it again later.'
+					: 'The secret is shown once — store it safely.'}
+			</Dialog.Description>
 		</Dialog.Header>
 		<TokenForm
 			action="?/create"

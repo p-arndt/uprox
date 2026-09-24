@@ -49,7 +49,7 @@ export const actions: Actions = {
 		// blank/absent = let createToken drop the token into the Default service
 		const serviceId = data.get('serviceId')?.toString() || undefined;
 		const name = data.get('name')?.toString().trim();
-		if (!name) return fail(400, { message: 'Name is required' });
+		if (!name) return fail(400, { action: 'create' as const, message: 'Name is required' });
 
 		const scopes = data.getAll('scopes').map((s) => s.toString());
 		const allowedModels = splitList(data.get('allowedModels'));
@@ -75,7 +75,10 @@ export const actions: Actions = {
 			// shown immediately; recoverable later only if recopyable was set
 			return { created: { name, plaintext, recopyable } };
 		} catch (err) {
-			return fail(400, { message: err instanceof Error ? err.message : 'Failed to create token' });
+			return fail(400, {
+				action: 'create' as const,
+				message: err instanceof Error ? err.message : 'Failed to create token'
+			});
 		}
 	},
 	reveal: async (event) => {
@@ -92,8 +95,8 @@ export const actions: Actions = {
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
 		const name = data.get('name')?.toString().trim();
-		if (!id) return fail(400, { message: 'Missing token id' });
-		if (!name) return fail(400, { message: 'Name is required' });
+		if (!id) return fail(400, { action: 'update' as const, message: 'Missing token id' });
+		if (!name) return fail(400, { action: 'update' as const, message: 'Name is required' });
 
 		// absent = the picker wasn't rendered, so keep the service; blank = the
 		// Default service didn't exist when the form loaded, so resolve it now
