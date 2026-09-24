@@ -6,6 +6,8 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import FormError from '$lib/components/form/form-error.svelte';
 	import InlineLimitsFields from '$lib/features/policies/components/inline-limits-fields.svelte';
 	import FieldLabel from '$lib/components/form/field-label.svelte';
 	import SelectField from '$lib/components/form/select-field.svelte';
@@ -16,6 +18,7 @@
 		type InstanceDefaults,
 		type PresetLayerRow
 	} from '$lib/features/policies/effective-config';
+	import { SERVICE_TYPE_OPTIONS } from './service-display';
 
 	export interface ServiceFormValues extends InlineLimitValues {
 		id?: string;
@@ -37,6 +40,7 @@
 		providers,
 		secretOptions = [],
 		defaults,
+		message,
 		resetOnSuccess = false
 	}: {
 		action: string;
@@ -56,6 +60,8 @@
 		}[];
 		/** instance defaults; omitted = blank fields show a bare "inherit" */
 		defaults?: InstanceDefaults;
+		/** the server's error for this form's last submit, shown above the submit button */
+		message?: string | null;
 		resetOnSuccess?: boolean;
 	} = $props();
 
@@ -70,11 +76,7 @@
 	// follows the preset select live, so switching presets updates the placeholders
 	const inherited = $derived(defaults && inheritedForServiceForm({ policyId, policies, defaults }));
 
-	const typeOptions = [
-		{ value: 'app', label: 'App' },
-		{ value: 'agent', label: 'Agent' },
-		{ value: 'workload', label: 'Workload' }
-	];
+	let pending = $state(false);
 	const secretSelectOptions = $derived([
 		{ value: '', label: 'Automatic (default key)' },
 		...secretOptions.map((s) => ({
@@ -88,9 +90,16 @@
 	method="post"
 	{action}
 	class="space-y-4"
-	use:enhance={() =>
-		async ({ update }) =>
-			update({ reset: resetOnSuccess })}
+	use:enhance={() => {
+		pending = true;
+		return async ({ update }) => {
+			try {
+				await update({ reset: resetOnSuccess });
+			} finally {
+				pending = false;
+			}
+		};
+	}}
 >
 	{#if values.id}
 		<input type="hidden" name="id" value={values.id} />
@@ -101,10 +110,10 @@
 		<Input id={id('name')} name="name" placeholder="support-agent" value={values.name} required />
 	</div>
 
-	<div class="grid grid-cols-2 gap-4">
+	<div class="grid grid-cols-1 gap-4 sm:grid-cols-[10rem_1fr]">
 		<div class="space-y-2">
 			<Label for={id('type')}>Type</Label>
-			<SelectField id={id('type')} name="type" bind:value={type} options={typeOptions} />
+			<SelectField id={id('type')} name="type" bind:value={type} options={SERVICE_TYPE_OPTIONS} />
 		</div>
 		<div class="space-y-2">
 			<Label for={id('description')}>Description</Label>
@@ -117,6 +126,19 @@
 		</div>
 	</div>
 
+	<div class="space-y-2">
+		<Label for={id('policyId')}>Preset</Label>
+		<SelectField
+			id={id('policyId')}
+			name="policyId"
+			bind:value={policyId}
+			options={presetOptions(policies)}
+		/>
+		<p class="text-xs text-muted-foreground">
+			A reusable baseline. The fields below override or narrow it for this service.
+		</p>
+	</div>
+
 	<Separator />
 
 	<InlineLimitsFields
@@ -126,7 +148,6 @@
 		idPrefix={id('inline')}
 		scope="service"
 		extraAccessActive={!!values.providerSecretId}
-		extraAdvancedActive={!!values.policyId}
 	>
 		{#snippet accessExtra()}
 			{#if secretOptions.length > 0}
@@ -145,24 +166,14 @@
 				</div>
 			{/if}
 		{/snippet}
-		{#snippet advanced()}
-			<div class="space-y-2">
-				<FieldLabel
-					for={id('policyId')}
-					label="Preset"
-					hint="Optional reusable baseline. The other fields override it field-by-field."
-				/>
-				<SelectField
-					id={id('policyId')}
-					name="policyId"
-					bind:value={policyId}
-					options={presetOptions(policies)}
-				/>
-			</div>
-		{/snippet}
 	</InlineLimitsFields>
 
+	<FormError {message} />
+
 	<Dialog.Footer>
-		<Button type="submit">{submitLabel}</Button>
+		<Button type="submit" disabled={pending}>
+			{#if pending}<Spinner />{/if}
+			{submitLabel}
+		</Button>
 	</Dialog.Footer>
 </form>

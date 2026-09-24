@@ -97,15 +97,18 @@ export const actions: Actions = {
 		await requirePermission(event, 'services:manage');
 		const data = await event.request.formData();
 		const name = data.get('name')?.toString().trim();
-		if (!name) return fail(400, { message: 'Name is required' });
+		if (!name) return fail(400, { action: 'update', message: 'Name is required' });
 		if (await serviceNameTaken(name, event.params.id))
-			return fail(409, { message: SERVICE_NAME_TAKEN });
+			return fail(409, { action: 'update', message: SERVICE_NAME_TAKEN });
 		await updateService(event.params.id, { ...serviceFromForm(data), name });
-		return { success: true };
+		return { action: 'update', success: true };
 	},
 	delete: async (event) => {
 		await requirePermission(event, 'services:manage');
-		await deleteService(event.params.id);
-		redirect(303, '/app/services');
+		const service = await getService(event.params.id);
+		if (!service) return fail(404, { action: 'delete', message: 'Service not found' });
+		await deleteService(service.id);
+		// the list page reads this once to confirm the deletion, then drops it from the URL
+		redirect(303, `/app/services?deleted=${encodeURIComponent(service.name)}`);
 	}
 };
