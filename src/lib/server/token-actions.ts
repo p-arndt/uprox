@@ -4,7 +4,7 @@
  */
 import { fail, type RequestEvent } from '@sveltejs/kit';
 import { requirePermission } from '$lib/server/org';
-import { deleteToken, revokeToken, updateToken } from '$lib/server/tokens-admin';
+import { deleteToken, revealToken, revokeToken, updateToken } from '$lib/server/tokens-admin';
 import { getOrCreateDefaultService } from '$lib/server/services';
 import { inlineFromForm, splitList } from '$lib/server/parse-config';
 
@@ -75,19 +75,34 @@ export async function updateTokenAction(event: RequestEvent, routeId?: string) {
 			message: err instanceof Error ? err.message : 'Failed to update token'
 		});
 	}
-	return { success: true };
+	return { action: 'update' as const, success: true };
+}
+
+export async function revealTokenAction(event: RequestEvent, routeId?: string) {
+	await requirePermission(event, 'tokens:manage');
+	const id = targetId(await event.request.formData(), routeId);
+	if (!id) return fail(400, { action: 'reveal' as const, message: 'Missing token id' });
+	const revealed = await revealToken(id);
+	if (!revealed) {
+		return fail(400, { action: 'reveal' as const, message: 'This token cannot be re-copied' });
+	}
+	return { action: 'reveal' as const, revealed };
 }
 
 export async function revokeTokenAction(event: RequestEvent, routeId?: string) {
 	await requirePermission(event, 'tokens:manage');
 	const id = targetId(await event.request.formData(), routeId);
-	if (id) await revokeToken(id);
-	return { success: true };
+	if (!id) return fail(400, { action: 'revoke' as const, message: 'Missing token id' });
+	const row = await revokeToken(id);
+	if (!row) return fail(404, { action: 'revoke' as const, message: 'Token not found' });
+	return { action: 'revoke' as const, success: true, name: row.name };
 }
 
 export async function deleteTokenAction(event: RequestEvent, routeId?: string) {
 	await requirePermission(event, 'tokens:manage');
 	const id = targetId(await event.request.formData(), routeId);
-	if (id) await deleteToken(id);
-	return { success: true };
+	if (!id) return fail(400, { action: 'delete' as const, message: 'Missing token id' });
+	const row = await deleteToken(id);
+	if (!row) return fail(404, { action: 'delete' as const, message: 'Token not found' });
+	return { action: 'delete' as const, success: true, name: row.name };
 }

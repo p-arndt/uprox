@@ -1,7 +1,7 @@
-import { error, fail, redirect } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
-import { requireOrg, requirePermission } from '$lib/server/org';
-import { getToken, revealToken } from '$lib/server/tokens-admin';
+import { requireOrg } from '$lib/server/org';
+import { getToken } from '$lib/server/tokens-admin';
 import { loadUsageAnalysis } from '$lib/server/usage-analysis';
 import { eq } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
@@ -13,7 +13,12 @@ import { PROVIDERS } from '$lib/server/providers';
 import { listServices } from '$lib/server/services';
 import { listPolicies } from '$lib/server/policies';
 import { inlineLimitsFromRow } from '$lib/features/policies/inline-limits';
-import { deleteTokenAction, revokeTokenAction, updateTokenAction } from '$lib/server/token-actions';
+import {
+	deleteTokenAction,
+	revealTokenAction,
+	revokeTokenAction,
+	updateTokenAction
+} from '$lib/server/token-actions';
 
 /**
  * The token's layers of the config cascade (same joins as resolveToken), so the
@@ -106,16 +111,13 @@ export const load: PageServerLoad = async (event) => {
 };
 
 export const actions: Actions = {
-	reveal: async (event) => {
-		await requirePermission(event, 'tokens:manage');
-		const revealed = await revealToken(event.params.id);
-		if (!revealed) return fail(400, { message: 'This token cannot be re-copied' });
-		return { revealed };
-	},
+	reveal: (event) => revealTokenAction(event, event.params.id),
 	update: (event) => updateTokenAction(event, event.params.id),
 	revoke: (event) => revokeTokenAction(event, event.params.id),
 	delete: async (event) => {
-		await deleteTokenAction(event, event.params.id);
-		redirect(303, '/app/tokens');
+		const result = await deleteTokenAction(event, event.params.id);
+		if (!('success' in result)) return result;
+		// this page is gone, so the list shows the confirmation (see ?deleted= there)
+		redirect(303, `/app/tokens?deleted=${encodeURIComponent(result.name)}`);
 	}
 };

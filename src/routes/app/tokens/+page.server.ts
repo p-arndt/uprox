@@ -1,10 +1,11 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
-import { listTokens, createToken, revealToken } from '$lib/server/tokens-admin';
+import { listTokens, createToken } from '$lib/server/tokens-admin';
 import {
 	deleteTokenAction,
 	expiryFromForm,
+	revealTokenAction,
 	revokeTokenAction,
 	updateTokenAction
 } from '$lib/server/token-actions';
@@ -77,7 +78,7 @@ export const actions: Actions = {
 				...inlineFromForm(data)
 			});
 			// shown immediately; recoverable later only if recopyable was set
-			return { created: { name, plaintext, recopyable } };
+			return { action: 'create' as const, created: { name, plaintext, recopyable } };
 		} catch (err) {
 			return fail(400, {
 				action: 'create' as const,
@@ -85,15 +86,7 @@ export const actions: Actions = {
 			});
 		}
 	},
-	reveal: async (event) => {
-		await requirePermission(event, 'tokens:manage');
-		const data = await event.request.formData();
-		const id = data.get('id')?.toString();
-		if (!id) return fail(400, { message: 'Missing token id' });
-		const revealed = await revealToken(id);
-		if (!revealed) return fail(400, { message: 'This token cannot be re-copied' });
-		return { revealed };
-	},
+	reveal: (event) => revealTokenAction(event),
 	update: (event) => updateTokenAction(event),
 	revoke: (event) => revokeTokenAction(event),
 	delete: (event) => deleteTokenAction(event)

@@ -108,3 +108,12 @@ export const TOKEN_SORTERS: Record<string, (a: Token, b: Token) => number> = {
 		STATUS_ORDER.indexOf(tokenStatus(a).label) - STATUS_ORDER.indexOf(tokenStatus(b).label),
 	created: (a, b) => time(a.createdAt) - time(b.createdAt)
 };
+
+/**
+ * Revoked tokens hidden by the default "Not revoked" filter. The filter is on
+ * without the user choosing it, so the counts must say why rows are missing.
+ */
+export function hiddenRevokedCount(tokens: Token[], filter: TokenStatusFilter): number {
+	if (filter !== 'current') return 0;
+	return tokens.filter((t) => tokenStatus(t).label === 'revoked').length;
+}

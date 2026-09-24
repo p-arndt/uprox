@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Token } from '../../src/lib/features/tokens/tokens';
 import {
 	groupTokens,
+	hiddenRevokedCount,
 	matchesQuery,
 	matchesStatus,
 	TOKEN_SORTERS
@@ -124,5 +125,19 @@ describe('TOKEN_SORTERS', () => {
 		const b = token({ name: 'b', serviceName: 'S' });
 		const a = token({ name: 'a', serviceName: 'S' });
 		expect([b, a].sort(TOKEN_SORTERS.service).map((t) => t.name)).toEqual(['a', 'b']);
+	});
+});
+
+describe('hiddenRevokedCount', () => {
+	const all = [active, expired, revoked, token({ name: 'revoked2', revokedAt: past })];
+
+	it('counts the revoked tokens the default filter hides', () => {
+		expect(hiddenRevokedCount(all, 'current')).toBe(2);
+	});
+
+	it('reports nothing once the user picked a status filter themselves', () => {
+		expect(hiddenRevokedCount(all, 'all')).toBe(0);
+		expect(hiddenRevokedCount(all, 'revoked')).toBe(0);
+		expect(hiddenRevokedCount(all, 'active')).toBe(0);
 	});
 });

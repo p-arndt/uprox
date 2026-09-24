@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import { invalidateAll } from '$app/navigation';
+	import { toast } from 'svelte-sonner';
+	import { invalidateAll, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
+	import type { ResolvedPathname } from '$app/types';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -18,12 +20,19 @@
 	} from '$lib/features/tokens/components/edit-token-dialog.svelte';
 	import SecretDialog from '$lib/features/tokens/components/secret-dialog.svelte';
 	import { tokenStats, type RevealedSecret, type Token } from '$lib/features/tokens/tokens';
+	import {
+		actionToast,
+		dialogMessage,
+		withoutSearchParam,
+		type TokenAction
+	} from '$lib/features/tokens/action-feedback';
 	import { inlineLimitsFromRow } from '$lib/features/policies/inline-limits';
 	import {
 		GROUPING_OPTIONS,
 		STATUS_FILTER_OPTIONS,
 		TOKEN_SORTERS,
 		groupTokens,
+		hiddenRevokedCount,
 		matchesQuery,
 		matchesStatus,
 		type TokenGrouping,
@@ -42,31 +51,71 @@
 	// forever" and "you can reveal this again later".
 	let secret = $state<RevealedSecret | null>(null);
 	let editing = $state<EditTokenValues | null>(null);
+	// the service a ?service= link asked for; held here because the param itself
+	// is dropped from the URL right away
+	let presetServiceId = $state<string | null>(null);
 
 	const canManage = $derived(can(data.role, 'tokens:manage', data.memberPermissions));
 	const canManageServices = $derived(can(data.role, 'services:manage', data.memberPermissions));
 
+	// One-shot params: consumed once, then removed so a reload doesn't replay
+	// them. Deferred because replaceState throws until the router has started,
+	// which is after the first effects run on a full page load.
+	function dropSearchParam(key: string) {
+		const { pathname, search } = withoutSearchParam(page.url, key);
+		// page.url already carries the base path, so this is resolved as-is
+		const href = `${pathname}${search}` as ResolvedPathname;
+		setTimeout(() => replaceState(href, page.state));
+	}
+
 	// ?service=<id> (linked from a service page) opens the create dialog on that service
-	const requestedService = $derived(page.url.searchParams.get('service'));
 	$effect(() => {
-		if (requestedService && untrack(() => canManage)) createOpen = true;
+		const requested = page.url.searchParams.get('service');
+		if (!requested) return;
+		untrack(() => {
+			if (canManage) {
+				presetServiceId = requested;
+				createOpen = true;
+			}
+			dropSearchParam('service');
+		});
 	});
 
-	// Surface action results: a fresh secret from create is revealed once (and the
-	// create dialog closes), a re-copy reveal shows the stored secret again, and a
-	// successful update closes the edit dialog and refreshes the list.
+	// ?deleted=<name>: the token detail page redirects here after deleting
 	$effect(() => {
-		if (form?.created) {
-			secret = form.created;
-			createOpen = false;
-		}
-		if (form?.revealed) {
-			secret = { ...form.revealed, recopyable: true };
-		}
-		if (form?.success) {
-			editing = null;
-			invalidateAll();
-		}
+		const deleted = page.url.searchParams.get('deleted');
+		if (!deleted) return;
+		untrack(() => {
+			toast.success(`Token “${deleted}” deleted`);
+			dropSearchParam('deleted');
+		});
+	});
+
+	/** The action whose dialog is open shows its own errors inline. */
+	function openDialogAction(): TokenAction | null {
+		if (createOpen) return 'create';
+		if (editing) return 'update';
+		return null;
+	}
+
+	// Surface action results: a fresh secret from create is revealed once (and the
+	// create dialog closes), a re-copy reveal shows the stored secret again, a
+	// successful update closes the edit dialog, and everything else is a toast.
+	$effect(() => {
+		const result = form;
+		untrack(() => {
+			const t = actionToast(result, openDialogAction());
+			if (t) toast[t.kind](t.message);
+			if (result?.created) {
+				secret = result.created;
+				createOpen = false;
+				presetServiceId = null;
+			}
+			if (result?.revealed) {
+				secret = { ...result.revealed, recopyable: true };
+			}
+			if (result?.action === 'update' && result.success) editing = null;
+		});
 	});
 
 	const stats = $derived(tokenStats(data.tokens));
@@ -107,14 +156,16 @@
 	}
 
 	const COLUMNS = [
-		{ key: 'name', label: 'Name' },
-		{ key: null, label: 'Token' },
-		{ key: 'service', label: 'Service' },
-		{ key: null, label: 'Scopes' },
-		{ key: null, label: 'Preset / Models' },
-		{ key: 'lastUsed', label: 'Last used' },
-		{ key: 'status', label: 'Status' }
+		{ key: 'name', label: 'Name', class: '' },
+		{ key: null, label: 'Token', class: 'hidden md:table-cell' },
+		{ key: 'service', label: 'Service', class: '' },
+		{ key: null, label: 'Endpoint access', class: '' },
+		{ key: null, label: 'Preset / Models', class: 'hidden md:table-cell' },
+		{ key: 'lastUsed', label: 'Last used', class: 'hidden md:table-cell' },
+		{ key: 'status', label: 'Status', class: '' }
 	] as const;
+
+	const revokedHidden = $derived(hiddenRevokedCount(data.tokens, statusFilter));
 
 	function startEdit(t: Token) {
 		editing = {
@@ -138,14 +189,21 @@
 		{#snippet action()}
 			{#if canManage}
 				<CreateTokenDialog
-					bind:open={createOpen}
+					bind:open={
+						() => createOpen,
+						(v) => {
+							createOpen = v;
+							if (!v) presetServiceId = null;
+						}
+					}
+					serviceId={presetServiceId}
 					services={data.services}
 					canCreateService={canManageServices}
 					defaults={data.defaults}
 					policies={data.policies}
 					providers={data.providers}
 					recopyDefault={data.recopyDefault}
-					message={form?.message}
+					message={dialogMessage(form, 'create')}
 				/>
 			{/if}
 		{/snippet}
@@ -155,8 +213,14 @@
 		<EmptyState
 			icon={KeyRound}
 			title="No tokens yet"
-			description="Issue a token to start calling the gateway. New tokens land in the Default service — organise them into services later."
-		/>
+			description={canManage
+				? 'Issue a token to start calling the gateway. New tokens land in the Default service — organise them into services later.'
+				: 'Only owners and admins can issue tokens here — ask one of them for a token.'}
+		>
+			{#if canManage}
+				<Button onclick={() => (createOpen = true)}>+ New token</Button>
+			{/if}
+		</EmptyState>
 	{:else}
 		<div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
 			<StatCard label="Total" value={stats.total} />
@@ -167,7 +231,7 @@
 				</p>
 			</StatCard>
 			<StatCard
-				label="Inactive"
+				label="Expired / revoked"
 				value={stats.inactive}
 				valueClass="text-2xl text-muted-foreground"
 			/>
@@ -223,6 +287,17 @@
 		<p class="text-xs text-muted-foreground">
 			Showing <span class="font-medium text-foreground tabular-nums">{table.visible.length}</span>
 			of {data.tokens.length} tokens
+			{#if revokedHidden > 0}
+				· {revokedHidden} revoked hidden
+				<Button
+					variant="link"
+					size="sm"
+					class="h-auto p-0 text-xs"
+					onclick={() => (statusFilter = 'all')}
+				>
+					Show all
+				</Button>
+			{/if}
 		</p>
 
 		<div class="overflow-hidden rounded-xl border">
@@ -237,11 +312,11 @@
 										label={c.label}
 										active={table.sortKey === key}
 										dir={table.sortDir}
-										class="h-12 px-3 whitespace-nowrap"
+										class="h-12 px-3 whitespace-nowrap {c.class}"
 										onclick={() => table.toggleSort(key)}
 									/>
 								{:else}
-									<Table.Head>{c.label}</Table.Head>
+									<Table.Head class={c.class}>{c.label}</Table.Head>
 								{/if}
 							{/each}
 							<Table.Head class="w-10"></Table.Head>
@@ -303,5 +378,5 @@
 	services={data.services}
 	canCreateService={canManageServices}
 	defaults={data.defaults}
-	message={form?.action === 'update' ? form.message : undefined}
+	message={dialogMessage(form, 'update')}
 />
