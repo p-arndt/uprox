@@ -93,7 +93,7 @@ export function testDb() {
 		port: Number(process.env.POSTGRES_PORT ?? 5432),
 		user: process.env.POSTGRES_USER ?? 'uprox',
 		password: process.env.POSTGRES_PASSWORD ?? 'uprox',
-		database: 'uprox_test',
+		database: process.env.E2E_DB ?? 'uprox_test',
 		max: 1,
 		onnotice: () => {}
 	});

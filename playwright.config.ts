@@ -10,7 +10,9 @@ import { defineConfig } from '@playwright/test';
  * ORIGIN must match the real origin or better-auth rejects the sign-in/up POSTs
  * as cross-origin.
  */
-const PORT = 4173;
+// E2E_PORT / E2E_DB let several runs (e.g. parallel worktrees) coexist on one machine.
+const PORT = Number(process.env.E2E_PORT ?? 4173);
+const TEST_DB = process.env.E2E_DB ?? 'uprox_test';
 const ORIGIN = `http://localhost:${PORT}`;
 
 export default defineConfig({
@@ -25,13 +27,14 @@ export default defineConfig({
 		trace: 'on-first-retry'
 	},
 	webServer: {
-		command: 'pnpm build && tsx --env-file-if-exists=.env tests/e2e/prepare-db.ts && pnpm preview',
+		command: `pnpm build && tsx --env-file-if-exists=.env tests/e2e/prepare-db.ts && pnpm preview --port ${PORT} --strictPort`,
 		port: PORT,
 		reuseExistingServer: !process.env.CI,
 		timeout: 180_000,
 		env: {
 			...process.env,
-			POSTGRES_DB: 'uprox_test',
+			POSTGRES_DB: TEST_DB,
+			E2E_DB: TEST_DB,
 			ORIGIN
 		}
 	}

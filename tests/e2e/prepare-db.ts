@@ -14,7 +14,7 @@
  */
 import postgres from 'postgres';
 
-const TEST_DB = 'uprox_test';
+const TEST_DB = process.env.E2E_DB ?? 'uprox_test';
 
 async function main() {
 	const admin = postgres({
