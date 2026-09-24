@@ -5,6 +5,7 @@
 import type { createToken, updateToken } from '$lib/server/tokens-admin';
 import {
 	definedOnly,
+	optionalBoolean,
 	optionalDate,
 	optionalStringArray,
 	optionalUuid,
@@ -13,6 +14,7 @@ import {
 	type JsonBody
 } from '$lib/server/api/fields';
 import { parseInlineConfigBody } from '$lib/server/api/inline-config-body';
+import { badRequest } from '$lib/server/api/errors';
 
 export type TokenCreateInput = Parameters<typeof createToken>[1];
 export type TokenPatch = Parameters<typeof updateToken>[1];
@@ -30,14 +32,32 @@ export function parseTokenCreate(body: JsonBody): TokenCreateInput {
 	};
 }
 
-/** PATCH /api/tokens/[id]. `policyId: null` and inline `null`s revert to inheriting. */
-export function parseTokenPatch(body: JsonBody): TokenPatch {
+/**
+ * PATCH /api/tokens/[id]. `policyId: null` and inline `null`s revert to inheriting.
+ * `expiresAt: null` removes the expiry; a date must be in the future.
+ * `recopyable` only accepts `false`: the plaintext of a hash-only token is not
+ * kept anywhere, so re-copying can't be switched back on.
+ */
+export function parseTokenPatch(body: JsonBody, now = Date.now()): TokenPatch {
+	const expiresAt = optionalDate(body, 'expiresAt');
+	if (expiresAt && expiresAt.getTime() <= now) {
+		throw badRequest('expiresAt must be in the future', 'expiresAt');
+	}
+	const recopyable = optionalBoolean(body, 'recopyable', { nullable: false });
+	if (recopyable === true) {
+		throw badRequest(
+			"recopyable can only be set to false: a token's secret cannot be stored after creation",
+			'recopyable'
+		);
+	}
 	const patch = definedOnly<TokenPatch>({
 		...parseInlineConfigBody(body),
 		name: body.name === undefined ? undefined : requiredString(body, 'name').trim(),
 		scopes: optionalStringArray(body, 'scopes', { nullable: false }),
 		allowedModels: optionalStringArray(body, 'allowedModels', { nullable: false }),
-		policyId: optionalUuid(body, 'policyId')
+		policyId: optionalUuid(body, 'policyId'),
+		expiresAt,
+		recopyable
 	});
 	requireSomeField(patch);
 	return patch;

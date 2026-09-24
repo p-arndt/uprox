@@ -11,7 +11,7 @@
 	import type { UsageDimension } from '$lib/features/usage/group';
 	import type { DimensionUsageRow } from '$lib/features/usage/types';
 	import { toast } from 'svelte-sonner';
-	import { relativeTime } from '$lib/format';
+	import { formatDateTime, relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import DetailHeader from '$lib/components/layout/detail-header.svelte';
@@ -19,6 +19,14 @@
 	import Copy from '@lucide/svelte/icons/copy';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 	import PageShell from '$lib/components/layout/page-shell.svelte';
+	import ConfirmAction from '$lib/components/form/confirm-action.svelte';
+	import EditTokenDialog, {
+		type EditTokenValues
+	} from '$lib/features/tokens/components/edit-token-dialog.svelte';
+	import { tokenStatus as statusOf } from '$lib/features/tokens/tokens';
+	import Pencil from '@lucide/svelte/icons/pencil';
+	import Ban from '@lucide/svelte/icons/ban';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 
 	let { data, form } = $props();
 
@@ -31,21 +39,36 @@
 
 	// Holds the revealed secret for the copy dialog (re-copyable tokens only).
 	let secret = $state<{ name: string; plaintext: string } | null>(null);
+	let editing = $state<EditTokenValues | null>(null);
 	$effect(() => {
 		if (form?.revealed) secret = form.revealed;
+		if (form?.success) editing = null;
 	});
+
+	function startEdit() {
+		const t = data.token;
+		editing = {
+			id: t.id,
+			name: t.name,
+			serviceId: t.serviceId,
+			scopes: [...t.scopes],
+			policyId: t.policyId ?? '',
+			...data.inlineLimits,
+			expiresAt: t.expiresAt,
+			recopyable: t.recopyable
+		};
+	}
 	async function copy(text: string, msg = 'Copied to clipboard') {
 		await navigator.clipboard.writeText(text);
 		toast.success(msg);
 	}
 
-	// Active / expired / revoked, mirroring the tokens list badge.
-	const tokenStatus = $derived.by(() => {
-		const t = data.token;
-		if (t.revokedAt) return { label: 'revoked', dot: 'bg-red-500' };
-		if (t.expiresAt && new Date(t.expiresAt).getTime() < Date.now())
-			return { label: 'expired', dot: 'bg-amber-500' };
-		return { label: 'active', dot: 'bg-emerald-500', pulse: true };
+	const tokenStatus = $derived(statusOf(data.token));
+
+	const expiryLabel = $derived.by(() => {
+		const at = data.token.expiresAt;
+		if (!at) return 'never expires';
+		return `${new Date(at).getTime() < Date.now() ? 'expired' : 'expires'} ${formatDateTime(at)}`;
 	});
 </script>
 
@@ -97,7 +120,50 @@
 				? (data.token.policyName ?? 'none')
 				: `inherits service preset (${data.token.servicePresetName ?? 'none'})`} · created {relativeTime(
 				data.token.createdAt
-			)} · last used {relativeTime(data.token.lastUsedAt)}
+			)} · last used {relativeTime(data.token.lastUsedAt)} · {expiryLabel}
+		{/snippet}
+		{#snippet action()}
+			{#if canManage}
+				<div class="flex items-center gap-2">
+					{#if !data.token.revokedAt}
+						<Button variant="outline" onclick={startEdit}>
+							<Pencil class="size-4" /> Edit
+						</Button>
+						<ConfirmAction
+							action="?/revoke"
+							title={`Revoke “${data.token.name}”?`}
+							description="Any service still using this token will immediately fail to authenticate. This can't be undone."
+							actionLabel="Revoke token"
+						>
+							{#snippet trigger({ props })}
+								<Button
+									{...props}
+									variant="outline"
+									class="text-muted-foreground hover:text-destructive"
+								>
+									<Ban class="size-4" /> Revoke
+								</Button>
+							{/snippet}
+						</ConfirmAction>
+					{/if}
+					<ConfirmAction
+						action="?/delete"
+						title={`Delete “${data.token.name}”?`}
+						description="This permanently removes the token and its configuration. Audit-log history is kept but no longer linked to this token. This can't be undone."
+						actionLabel="Delete token"
+					>
+						{#snippet trigger({ props })}
+							<Button
+								{...props}
+								variant="outline"
+								class="text-muted-foreground hover:text-destructive"
+							>
+								<Trash2 class="size-4" /> Delete
+							</Button>
+						{/snippet}
+					</ConfirmAction>
+				</div>
+			{/if}
 		{/snippet}
 		{#snippet extra()}
 			<div class="flex flex-wrap gap-1 pt-0.5">
@@ -128,6 +194,15 @@
 
 	<UsageWorkbench analysis={data} {view} {rowLabel} />
 </PageShell>
+
+<EditTokenDialog
+	{editing}
+	onClose={() => (editing = null)}
+	policies={data.policies}
+	providers={data.providers}
+	services={data.services}
+	message={form?.action === 'update' ? form.message : undefined}
+/>
 
 <!-- re-copy reveal: shows the stored secret again for a re-copyable token -->
 <Dialog.Root

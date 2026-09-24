@@ -7,7 +7,8 @@ import { pathId, readJson } from '$lib/server/api/fields';
 import { parseTokenPatch, tokenResponse } from '$lib/server/api/token-body';
 
 // Edit a live token's access controls + inline limits (name, scopes, model
-// allowlist, preset, and any per-token overrides). Revoked tokens are a 404.
+// allowlist, preset, and any per-token overrides), its expiry, and switch off
+// re-copying. Revoked tokens are a 404.
 export const PATCH: RequestHandler = apiHandler(async (event) => {
 	await requirePermission(event, 'tokens:manage');
 	const id = pathId(event.params.id);

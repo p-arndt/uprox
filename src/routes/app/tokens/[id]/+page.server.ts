@@ -1,4 +1,4 @@
-import { error, fail } from '@sveltejs/kit';
+import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
 import { getToken, revealToken } from '$lib/server/tokens-admin';
@@ -10,6 +10,10 @@ import { machineToken, policy, service } from '$lib/server/db/schema';
 import { explainEffectiveConfig } from '$lib/server/effective-config';
 import { getSettings } from '$lib/server/settings';
 import { PROVIDERS } from '$lib/server/providers';
+import { listServices } from '$lib/server/services';
+import { listPolicies } from '$lib/server/policies';
+import { inlineLimitsFromRow } from '$lib/features/policies/inline-limits';
+import { deleteTokenAction, revokeTokenAction, updateTokenAction } from '$lib/server/token-actions';
 
 /**
  * The token's layers of the config cascade (same joins as resolveToken), so the
@@ -33,6 +37,8 @@ async function loadEffectiveSettings(tokenId: string) {
 	if (!row) return null;
 	const instance = await getSettings();
 	return {
+		// the edit dialog prefills from these; the secret columns stay server-side
+		inlineLimits: inlineLimitsFromRow(row.token),
 		servicePresetName: row.servicePolicy?.name ?? null,
 		config: explainEffectiveConfig({
 			token: row.token,
@@ -52,7 +58,11 @@ export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
 	const token = await getToken(event.params.id);
 	if (!token) error(404, 'Token not found');
-	const effective = await loadEffectiveSettings(token.id);
+	const [effective, services, policies] = await Promise.all([
+		loadEffectiveSettings(token.id),
+		listServices(),
+		listPolicies()
+	]);
 	if (!effective) error(404, 'Token not found');
 
 	// Same cost-analysis workbench the org page renders, scoped to this token.
@@ -81,7 +91,11 @@ export const load: PageServerLoad = async (event) => {
 			expiresAt: token.expiresAt,
 			revokedAt: token.revokedAt
 		},
+		inlineLimits: effective.inlineLimits,
 		effectiveConfig: effective.config,
+		services,
+		policies,
+		providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label })),
 		providerLabels: Object.fromEntries(Object.values(PROVIDERS).map((p) => [p.id, p.label])),
 		crumb: token.name,
 		...analysis
@@ -94,5 +108,11 @@ export const actions: Actions = {
 		const revealed = await revealToken(event.params.id);
 		if (!revealed) return fail(400, { message: 'This token cannot be re-copied' });
 		return { revealed };
+	},
+	update: (event) => updateTokenAction(event, event.params.id),
+	revoke: (event) => revokeTokenAction(event, event.params.id),
+	delete: async (event) => {
+		await deleteTokenAction(event, event.params.id);
+		redirect(303, '/app/tokens');
 	}
 };
