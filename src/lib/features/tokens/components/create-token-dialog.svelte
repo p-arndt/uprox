@@ -84,6 +84,7 @@
 		<TokenForm
 			action="?/create"
 			submitLabel="Create token"
+			pendingLabel="Creating…"
 			idPrefix="create"
 			values={createValues}
 			{policies}

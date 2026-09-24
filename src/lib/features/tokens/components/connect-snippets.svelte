@@ -39,6 +39,7 @@
 					variant="ghost"
 					class="absolute top-1.5 right-1.5 size-7"
 					onclick={() => copy(s.code)}
+					aria-label="Copy snippet"
 					title="Copy snippet"
 				>
 					<Copy class="size-3.5" />

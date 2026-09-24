@@ -146,7 +146,9 @@
 			<Command.Root>
 				<Command.Input bind:value={search} placeholder="Search services…" />
 				<Command.List class="max-h-64">
-					<Command.Empty>No service found.</Command.Empty>
+					<Command.Empty>
+						{canCreate ? 'No match — create it below.' : 'No service found.'}
+					</Command.Empty>
 					{#each options as o (o.id)}
 						<Command.Item
 							value="{o.name} {o.id}"
@@ -164,27 +166,29 @@
 							{/if}
 						</Command.Item>
 					{/each}
+					{#if canCreate}
+						<!-- forceMount: the search filter must never hide it, and as an item it
+						     stays reachable with the arrow keys like every other option -->
+						<div class="-mx-1 mt-1 border-t px-1 pt-1">
+							<Command.Item
+								value="__create-service__"
+								forceMount
+								disabled={creating}
+								onSelect={() => {
+									if (canOfferCreate) createService(trimmed);
+									else {
+										newName = '';
+										mode = 'new';
+									}
+								}}
+								class="font-medium"
+							>
+								<Plus class="size-4" />
+								{canOfferCreate ? `Create service “${trimmed}”` : 'New service…'}
+							</Command.Item>
+						</div>
+					{/if}
 				</Command.List>
-				{#if canCreate}
-					<!-- outside Command.List so the search filter never hides it -->
-					<div class="border-t p-1">
-						<button
-							type="button"
-							disabled={creating}
-							onclick={() => {
-								if (canOfferCreate) createService(trimmed);
-								else {
-									newName = '';
-									mode = 'new';
-								}
-							}}
-							class="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm font-medium hover:bg-accent disabled:opacity-50"
-						>
-							<Plus class="size-4" />
-							{canOfferCreate ? `Create service “${trimmed}”` : 'New service…'}
-						</button>
-					</div>
-				{/if}
 				{#if error}
 					<p class="border-t px-3 py-2 text-xs text-destructive">{error}</p>
 				{/if}
