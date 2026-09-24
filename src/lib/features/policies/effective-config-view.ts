@@ -1,8 +1,7 @@
 /**
  * Effective config WITH provenance, plus the pure formatting used to show it.
- * The server resolves it (explainEffectiveConfig in $lib/server/effective-config);
- * this module holds only plain data types and formatters so client components
- * can import it without pulling in server code.
+ * explainEffectiveConfig (in ./effective-config) resolves it; this module holds
+ * only plain data types and formatters.
  */
 import { formatUsd } from '$lib/format';
 
