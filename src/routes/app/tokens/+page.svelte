@@ -13,9 +13,10 @@
 	import StatCard from '$lib/components/layout/stat-card.svelte';
 	import TokenRow from '$lib/features/tokens/components/token-row.svelte';
 	import CreateTokenDialog from '$lib/features/tokens/components/create-token-dialog.svelte';
-	import EditTokenDialog from '$lib/features/tokens/components/edit-token-dialog.svelte';
+	import EditTokenDialog, {
+		type EditTokenValues
+	} from '$lib/features/tokens/components/edit-token-dialog.svelte';
 	import SecretDialog from '$lib/features/tokens/components/secret-dialog.svelte';
-	import { type TokenFormValues } from '$lib/features/tokens/components/token-form.svelte';
 	import { tokenStats, type RevealedSecret, type Token } from '$lib/features/tokens/tokens';
 	import { inlineLimitsFromRow } from '$lib/features/policies/inline-limits';
 	import {
@@ -40,7 +41,7 @@
 	// `recopyable` switches the dialog copy between "stored only as a hash, gone
 	// forever" and "you can reveal this again later".
 	let secret = $state<RevealedSecret | null>(null);
-	let editing = $state<TokenFormValues | null>(null);
+	let editing = $state<EditTokenValues | null>(null);
 
 	const canManage = $derived(can(data.role, 'tokens:manage', data.memberPermissions));
 	const canManageServices = $derived(can(data.role, 'services:manage', data.memberPermissions));
@@ -122,7 +123,9 @@
 			serviceId: t.serviceId,
 			scopes: [...t.scopes],
 			policyId: t.policyId ?? '',
-			...inlineLimitsFromRow(t)
+			...inlineLimitsFromRow(t),
+			expiresAt: t.expiresAt,
+			recopyable: t.recopyable
 		};
 	}
 </script>
@@ -138,6 +141,7 @@
 					bind:open={createOpen}
 					services={data.services}
 					canCreateService={canManageServices}
+					defaults={data.defaults}
 					policies={data.policies}
 					providers={data.providers}
 					recopyDefault={data.recopyDefault}
@@ -298,5 +302,6 @@
 	providers={data.providers}
 	services={data.services}
 	canCreateService={canManageServices}
+	defaults={data.defaults}
 	message={form?.action === 'update' ? form.message : undefined}
 />

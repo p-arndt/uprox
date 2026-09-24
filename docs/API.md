@@ -90,7 +90,8 @@ Active (non-retired) services, newest first.
 | `allowedModels`    | string[], nullable                  | model allowlist (trailing `*` globbing) |
 | inline limits      | see [Inline limits](#inline-limits) |                                         |
 
-Returns `201` with the service row.
+Returns `201` with the service row. Service names are unique (case-insensitive) among live
+services; a taken name is a `409`, on `PATCH` as well.
 
 ### `PATCH /api/services/:id` (`services:manage`)
 
@@ -129,6 +130,10 @@ An unknown or retired `serviceId` is a `400` with `field: "serviceId"`.
 Accepts `name`, `scopes`, `allowedModels`, `policyId` (nullable) and the inline limits. `scopes`
 and `allowedModels` cannot be `null` (send `[]` instead). Returns the updated token row (without
 secret columns). Revoked tokens are a `404`.
+
+- `expiresAt`: ISO date or epoch ms, must be in the future; `null` removes the expiry.
+- `recopyable`: only `false` is accepted. It deletes the stored secret for good, so the token can't
+  be revealed again.
 
 ### `DELETE /api/tokens/:id` (`tokens:manage`)
 

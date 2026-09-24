@@ -223,6 +223,7 @@
 			</Dialog.Header>
 			{#if editOpen}
 				<ServiceForm
+					defaults={data.defaults}
 					action="?/update"
 					submitLabel="Save changes"
 					idPrefix="svc-detail-edit"

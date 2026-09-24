@@ -36,7 +36,13 @@ async function loadEffectiveSettings(tokenId: string) {
 		.limit(1);
 	if (!row) return null;
 	const instance = await getSettings();
+	const defaults = {
+		cacheTtlSeconds: instance.cacheTtlSeconds,
+		dailyBudgetUsd: instance.dailyBudgetUsd ?? 0,
+		monthlyBudgetUsd: instance.monthlyBudgetUsd ?? 0
+	};
 	return {
+		defaults,
 		// the edit dialog prefills from these; the secret columns stay server-side
 		inlineLimits: inlineLimitsFromRow(row.token),
 		servicePresetName: row.servicePolicy?.name ?? null,
@@ -45,11 +51,7 @@ async function loadEffectiveSettings(tokenId: string) {
 			tokenPolicy: row.tokenPolicy,
 			service: row.service,
 			servicePolicy: row.servicePolicy,
-			defaults: {
-				cacheTtlSeconds: instance.cacheTtlSeconds,
-				dailyBudgetUsd: instance.dailyBudgetUsd ?? 0,
-				monthlyBudgetUsd: instance.monthlyBudgetUsd ?? 0
-			}
+			defaults
 		})
 	};
 }
@@ -93,6 +95,7 @@ export const load: PageServerLoad = async (event) => {
 		},
 		inlineLimits: effective.inlineLimits,
 		effectiveConfig: effective.config,
+		defaults: effective.defaults,
 		services,
 		policies,
 		providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label })),

@@ -23,7 +23,8 @@ export const load: PageServerLoad = async (event) => {
 		services: rows.map((s) => ({ ...s, activeTokenCount: activeTokens[s.id] ?? 0 })),
 		policies: options.policies,
 		providerSecrets: options.providerSecrets,
-		providers: options.providers
+		providers: options.providers,
+		defaults: options.defaults
 	};
 };
 

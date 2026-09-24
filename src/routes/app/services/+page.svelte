@@ -78,6 +78,7 @@
 							<Dialog.Description>A service represents one machine identity.</Dialog.Description>
 						</Dialog.Header>
 						<ServiceForm
+							defaults={data.defaults}
 							action="?/create"
 							submitLabel="Create service"
 							idPrefix="svc-create"
@@ -197,6 +198,7 @@
 		{#if editing}
 			{#key editing.id}
 				<ServiceForm
+					defaults={data.defaults}
 					action="?/update"
 					submitLabel="Save changes"
 					idPrefix="svc-edit"

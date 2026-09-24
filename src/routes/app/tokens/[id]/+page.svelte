@@ -201,6 +201,8 @@
 	policies={data.policies}
 	providers={data.providers}
 	services={data.services}
+	canCreateService={can(data.role, 'services:manage', data.memberPermissions)}
+	defaults={data.defaults}
 	message={form?.action === 'update' ? form.message : undefined}
 />
 
