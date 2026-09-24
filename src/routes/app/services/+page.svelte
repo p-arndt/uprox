@@ -11,6 +11,7 @@
 	import ServiceForm, { type ServiceFormValues } from './service-form.svelte';
 	import { emptyInlineLimits, inlineLimitsFromRow } from '$lib/features/policies/inline-limits';
 	import { relativeTime } from '$lib/format';
+	import { deleteServiceDescription } from './service-display';
 	import { can } from '$lib/permissions';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Boxes from '@lucide/svelte/icons/boxes';
@@ -96,7 +97,7 @@
 		<EmptyState
 			icon={Boxes}
 			title="No services yet"
-			description="Create your first service to start issuing tokens."
+			description="Tokens you issue land in the Default service automatically. Create a service to group tokens by app or workload and give them shared limits."
 		/>
 	{:else}
 		<div class="rounded-xl border">
@@ -106,6 +107,7 @@
 						<Table.Head>Name</Table.Head>
 						<Table.Head>Type</Table.Head>
 						<Table.Head>Preset</Table.Head>
+						<Table.Head class="text-right">Tokens</Table.Head>
 						<Table.Head>Created</Table.Head>
 						<Table.Head class="w-10"></Table.Head>
 					</Table.Row>
@@ -126,7 +128,15 @@
 							</Table.Cell>
 							<Table.Cell><Badge variant="outline">{s.type}</Badge></Table.Cell>
 							<Table.Cell class="text-muted-foreground">
-								{s.policyId ? policyName.get(s.policyId) : '—'}
+								{(s.policyId && policyName.get(s.policyId)) || '—'}
+							</Table.Cell>
+							<Table.Cell
+								class="text-right tabular-nums {s.activeTokenCount === 0
+									? 'text-muted-foreground'
+									: ''}"
+								title="Active tokens (not revoked or expired)"
+							>
+								{s.activeTokenCount}
 							</Table.Cell>
 							<Table.Cell class="text-muted-foreground">{relativeTime(s.createdAt)}</Table.Cell>
 							<Table.Cell>
@@ -144,7 +154,7 @@
 										<ConfirmAction
 											action="?/delete"
 											title={`Delete “${s.name}”?`}
-											description="Any tokens issued to this service stop working immediately. This can't be undone."
+											description={deleteServiceDescription(s.activeTokenCount)}
 											actionLabel="Delete service"
 										>
 											{#snippet trigger({ props })}

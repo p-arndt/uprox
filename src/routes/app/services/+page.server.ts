@@ -1,38 +1,27 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
-import { listServices, createService, updateService, deleteService } from '$lib/server/services';
-import { listPolicies } from '$lib/server/policies';
-import { listProviderSecrets } from '$lib/server/provider-secrets';
-import { inlineFromForm } from '$lib/server/parse-config';
-import { PROVIDERS } from '$lib/server/providers';
+import {
+	listServices,
+	createService,
+	updateService,
+	deleteService,
+	countActiveTokensByService
+} from '$lib/server/services';
+import { serviceFormOptions, serviceFromForm } from './service-form.server';
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
-	const [services, policies, secrets] = await Promise.all([
+	const [rows, activeTokens, options] = await Promise.all([
 		listServices(),
-		listPolicies(),
-		listProviderSecrets()
+		countActiveTokensByService(),
+		serviceFormOptions()
 	]);
-	// Options for the per-service "upstream key" picker. Only meaningful where a
-	// provider has more than one key (e.g. several Azure resources); single-key
-	// providers route automatically, so we leave them out to keep the list short.
-	const counts = new Map<string, number>();
-	for (const s of secrets) counts.set(s.provider, (counts.get(s.provider) ?? 0) + 1);
-	const providerSecrets = secrets
-		.filter((s) => (counts.get(s.provider) ?? 0) > 1)
-		.map((s) => ({
-			id: s.id,
-			provider: s.provider,
-			providerLabel: PROVIDERS[s.provider]?.label ?? s.provider,
-			label: s.label,
-			hint: s.hint
-		}));
 	return {
-		services,
-		policies,
-		providerSecrets,
-		providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label }))
+		services: rows.map((s) => ({ ...s, activeTokenCount: activeTokens[s.id] ?? 0 })),
+		policies: options.policies,
+		providerSecrets: options.providerSecrets,
+		providers: options.providers
 	};
 };
 
@@ -42,14 +31,8 @@ export const actions: Actions = {
 		const data = await event.request.formData();
 		const name = data.get('name')?.toString().trim();
 		if (!name) return fail(400, { message: 'Name is required' });
-		await createService({
-			name,
-			type: data.get('type')?.toString() || 'app',
-			description: data.get('description')?.toString() || undefined,
-			policyId: data.get('policyId')?.toString() || null,
-			providerSecretId: data.get('providerSecretId')?.toString() || null,
-			...inlineFromForm(data, { includeModels: true })
-		});
+		const fields = serviceFromForm(data);
+		await createService({ ...fields, name, description: fields.description ?? undefined });
 		return { success: true };
 	},
 	update: async (event) => {
@@ -58,14 +41,7 @@ export const actions: Actions = {
 		const id = data.get('id')?.toString();
 		const name = data.get('name')?.toString().trim();
 		if (!name) return fail(400, { message: 'Name is required' });
-		await updateService(id ?? '', {
-			name,
-			type: data.get('type')?.toString() || 'app',
-			description: data.get('description')?.toString() || null,
-			policyId: data.get('policyId')?.toString() || null,
-			providerSecretId: data.get('providerSecretId')?.toString() || null,
-			...inlineFromForm(data, { includeModels: true })
-		});
+		await updateService(id ?? '', { ...serviceFromForm(data), name });
 		return { success: true };
 	},
 	delete: async (event) => {

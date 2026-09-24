@@ -1,11 +1,11 @@
-import { error } from '@sveltejs/kit';
-import type { PageServerLoad } from './$types';
-import { requireOrg } from '$lib/server/org';
-import { getService } from '$lib/server/services';
-import { listPolicies } from '$lib/server/policies';
+import { error, fail, redirect } from '@sveltejs/kit';
+import type { Actions, PageServerLoad } from './$types';
+import { requireOrg, requirePermission } from '$lib/server/org';
+import { deleteService, getService, listServiceTokens, updateService } from '$lib/server/services';
 import { orgBudgetStatus } from '$lib/server/budget-status';
 import { getSettings } from '$lib/server/settings';
 import { loadUsageAnalysis, streamed } from '$lib/server/usage-analysis';
+import { secretLabel, serviceFormOptions, serviceFromForm } from '../service-form.server';
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
@@ -15,7 +15,7 @@ export const load: PageServerLoad = async (event) => {
 	const serviceId = service.id;
 	// per-service spend ceilings (current UTC day/month windows) for the budget
 	// gauge, narrowed to this service: 0/1 element, only present when this
-	// service's policy sets a ceiling. Streamed after first paint.
+	// service's preset sets a ceiling. Streamed after first paint.
 	const budget = streamed(
 		orgBudgetStatus().then((budgets) => budgets.filter((b) => b.serviceId === serviceId)),
 		[],
@@ -23,15 +23,20 @@ export const load: PageServerLoad = async (event) => {
 	);
 	// The full cost-analysis workbench, scoped to this service. `service` is
 	// dropped as a dimension — it is the scope, so it would be a single row.
-	const [analysis, policies, settings] = await Promise.all([
+	const [analysis, options, settings, tokens] = await Promise.all([
 		loadUsageAnalysis(event, {
 			serviceId,
 			dimensions: ['model', 'provider', 'token', 'status', 'line'],
 			donutDims: ['model', 'provider', 'token']
 		}),
-		listPolicies(),
-		getSettings()
+		serviceFormOptions(),
+		getSettings(),
+		listServiceTokens(serviceId)
 	]);
+
+	const secret = service.providerSecretId
+		? options.secrets.find((s) => s.id === service.providerSecretId)
+		: undefined;
 
 	return {
 		crumb: service.name,
@@ -41,12 +46,42 @@ export const load: PageServerLoad = async (event) => {
 			type: service.type,
 			description: service.description,
 			createdAt: service.createdAt,
+			policyId: service.policyId,
 			policyName: service.policyId
-				? (policies.find((p) => p.id === service.policyId)?.name ?? null)
-				: null
+				? (options.policies.find((p) => p.id === service.policyId)?.name ?? null)
+				: null,
+			providerSecretId: service.providerSecretId,
+			upstreamKeyLabel: secret ? secretLabel(secret) : null,
+			allowedProviders: service.allowedProviders,
+			allowedModels: service.allowedModels,
+			preferredProvider: service.preferredProvider,
+			rateLimitPerMinute: service.rateLimitPerMinute,
+			dailyBudgetUsd: service.dailyBudgetUsd,
+			monthlyBudgetUsd: service.monthlyBudgetUsd,
+			cacheTtlSeconds: service.cacheTtlSeconds
 		},
+		tokens,
+		policies: options.policies,
+		providerSecrets: options.providerSecrets,
+		providers: options.providers,
 		...analysis,
 		budget,
 		budgetThreshold: settings.budgetAlertThresholdPct / 100
 	};
+};
+
+export const actions: Actions = {
+	update: async (event) => {
+		await requirePermission(event, 'services:manage');
+		const data = await event.request.formData();
+		const name = data.get('name')?.toString().trim();
+		if (!name) return fail(400, { message: 'Name is required' });
+		await updateService(event.params.id, { ...serviceFromForm(data), name });
+		return { success: true };
+	},
+	delete: async (event) => {
+		await requirePermission(event, 'services:manage');
+		await deleteService(event.params.id);
+		redirect(303, '/app/services');
+	}
 };
