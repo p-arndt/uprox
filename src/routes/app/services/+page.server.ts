@@ -6,7 +6,9 @@ import {
 	createService,
 	updateService,
 	deleteService,
-	countActiveTokensByService
+	countActiveTokensByService,
+	serviceNameTaken,
+	SERVICE_NAME_TAKEN
 } from '$lib/server/services';
 import { serviceFormOptions, serviceFromForm } from './service-form.server';
 
@@ -31,6 +33,7 @@ export const actions: Actions = {
 		const data = await event.request.formData();
 		const name = data.get('name')?.toString().trim();
 		if (!name) return fail(400, { message: 'Name is required' });
+		if (await serviceNameTaken(name)) return fail(409, { message: SERVICE_NAME_TAKEN });
 		const fields = serviceFromForm(data);
 		await createService({ ...fields, name, description: fields.description ?? undefined });
 		return { success: true };
@@ -41,6 +44,7 @@ export const actions: Actions = {
 		const id = data.get('id')?.toString();
 		const name = data.get('name')?.toString().trim();
 		if (!name) return fail(400, { message: 'Name is required' });
+		if (await serviceNameTaken(name, id)) return fail(409, { message: SERVICE_NAME_TAKEN });
 		await updateService(id ?? '', { ...serviceFromForm(data), name });
 		return { success: true };
 	},

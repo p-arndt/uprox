@@ -1,5 +1,5 @@
 /** Service (machine identity) CRUD. */
-import { and, count, desc, eq, gt, isNull, or } from 'drizzle-orm';
+import { and, count, desc, eq, gt, isNull, ne, or, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { service, machineToken } from '$lib/server/db/schema';
 import { type InlineConfigInput, inlineConfigColumns } from '$lib/server/inline-config';
@@ -40,6 +40,28 @@ export function listServices() {
 		.where(isNull(service.deletedAt))
 		.orderBy(desc(service.createdAt));
 }
+
+/**
+ * Whether another live service already uses this name (case-insensitive).
+ * Services are picked by name when filing tokens, so two with the same name
+ * are indistinguishable there.
+ */
+export async function serviceNameTaken(name: string, exceptId?: string): Promise<boolean> {
+	const [row] = await db
+		.select({ id: service.id })
+		.from(service)
+		.where(
+			and(
+				isNull(service.deletedAt),
+				sql`lower(${service.name}) = lower(${name.trim()})`,
+				exceptId ? ne(service.id, exceptId) : undefined
+			)
+		)
+		.limit(1);
+	return !!row;
+}
+
+export const SERVICE_NAME_TAKEN = 'A service with this name already exists';
 
 export async function createService(
 	input: {

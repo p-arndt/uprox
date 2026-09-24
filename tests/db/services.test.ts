@@ -7,7 +7,8 @@ import {
 	createService,
 	deleteService,
 	getOrCreateDefaultService,
-	listServiceTokens
+	listServiceTokens,
+	serviceNameTaken
 } from '$lib/server/services';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -80,5 +81,26 @@ describe('service token queries (real SQL)', () => {
 	it('names the Default service as a catch-all service', async () => {
 		const s = await getOrCreateDefaultService();
 		expect(s!.description).toBe('Catch-all service for tokens created without one.');
+	});
+});
+
+describe('serviceNameTaken (real SQL)', () => {
+	beforeEach(async () => {
+		await db.execute(sql`delete from machine_token`);
+		await db.execute(sql`delete from service`);
+	});
+
+	it('matches live services case-insensitively, ignoring the one being renamed', async () => {
+		const billing = await createService({ name: 'Billing' });
+		expect(await serviceNameTaken('billing')).toBe(true);
+		expect(await serviceNameTaken(' BILLING ')).toBe(true);
+		expect(await serviceNameTaken('Billing', billing!.id)).toBe(false);
+		expect(await serviceNameTaken('other')).toBe(false);
+	});
+
+	it('frees the name once the service is deleted', async () => {
+		const old = await createService({ name: 'legacy' });
+		await deleteService(old!.id);
+		expect(await serviceNameTaken('legacy')).toBe(false);
 	});
 });

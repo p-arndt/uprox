@@ -1,8 +1,13 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requirePermission } from '$lib/server/org';
-import { updateService, deleteService } from '$lib/server/services';
-import { apiHandler, notFound } from '$lib/server/api/errors';
+import {
+	updateService,
+	deleteService,
+	serviceNameTaken,
+	SERVICE_NAME_TAKEN
+} from '$lib/server/services';
+import { ApiError, apiHandler, notFound } from '$lib/server/api/errors';
 import { pathId, readJson } from '$lib/server/api/fields';
 import { parseServicePatch } from '$lib/server/api/service-body';
 
@@ -10,6 +15,8 @@ export const PATCH: RequestHandler = apiHandler(async (event) => {
 	await requirePermission(event, 'services:manage');
 	const id = pathId(event.params.id);
 	const patch = parseServicePatch(await readJson(event.request));
+	if (patch.name && (await serviceNameTaken(patch.name, id)))
+		throw new ApiError(409, SERVICE_NAME_TAKEN, 'name');
 	const row = await updateService(id, patch);
 	if (!row) throw notFound();
 	return json(row);

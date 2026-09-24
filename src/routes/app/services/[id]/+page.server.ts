@@ -1,7 +1,14 @@
 import { error, fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
-import { deleteService, getService, listServiceTokens, updateService } from '$lib/server/services';
+import {
+	deleteService,
+	getService,
+	listServiceTokens,
+	serviceNameTaken,
+	SERVICE_NAME_TAKEN,
+	updateService
+} from '$lib/server/services';
 import { orgBudgetStatus } from '$lib/server/budget-status';
 import { getSettings } from '$lib/server/settings';
 import { loadUsageAnalysis, streamed } from '$lib/server/usage-analysis';
@@ -90,6 +97,8 @@ export const actions: Actions = {
 		const data = await event.request.formData();
 		const name = data.get('name')?.toString().trim();
 		if (!name) return fail(400, { message: 'Name is required' });
+		if (await serviceNameTaken(name, event.params.id))
+			return fail(409, { message: SERVICE_NAME_TAKEN });
 		await updateService(event.params.id, { ...serviceFromForm(data), name });
 		return { success: true };
 	},
