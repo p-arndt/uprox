@@ -88,6 +88,18 @@ describe('parsePolicyPatch', () => {
 		}
 	});
 
+	it('rejects model patterns with * before the end, on create and patch', () => {
+		const create = apiError(() => parsePolicyCreate({ name: 'p', allowedModels: ['gpt-*-mini'] }));
+		expect(create.field).toBe('allowedModels');
+		expect(create.message).toContain('only allowed at the end');
+		expect(apiError(() => parsePolicyPatch({ allowedModels: ['*mini'] })).field).toBe(
+			'allowedModels'
+		);
+		expect(parsePolicyPatch({ allowedModels: ['gpt-4o*'] })).toEqual({
+			allowedModels: ['gpt-4o*']
+		});
+	});
+
 	it('rejects a body without any accepted field', () => {
 		expect(apiError(() => parsePolicyPatch({ id: 'x' })).message).toBe(
 			'No updatable fields provided'
