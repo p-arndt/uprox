@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
 	inheritedText,
 	inlineLimitHelp,
-	inlineLimitHints
+	inlineLimitHints,
+	preferredBackendRelevant
 } from '$lib/features/policies/inline-limits-hints';
 
 describe('inlineLimitHints', () => {
@@ -32,7 +33,34 @@ describe('inlineLimitHelp', () => {
 		expect(svc.rate).toContain('per token');
 		expect(svc.budget).toContain('shared by all');
 		expect(inlineLimitHelp('token').budget).toContain('service budget applies on top');
-		expect(inlineLimitHelp('policy').rate).toBe('Counted per token. 0 = unlimited.');
+		expect(inlineLimitHelp('token').rate).toBe('Counted per token. 0 = unlimited.');
+	});
+
+	it('spells out what a preset budget, rate and blank cache mean', () => {
+		const p = inlineLimitHelp('policy');
+		expect(p.rate).toBe('Always counted per token. 0 = unlimited.');
+		expect(p.budget).toContain('Attached to a service: one budget shared by its tokens');
+		expect(p.budget).toContain('Attached to a token: that token’s cap');
+		expect(p.cache).toBe('Blank = instance default, 0 = off.');
+		expect(p.providers).toBe('None checked = all providers allowed.');
+		expect(p.models).toContain('None = all models allowed');
+		expect(p.cascade).toBe('Lists only narrow across preset → service → token; numbers override.');
+	});
+});
+
+describe('preferredBackendRelevant', () => {
+	it('needs both OpenAI and Azure reachable', () => {
+		expect(preferredBackendRelevant([], null)).toBe(true);
+		expect(preferredBackendRelevant([], undefined)).toBe(true);
+		expect(preferredBackendRelevant(['openai', 'azure', 'anthropic'], null)).toBe(true);
+		expect(preferredBackendRelevant(['openai'], null)).toBe(false);
+		expect(preferredBackendRelevant(['anthropic'], null)).toBe(false);
+	});
+
+	it('respects what the lower layers already restrict', () => {
+		expect(preferredBackendRelevant([], ['openai'])).toBe(false);
+		expect(preferredBackendRelevant(['openai', 'azure'], ['openai', 'azure'])).toBe(true);
+		expect(preferredBackendRelevant(['openai', 'azure'], ['azure'])).toBe(false);
 	});
 });
 

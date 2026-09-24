@@ -38,36 +38,65 @@ export function inlineLimitHints(scope: InlineLimitScope): InlineLimitHints {
 			budgetScope +
 			(isPolicy ? ' 0 = unlimited. UTC windows.' : ' Blank = inherit, 0 = unlimited. UTC windows.'),
 		cache: isPolicy
-			? 'Overrides the org default. Blank = inherit, 0 = off, >0 = TTL.'
+			? 'Overrides the instance default. Blank = instance default, 0 = off, >0 = TTL.'
 			: 'Blank = inherit, 0 = force off, >0 = TTL.'
 	};
 }
 
 /**
  * Always-visible helper lines under the fields whose meaning is easy to get
- * wrong: the rate limit counts per token even on a service, while a service
- * budget is one pot shared by all of its tokens.
+ * wrong: the rate limit counts per token even on a service, a service budget is
+ * one pot shared by all of its tokens, and lists narrow while numbers override.
  */
 export interface InlineLimitHelp {
+	/** how the layers combine; shown once at the top of the Access section */
+	cascade: string;
+	providers: string;
+	models: string;
 	rate: string;
 	budget: string;
 	cache: string;
 }
 
 export function inlineLimitHelp(scope: InlineLimitScope): InlineLimitHelp {
+	const isPolicy = scope === 'policy';
 	return {
+		cascade: 'Lists only narrow across preset → service → token; numbers override.',
+		providers: isPolicy
+			? 'None checked = all providers allowed.'
+			: 'None checked = no extra restriction here.',
+		models: isPolicy
+			? 'None = all models allowed. A trailing * matches a prefix, e.g. gpt-4o*.'
+			: 'None = no extra restriction here. A trailing * matches a prefix, e.g. gpt-4o*.',
 		rate:
 			scope === 'service'
 				? 'Counted per token: each token of this service gets this many. 0 = unlimited.'
-				: 'Counted per token. 0 = unlimited.',
+				: isPolicy
+					? 'Always counted per token. 0 = unlimited.'
+					: 'Counted per token. 0 = unlimited.',
 		budget:
 			scope === 'service'
 				? 'One budget shared by all of this service’s tokens. 0 = unlimited.'
 				: scope === 'token'
 					? 'This token’s own spend; the service budget applies on top. 0 = unlimited.'
-					: '0 = unlimited.',
-		cache: '0 = off.'
+					: 'Attached to a service: one budget shared by its tokens. Attached to a token: that token’s cap. 0 = unlimited.',
+		cache: isPolicy ? 'Blank = instance default, 0 = off.' : '0 = off.'
 	};
+}
+
+/**
+ * Whether the preferred OpenAI backend can matter: only when both OpenAI and
+ * Azure stay reachable. `checked` is this layer's provider list (empty = no
+ * restriction here); `inherited` is what the layers below allow (null or
+ * undefined = all providers).
+ */
+export function preferredBackendRelevant(
+	checked: string[],
+	inherited: string[] | null | undefined
+): boolean {
+	const reachable = (id: string) =>
+		(checked.length === 0 || checked.includes(id)) && (inherited == null || inherited.includes(id));
+	return reachable('openai') && reachable('azure');
 }
 
 /** Placeholder and summary text for the limits form, derived from what it inherits. */

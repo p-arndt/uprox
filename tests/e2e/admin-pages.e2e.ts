@@ -104,16 +104,25 @@ test.describe('admin pages', () => {
 
 		const card = page.locator('[data-slot="card"]').filter({ hasText: name });
 		await expect(card).toBeVisible();
-		await expect(card).toContainText('Unlimited');
+		await expect(card).toContainText('Rate: unlimited');
+		await expect(card).toContainText('Not used yet');
 
-		await card.getByRole('button', { name: 'Edit policy' }).click();
+		// a second preset with the same name (any case) is rejected inline
+		await page.getByRole('button', { name: 'New preset' }).click();
+		await create.getByLabel('Name', { exact: true }).fill(name.toUpperCase());
+		await create.getByRole('button', { name: 'Create preset' }).click();
+		await expect(create).toContainText('A preset with this name already exists');
+		await page.keyboard.press('Escape');
+		await expect(create).toBeHidden();
+
+		await card.getByRole('button', { name: `Edit preset ${name}` }).click();
 		const edit = page.getByRole('dialog', { name: 'Edit preset' });
 		await expect(edit.getByLabel('Name', { exact: true })).toHaveValue(name);
 		await edit.getByLabel('Rate limit (req/min)').fill('42');
 		await edit.getByRole('button', { name: 'Save preset' }).click();
 		await expect(edit).toBeHidden();
 
-		await expect(card).toContainText('42 req/min');
+		await expect(card).toContainText('Rate: 42/min per token');
 	});
 
 	test('pricing: opens the add-model dialog', async ({ page }) => {

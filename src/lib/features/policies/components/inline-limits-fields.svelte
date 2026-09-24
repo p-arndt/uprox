@@ -1,18 +1,21 @@
 <script lang="ts">
 	import { untrack, type Snippet } from 'svelte';
+	import { Checkbox as CheckboxPrimitive } from 'bits-ui';
+	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
-	import CheckboxGroup from '$lib/components/form/checkbox-group.svelte';
 	import DisclosureSection from '$lib/components/form/disclosure-section.svelte';
 	import FieldLabel from '$lib/components/form/field-label.svelte';
 	import SelectField from '$lib/components/form/select-field.svelte';
+	import ModelPatternInput from '$lib/features/policies/components/model-pattern-input.svelte';
 	import type { InlineLimitValues } from '$lib/features/policies/inline-limits';
 	import type { InheritedLimits } from '$lib/features/policies/effective-config-view';
 	import {
 		inheritedText,
 		inlineLimitHelp,
 		inlineLimitHints,
+		preferredBackendRelevant,
 		type InlineLimitScope
 	} from '$lib/features/policies/inline-limits-hints';
 
@@ -22,6 +25,7 @@
 		idPrefix,
 		scope,
 		inherited,
+		modelSuggestions = [],
 		limitsExtra,
 		accessExtra,
 		advanced,
@@ -43,6 +47,11 @@
 		 * toInheritedLimits(explainInherited(...)). Omitted = a bare "inherit".
 		 */
 		inherited?: InheritedLimits;
+		/**
+		 * Known model ids (e.g. knownModelIds() from $lib/server/policies), offered
+		 * while typing a model pattern and used to flag likely typos. Optional.
+		 */
+		modelSuggestions?: string[];
 		/** parent-supplied fields rendered at the top of the Limits section */
 		limitsExtra?: Snippet;
 		/** parent-supplied fields rendered at the top of the Access section */
@@ -57,18 +66,25 @@
 
 	const id = (field: string) => `${idPrefix}-${field}`;
 	const isPolicy = untrack(() => scope === 'policy');
-	// Token/service limits fall through ("inherit") when blank; a policy is the
-	// base layer so its hard limits are concrete numbers with no inherit state.
+	// Token/service fields fall through ("inherit") when blank. A preset is the
+	// base layer: its blank rate/budgets are stored as 0 (unlimited) while a
+	// blank cache TTL keeps the instance default, so the placeholders say so.
 	const providerLabel = (pid: string) => providers.find((p) => p.id === pid)?.label ?? pid;
 	const blank = $derived(isPolicy ? undefined : inheritedText(inherited, providerLabel));
-	// Details stay in hover hints to keep the form scannable; only the semantics
-	// people get wrong (per-token rate vs shared budget, 0 = unlimited) are visible.
+	const placeholders = $derived({
+		rate: blank?.rate ?? '0 = unlimited',
+		daily: blank?.daily ?? '0 = unlimited',
+		monthly: blank?.monthly ?? '0 = unlimited',
+		cache: blank?.cache ?? 'instance default'
+	});
+	// Details stay in hover hints to keep the form scannable; the semantics
+	// people get wrong (per-token rate vs shared budget, 0 = unlimited, lists
+	// narrow) are visible text.
 	const help = $derived(inlineLimitHints(scope));
 	const visibleHelp = $derived(inlineLimitHelp(scope));
 
 	// Sections holding custom values start expanded; the rest collapse to keep
-	// the form short. A policy IS its limits (and its numbers default to "0"),
-	// so every section opens and no summary is shown.
+	// the form short. A preset IS its limits, so it gets plain headings instead.
 	const limitsActive = untrack(
 		() =>
 			extraLimitsActive ||
@@ -84,8 +100,13 @@
 			values.preferredProvider !== ''
 	);
 	const advancedActive = untrack(() => extraAdvancedActive || values.cacheTtlSeconds !== '');
-	const summary = (active: boolean, inheritedSummary: string | undefined) =>
-		isPolicy ? undefined : active ? 'Custom' : inheritedSummary;
+
+	// Owned here (not via CheckboxGroup) so the preferred-backend field can
+	// react to which providers are checked.
+	let checkedProviders = $state(untrack(() => [...values.allowedProviders]));
+	const backendRelevant = $derived(
+		preferredBackendRelevant(checkedProviders, inherited?.allowedProviders)
+	);
 
 	// OpenAI and Azure share the "gpt-*"/o-series namespace; pick which serves it.
 	const preferredOptions = $derived([
@@ -97,95 +118,107 @@
 	let preferred = $state(untrack(() => values.preferredProvider));
 </script>
 
-<div class="space-y-4">
-	<DisclosureSection
-		title="Limits"
-		summary={summary(limitsActive, blank?.limitsSummary)}
-		active={!isPolicy && limitsActive}
-		open={isPolicy || limitsActive}
-	>
-		{@render limitsExtra?.()}
-		<div class="space-y-2">
-			<FieldLabel for={id('rateLimitPerMinute')} label="Rate limit (req/min)" hint={help.rate} />
-			<Input
-				id={id('rateLimitPerMinute')}
-				name="rateLimitPerMinute"
-				type="number"
-				min="0"
-				placeholder={blank?.rate}
-				value={values.rateLimitPerMinute}
-			/>
-			<p class="text-xs text-muted-foreground">{visibleHelp.rate}</p>
-		</div>
-		<div class="space-y-2">
-			<FieldLabel label="Budget (USD)" hint={help.budget} />
-			<div class="grid grid-cols-2 gap-3">
-				<div class="space-y-1">
-					<Label for={id('dailyBudgetUsd')} class="text-xs font-normal text-muted-foreground">
-						Daily
-					</Label>
-					<Input
-						id={id('dailyBudgetUsd')}
-						name="dailyBudgetUsd"
-						type="number"
-						min="0"
-						step="0.01"
-						placeholder={blank?.daily}
-						value={values.dailyBudgetUsd}
-					/>
-				</div>
-				<div class="space-y-1">
-					<Label for={id('monthlyBudgetUsd')} class="text-xs font-normal text-muted-foreground">
-						Monthly
-					</Label>
-					<Input
-						id={id('monthlyBudgetUsd')}
-						name="monthlyBudgetUsd"
-						type="number"
-						min="0"
-						step="0.01"
-						placeholder={blank?.monthly}
-						value={values.monthlyBudgetUsd}
-					/>
-				</div>
+{#snippet section(title: string, summary: string | undefined, active: boolean, body: Snippet)}
+	{#if isPolicy}
+		<section class="space-y-4">
+			<h3 class="text-sm font-medium">{title}</h3>
+			{@render body()}
+		</section>
+	{:else}
+		<DisclosureSection {title} summary={active ? 'Custom' : summary} {active} open={active}>
+			{@render body()}
+		</DisclosureSection>
+	{/if}
+{/snippet}
+
+{#snippet limitsBody()}
+	{@render limitsExtra?.()}
+	<div class="space-y-2">
+		<FieldLabel for={id('rateLimitPerMinute')} label="Rate limit (req/min)" hint={help.rate} />
+		<Input
+			id={id('rateLimitPerMinute')}
+			name="rateLimitPerMinute"
+			type="number"
+			min="0"
+			step="1"
+			placeholder={placeholders.rate}
+			value={values.rateLimitPerMinute}
+		/>
+		<p class="text-xs text-muted-foreground">{visibleHelp.rate}</p>
+	</div>
+	<div class="space-y-2">
+		<FieldLabel label="Budget (USD)" hint={help.budget} />
+		<div class="grid grid-cols-2 gap-3">
+			<div class="space-y-1">
+				<Label for={id('dailyBudgetUsd')} class="text-xs font-normal text-muted-foreground">
+					Daily
+				</Label>
+				<Input
+					id={id('dailyBudgetUsd')}
+					name="dailyBudgetUsd"
+					type="number"
+					min="0"
+					step="0.01"
+					placeholder={placeholders.daily}
+					value={values.dailyBudgetUsd}
+				/>
 			</div>
-			<p class="text-xs text-muted-foreground">{visibleHelp.budget}</p>
+			<div class="space-y-1">
+				<Label for={id('monthlyBudgetUsd')} class="text-xs font-normal text-muted-foreground">
+					Monthly
+				</Label>
+				<Input
+					id={id('monthlyBudgetUsd')}
+					name="monthlyBudgetUsd"
+					type="number"
+					min="0"
+					step="0.01"
+					placeholder={placeholders.monthly}
+					value={values.monthlyBudgetUsd}
+				/>
+			</div>
 		</div>
-	</DisclosureSection>
+		<p class="text-xs text-muted-foreground">{visibleHelp.budget}</p>
+	</div>
+{/snippet}
 
-	<Separator />
+{#snippet accessBody()}
+	<p class="text-xs text-muted-foreground">{visibleHelp.cascade}</p>
+	{@render accessExtra?.()}
+	<div class="space-y-2">
+		<FieldLabel label="Allowed providers" hint={help.providers} />
+		<CheckboxPrimitive.Group
+			name="allowedProviders"
+			bind:value={checkedProviders}
+			class="flex flex-wrap gap-x-5 gap-y-2.5"
+		>
+			{#each providers as p (p.id)}
+				<div class="flex items-center gap-2">
+					<Checkbox id={id(`prov-${p.id}`)} value={p.id} />
+					<Label for={id(`prov-${p.id}`)} class="font-normal">{p.label}</Label>
+				</div>
+			{/each}
+		</CheckboxPrimitive.Group>
+		<p class="text-xs text-muted-foreground">{visibleHelp.providers}</p>
+		{#if blank?.providers}
+			<p class="text-xs text-muted-foreground">{blank.providers}</p>
+		{/if}
+	</div>
 
-	<DisclosureSection
-		title="Access"
-		summary={summary(accessActive, blank?.accessSummary)}
-		active={!isPolicy && accessActive}
-		open={isPolicy || accessActive}
-	>
-		{@render accessExtra?.()}
-		<div class="space-y-2">
-			<FieldLabel label="Allowed providers" hint={help.providers} />
-			<CheckboxGroup
-				name="allowedProviders"
-				idPrefix={id('prov')}
-				options={providers.map((p) => ({ value: p.id, label: p.label }))}
-				selected={values.allowedProviders}
-			/>
-			{#if blank?.providers}
-				<p class="text-xs text-muted-foreground">{blank.providers}</p>
-			{/if}
-		</div>
+	<div class="space-y-2">
+		<FieldLabel for={id('allowedModels')} label="Allowed models" hint={help.models} />
+		<ModelPatternInput
+			id={id('allowedModels')}
+			name="allowedModels"
+			value={values.allowedModels}
+			suggestions={modelSuggestions}
+			placeholder={blank?.models ?? 'gpt-4o*, claude-sonnet-4-6'}
+		/>
+		<p class="text-xs text-muted-foreground">{visibleHelp.models}</p>
+	</div>
 
-		<div class="space-y-2">
-			<FieldLabel for={id('allowedModels')} label="Allowed models" hint={help.models} />
-			<Input
-				id={id('allowedModels')}
-				name="allowedModels"
-				placeholder={blank?.models ?? 'gpt-4o*, claude-sonnet-4-6'}
-				value={values.allowedModels}
-			/>
-		</div>
-
-		<div class="space-y-2">
+	<div class="space-y-2">
+		{#if backendRelevant}
 			<FieldLabel
 				for={id('preferredProvider')}
 				label="Preferred OpenAI backend"
@@ -197,31 +230,45 @@
 				bind:value={preferred}
 				options={preferredOptions}
 			/>
-		</div>
-	</DisclosureSection>
+		{:else}
+			<!-- keep the stored choice; it takes effect again once both are allowed -->
+			<input type="hidden" name="preferredProvider" value={preferred} />
+			<p class="text-xs text-muted-foreground">
+				Preferred OpenAI backend: not needed, it only matters when both OpenAI and Azure OpenAI are
+				allowed.
+			</p>
+		{/if}
+	</div>
+{/snippet}
 
+{#snippet advancedBody()}
+	{@render advanced?.()}
+	<div class="grid grid-cols-2 gap-3">
+		<div class="space-y-2">
+			<FieldLabel for={id('cacheTtlSeconds')} label="Cache TTL (s)" hint={help.cache} />
+			<Input
+				id={id('cacheTtlSeconds')}
+				name="cacheTtlSeconds"
+				type="number"
+				min="0"
+				step="1"
+				placeholder={placeholders.cache}
+				value={values.cacheTtlSeconds}
+			/>
+		</div>
+	</div>
+	<p class="text-xs text-muted-foreground">{visibleHelp.cache}</p>
+{/snippet}
+
+<div class="space-y-4">
+	{@render section('Limits', blank?.limitsSummary, !isPolicy && limitsActive, limitsBody)}
 	<Separator />
-
-	<DisclosureSection
-		title="Advanced"
-		summary={summary(advancedActive, blank?.advancedSummary)}
-		active={!isPolicy && advancedActive}
-		open={isPolicy || advancedActive}
-	>
-		{@render advanced?.()}
-		<div class="grid grid-cols-2 gap-3">
-			<div class="space-y-2">
-				<FieldLabel for={id('cacheTtlSeconds')} label="Cache TTL (s)" hint={help.cache} />
-				<Input
-					id={id('cacheTtlSeconds')}
-					name="cacheTtlSeconds"
-					type="number"
-					min="0"
-					placeholder={blank?.cache}
-					value={values.cacheTtlSeconds}
-				/>
-				<p class="text-xs text-muted-foreground">{visibleHelp.cache}</p>
-			</div>
-		</div>
-	</DisclosureSection>
+	{@render section('Access', blank?.accessSummary, !isPolicy && accessActive, accessBody)}
+	<Separator />
+	{@render section(
+		isPolicy ? 'Cache' : 'Advanced',
+		blank?.advancedSummary,
+		!isPolicy && advancedActive,
+		advancedBody
+	)}
 </div>

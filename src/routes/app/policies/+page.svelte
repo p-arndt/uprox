@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
+	import { untrack } from 'svelte';
+	import { toast } from 'svelte-sonner';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import PageShell from '$lib/components/layout/page-shell.svelte';
 	import EmptyState from '$lib/components/layout/empty-state.svelte';
@@ -16,25 +17,57 @@
 	let editing = $state<PolicyFormValues | null>(null);
 
 	const canManage = $derived(can(data.role, 'policies:manage', data.memberPermissions));
+	const editingUsage = $derived(
+		data.policies.find((p) => p.id === editing?.id)?.usage ?? { services: 0, tokens: 0 }
+	);
+
+	const SUCCESS = { create: 'Preset created', update: 'Preset saved', delete: 'Preset deleted' };
+
+	// An error belongs inline in the dialog that submitted it while that dialog
+	// is open; anything else (a failed delete) is a toast. Kept apart from `form`
+	// so reopening a dialog doesn't show the previous attempt's error.
+	let dialogError = $state<{ action: 'create' | 'update'; message: string } | null>(null);
+	const errorFor = (action: 'create' | 'update') =>
+		dialogError?.action === action ? dialogError.message : undefined;
 
 	$effect(() => {
-		if (form?.success) {
-			open = false;
-			editing = null;
-			invalidateAll();
-		}
+		void open;
+		void editing?.id;
+		untrack(() => (dialogError = null));
+	});
+
+	$effect(() => {
+		const f = form;
+		if (!f) return;
+		untrack(() => {
+			if ('success' in f) {
+				if (f.action === 'create') open = false;
+				if (f.action === 'update') editing = null;
+				toast.success(SUCCESS[f.action]);
+				if ('warning' in f && f.warning) toast.warning(f.warning);
+				return;
+			}
+			const inDialog = (f.action === 'create' && open) || (f.action === 'update' && editing);
+			if (inDialog) dialogError = { action: f.action, message: f.message };
+			else toast.error(f.message);
+		});
 	});
 </script>
 
 <PageShell width="default">
 	<PageHeader title="Presets">
 		{#snippet description()}
-			Reusable limit & access baselines. Attach one to a service or token, then override individual
-			fields inline. Empty lists mean "allow all".
+			Reusable limits and access rules. Attach a preset on a service or token; those can override
+			the numbers and narrow the lists.
 		{/snippet}
 		{#snippet action()}
 			{#if canManage}
-				<CreatePolicyDialog bind:open providers={data.providers} />
+				<CreatePolicyDialog
+					bind:open
+					providers={data.providers}
+					modelSuggestions={data.modelSuggestions}
+					message={errorFor('create')}
+				/>
 			{/if}
 		{/snippet}
 	</PageHeader>
@@ -43,7 +76,7 @@
 		<EmptyState
 			icon={ShieldHalf}
 			title="No presets yet"
-			description="Presets are optional — you can set limits directly on a service or token. Create one to reuse a baseline across many."
+			description="Presets are optional — you can set limits directly on a service or token. Create one to reuse the same limits across many."
 		/>
 	{:else}
 		<div class="grid gap-4 sm:grid-cols-2">
@@ -65,4 +98,11 @@
 	{/if}
 </PageShell>
 
-<EditPolicyDialog {editing} providers={data.providers} onClose={() => (editing = null)} />
+<EditPolicyDialog
+	{editing}
+	usage={editingUsage}
+	providers={data.providers}
+	modelSuggestions={data.modelSuggestions}
+	message={errorFor('update')}
+	onClose={() => (editing = null)}
+/>

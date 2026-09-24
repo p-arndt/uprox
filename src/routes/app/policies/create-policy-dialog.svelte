@@ -10,10 +10,15 @@
 
 	let {
 		open = $bindable(false),
-		providers
+		providers,
+		modelSuggestions,
+		message
 	}: {
 		open?: boolean;
 		providers: { id: string; label: string }[];
+		modelSuggestions: string[];
+		/** the create action's error, shown inline while this dialog is open */
+		message?: string;
 	} = $props();
 
 	const createValues: PolicyFormValues = {
@@ -38,8 +43,8 @@
 		<Dialog.Header>
 			<Dialog.Title>Create preset</Dialog.Title>
 			<Dialog.Description>
-				A reusable baseline. Services and tokens that attach it inherit its values, then override
-				any field inline.
+				Services and tokens that attach this preset start from its values. They can override the
+				numbers and narrow the lists, but never widen them.
 			</Dialog.Description>
 		</Dialog.Header>
 		<PolicyForm
@@ -48,6 +53,8 @@
 			submitLabel="Create preset"
 			idPrefix="create"
 			values={createValues}
+			{modelSuggestions}
+			{message}
 			resetOnSuccess
 		/>
 	</Dialog.Content>
