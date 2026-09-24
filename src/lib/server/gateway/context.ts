@@ -41,7 +41,7 @@ interface RejectionAudit {
 	provider?: string | null;
 	statusCode: number;
 	detail: string;
-	/** a policy decision (`policy.deny`) rather than a gateway error */
+	/** a policy decision (status `deny`) rather than a gateway error */
 	deny?: boolean;
 	/** record latency (for failures after work started, e.g. the upstream call) */
 	timed?: boolean;
@@ -54,7 +54,9 @@ export async function reject(
 	response: Response
 ): Promise<Response> {
 	await ctx.audit({
-		action: info.deny ? 'policy.deny' : `gateway.${ctx.scope}`,
+		// denials stay under gateway.*: usage, budget and audit queries count
+		// gateway traffic by that prefix and tell denials apart by status
+		action: `gateway.${ctx.scope}`,
 		status: info.deny ? 'deny' : 'error',
 		serviceId: ctx.token.serviceId,
 		tokenId: ctx.token.tokenId,

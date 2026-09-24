@@ -191,7 +191,7 @@ export async function proxyRawUpstream(
 	const decision = evaluatePolicy(token, { provider: providerId, model: '', scope: 'files' });
 	if (!decision.allow) {
 		await audit({
-			action: 'policy.deny',
+			action: 'gateway.files',
 			status: 'deny',
 			serviceId: token.serviceId,
 			tokenId: token.tokenId,

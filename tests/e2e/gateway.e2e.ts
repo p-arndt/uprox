@@ -152,16 +152,16 @@ test('the gateway rejects bad tokens and audits policy denials', async ({ page, 
 	// the allowlist admits matching names, so the denial is about the model only
 	expect((await chat(request, narrow.token, 'hi', { model: 'other-model-1' })).status()).toBe(200);
 
-	// Each policy denial is in the audit log, found by its token under the
-	// "Denied" filter. The table doesn't print the token on policy.deny rows, so
-	// the search (which does match token names server-side) pins the row down.
+	// Each policy denial is gateway traffic in the audit log: found by its token
+	// under the "Denied" filter, labelled like the request and attributed to it.
 	for (const [token, reason] of [
 		[embedOnly.name, 'token is not scoped for "chat"'],
 		[narrow.name, `model "${MOCK_MODEL}" is not allowed`]
 	] as const) {
 		const rows = await auditRows(page, { q: token, status: 'denied' });
 		await expect(rows).toHaveCount(1);
-		await expect(rows).toContainText('Denied by preset');
+		await expect(rows).toContainText('Chat request');
+		await expect(rows).toContainText(token);
 		await expect(rows).toContainText('deny 403');
 		await expect(rows).toContainText(service.name);
 		await expect(rows).toContainText(MOCK_MODEL);

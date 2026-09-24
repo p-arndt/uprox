@@ -379,7 +379,7 @@ export const auditLog = pgTable(
 		id: uuid('id').primaryKey().defaultRandom(),
 		serviceId: uuid('service_id').references(() => service.id, { onDelete: 'set null' }),
 		tokenId: uuid('token_id').references(() => machineToken.id, { onDelete: 'set null' }),
-		// "gateway.chat", "gateway.models", "token.create", "policy.deny", …
+		// "gateway.chat", "gateway.models", "token.create", … (rows before 2026-09 also used "policy.deny" for gateway denials)
 		action: text('action').notNull(),
 		provider: text('provider'),
 		model: text('model'),
