@@ -5,6 +5,8 @@ import { deleteService, getService, listServiceTokens, updateService } from '$li
 import { orgBudgetStatus } from '$lib/server/budget-status';
 import { getSettings } from '$lib/server/settings';
 import { loadUsageAnalysis, streamed } from '$lib/server/usage-analysis';
+import { explainEffectiveConfig } from '$lib/server/effective-config';
+import { PROVIDERS } from '$lib/server/providers';
 import { secretLabel, serviceFormOptions, serviceFromForm } from '../service-form.server';
 
 export const load: PageServerLoad = async (event) => {
@@ -33,6 +35,16 @@ export const load: PageServerLoad = async (event) => {
 		getSettings(),
 		listServiceTokens(serviceId)
 	]);
+	const servicePolicy = options.policies.find((p) => p.id === service.policyId) ?? null;
+	const effectiveConfig = explainEffectiveConfig({
+		service,
+		servicePolicy,
+		defaults: {
+			cacheTtlSeconds: settings.cacheTtlSeconds,
+			dailyBudgetUsd: settings.dailyBudgetUsd ?? 0,
+			monthlyBudgetUsd: settings.monthlyBudgetUsd ?? 0
+		}
+	});
 
 	const secret = service.providerSecretId
 		? options.secrets.find((s) => s.id === service.providerSecretId)
@@ -61,6 +73,8 @@ export const load: PageServerLoad = async (event) => {
 			cacheTtlSeconds: service.cacheTtlSeconds
 		},
 		tokens,
+		effectiveConfig,
+		providerLabels: Object.fromEntries(Object.values(PROVIDERS).map((p) => [p.id, p.label])),
 		policies: options.policies,
 		providerSecrets: options.providerSecrets,
 		providers: options.providers,

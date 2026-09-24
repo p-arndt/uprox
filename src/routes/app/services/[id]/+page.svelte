@@ -18,7 +18,8 @@
 	import DetailHeader from '$lib/components/layout/detail-header.svelte';
 	import PageShell from '$lib/components/layout/page-shell.svelte';
 	import ServiceForm, { type ServiceFormValues } from '../service-form.svelte';
-	import { deleteServiceDescription, serviceSettingRows } from '../service-display';
+	import { deleteServiceDescription } from '../service-display';
+	import EffectiveConfigSummary from '$lib/features/policies/components/effective-config-summary.svelte';
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Plus from '@lucide/svelte/icons/plus';
@@ -36,13 +37,6 @@
 	const canIssueTokens = $derived(can(data.role, 'tokens:manage', data.memberPermissions));
 	const activeTokenCount = $derived(
 		data.tokens.filter((t) => tokenStatus(t).label === 'active').length
-	);
-	const providerLabels = $derived(new Map(data.providers.map((p) => [p.id, p.label] as const)));
-	const settingRows = $derived(
-		serviceSettingRows(
-			{ ...data.service, presetName: data.service.policyName },
-			(id) => providerLabels.get(id) ?? id
-		)
 	);
 	const issueTokenHref = $derived(
 		`${resolve('/app/tokens')}?service=${encodeURIComponent(data.service.id)}`
@@ -190,23 +184,24 @@
 		</Card.Content>
 	</Card.Root>
 
-	<!-- Self-contained so it can later be swapped for the effective-value view. -->
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>Settings</Card.Title>
+			<Card.Title>Effective settings</Card.Title>
 			<Card.Description>
-				Set directly on this service. Inherited values come from the preset or the instance default.
+				What applies to this service's tokens before any per-token overrides, and where each value
+				comes from.
 			</Card.Description>
 		</Card.Header>
-		<Card.Content>
-			<dl class="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[max-content_1fr]">
-				{#each settingRows as row (row.label)}
-					<dt class="text-muted-foreground">{row.label}</dt>
-					<dd class={row.inherited ? 'text-muted-foreground italic' : 'font-medium'}>
-						{row.value}
-					</dd>
-				{/each}
-			</dl>
+		<Card.Content class="space-y-3">
+			<EffectiveConfigSummary
+				config={data.effectiveConfig}
+				subject="service"
+				serviceName={data.service.name}
+				providerLabels={data.providerLabels}
+			/>
+			<p class="text-sm text-muted-foreground">
+				Upstream key: {data.service.upstreamKeyLabel ?? 'Automatic (default key)'}
+			</p>
 		</Card.Content>
 	</Card.Root>
 
