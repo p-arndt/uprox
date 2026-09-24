@@ -1,5 +1,6 @@
 /** Display helpers for the service list and detail pages. */
 import { tokenStatus, type Token } from '$lib/features/tokens/tokens';
+import { DEFAULT_SERVICE_NAME } from '$lib/features/tokens/token-helpers';
 
 /** Shared by the form's select and the list/detail badges so both say the same thing. */
 export const SERVICE_TYPE_OPTIONS = [
@@ -13,8 +14,6 @@ export function serviceTypeLabel(type: string): string {
 	return SERVICE_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type;
 }
 
-// Mirrors DEFAULT_SERVICE_NAME in $lib/server/services, which the client can't import.
-const DEFAULT_SERVICE_NAME = 'Default';
 
 /** Confirmation copy for deleting a service, which revokes all of its tokens. */
 export function deleteServiceDescription(activeTokens: number, name?: string): string {
