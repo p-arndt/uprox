@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+	budgetAlertTitle,
 	budgetLevel,
 	budgetWarnings,
 	BUDGET_WARN_THRESHOLD,
@@ -77,5 +78,43 @@ describe('budgetWarnings', () => {
 		const statuses = [svc({ daily: { budgetUsd: 100, spentUsd: 60 } })];
 		expect(budgetWarnings(statuses)).toEqual([]);
 		expect(budgetWarnings(statuses, 0.5)).toHaveLength(1);
+	});
+});
+
+describe('budgetAlertTitle', () => {
+	const over = { daily: { budgetUsd: 10, spentUsd: 12 } };
+	const near = { daily: { budgetUsd: 10, spentUsd: 9 } };
+	const instance = { serviceId: 'instance', serviceName: 'Instance ceiling', instance: true };
+	const title = (statuses: BudgetStatus[]) => budgetAlertTitle(budgetWarnings(statuses));
+
+	it('is empty without warnings', () => {
+		expect(title([])).toBe('');
+	});
+
+	it('names the one service approaching its ceiling', () => {
+		expect(title([svc(near)])).toBe('Service api approaching budget');
+	});
+
+	it('counts several services over budget', () => {
+		expect(title([svc(over), svc({ ...over, serviceId: 's2', serviceName: 'batch' })])).toBe(
+			'2 services over budget'
+		);
+	});
+
+	it('ranks an exceeded instance ceiling above any service', () => {
+		expect(title([svc(over), svc({ ...over, ...instance })])).toBe('Instance budget exceeded');
+	});
+
+	it('leads with the services that are over, not the ones only approaching', () => {
+		expect(
+			title([
+				svc({ ...near, ...instance }),
+				svc({ ...over, serviceId: 's2', serviceName: 'batch' })
+			])
+		).toBe('Service batch over budget');
+	});
+
+	it('flags an instance ceiling that is only approaching', () => {
+		expect(title([svc({ ...near, ...instance })])).toBe('Instance approaching budget');
 	});
 });

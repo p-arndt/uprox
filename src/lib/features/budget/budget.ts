@@ -31,6 +31,8 @@ export interface BudgetStatus {
 	serviceId: string;
 	serviceName: string;
 	policyName: string;
+	/** the instance-wide ceiling rather than a service's (see instanceBudgetStatus) */
+	instance?: boolean;
 	// null when that window has no ceiling (0 = unlimited)
 	daily: BudgetWindow | null;
 	monthly: BudgetWindow | null;
@@ -46,6 +48,7 @@ export interface BudgetWarning {
 	serviceId: string;
 	serviceName: string;
 	policyName: string;
+	instance: boolean;
 	level: 'warn' | 'over';
 	window: 'daily' | 'monthly';
 	budgetUsd: number;
@@ -132,6 +135,7 @@ export function budgetWarnings(
 			serviceId: s.serviceId,
 			serviceName: s.serviceName,
 			policyName: s.policyName,
+			instance: s.instance === true,
 			level,
 			window: useDaily ? 'daily' : 'monthly',
 			budgetUsd: window.budgetUsd,
@@ -140,4 +144,23 @@ export function budgetWarnings(
 		});
 	}
 	return warnings.sort((a, b) => b.fraction - a.fraction);
+}
+
+/**
+ * The budget banner's heading, derived from what it lists so it never says
+ * "Service over budget" above an instance ceiling, or names one service when
+ * three are listed. Leads with the worst news: the instance ceiling blocks every
+ * service at once, so it outranks any number of individual ones.
+ */
+export function budgetAlertTitle(warnings: BudgetWarning[]): string {
+	const over = warnings.filter((w) => w.level === 'over');
+	const pool = over.length > 0 ? over : warnings;
+	const [first] = pool;
+	if (!first) return '';
+	const verb = over.length > 0 ? 'over budget' : 'approaching budget';
+	if (pool.some((w) => w.instance)) {
+		return over.length > 0 ? 'Instance budget exceeded' : 'Instance approaching budget';
+	}
+	if (pool.length === 1) return `Service ${first.serviceName} ${verb}`;
+	return `${pool.length} services ${verb}`;
 }

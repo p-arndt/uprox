@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Alert from '$lib/components/ui/alert/index.js';
-	import { budgetWarnings, type BudgetStatus } from '$lib/features/budget/budget';
+	import { budgetAlertTitle, budgetWarnings, type BudgetStatus } from '$lib/features/budget/budget';
 	import { formatUsd } from '$lib/format';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 
@@ -10,14 +10,13 @@
 
 	const warnings = $derived(budgetWarnings(statuses, threshold));
 	const anyOver = $derived(warnings.some((w) => w.level === 'over'));
+	const title = $derived(budgetAlertTitle(warnings));
 </script>
 
 {#if warnings.length > 0}
 	<Alert.Root variant={anyOver ? 'destructive' : 'default'}>
 		<TriangleAlert />
-		<Alert.Title>
-			{anyOver ? 'Service over budget' : 'Service approaching budget'}
-		</Alert.Title>
+		<Alert.Title>{title}</Alert.Title>
 		<Alert.Description>
 			<ul class="mt-1 space-y-1.5">
 				{#each warnings as w (w.serviceId + w.window)}
