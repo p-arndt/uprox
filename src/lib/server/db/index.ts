@@ -41,4 +41,8 @@ const client = postgres({
 	}
 });
 
+// Vite re-evaluates this module on every server-side hot update; without this
+// each reload opened a fresh pool and the dev server exhausted max_connections.
+import.meta.hot?.dispose(() => client.end({ timeout: 5 }));
+
 export const db = drizzle(client, { schema });
