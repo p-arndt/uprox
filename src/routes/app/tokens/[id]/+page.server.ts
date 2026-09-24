@@ -3,11 +3,57 @@ import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
 import { getToken, revealToken } from '$lib/server/tokens-admin';
 import { loadUsageAnalysis } from '$lib/server/usage-analysis';
+import { eq } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
+import { db } from '$lib/server/db';
+import { machineToken, policy, service } from '$lib/server/db/schema';
+import { explainEffectiveConfig } from '$lib/server/effective-config';
+import { getSettings } from '$lib/server/settings';
+import { PROVIDERS } from '$lib/server/providers';
+
+/**
+ * The token's layers of the config cascade (same joins as resolveToken), so the
+ * page can show what actually applies and where each value comes from.
+ */
+async function loadEffectiveSettings(tokenId: string) {
+	const tokenPolicy = alias(policy, 'token_policy');
+	const [row] = await db
+		.select({
+			token: machineToken,
+			service: service,
+			servicePolicy: policy,
+			tokenPolicy: tokenPolicy
+		})
+		.from(machineToken)
+		.innerJoin(service, eq(service.id, machineToken.serviceId))
+		.leftJoin(policy, eq(policy.id, service.policyId))
+		.leftJoin(tokenPolicy, eq(tokenPolicy.id, machineToken.policyId))
+		.where(eq(machineToken.id, tokenId))
+		.limit(1);
+	if (!row) return null;
+	const instance = await getSettings();
+	return {
+		servicePresetName: row.servicePolicy?.name ?? null,
+		config: explainEffectiveConfig({
+			token: row.token,
+			tokenPolicy: row.tokenPolicy,
+			service: row.service,
+			servicePolicy: row.servicePolicy,
+			defaults: {
+				cacheTtlSeconds: instance.cacheTtlSeconds,
+				dailyBudgetUsd: instance.dailyBudgetUsd ?? 0,
+				monthlyBudgetUsd: instance.monthlyBudgetUsd ?? 0
+			}
+		})
+	};
+}
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
 	const token = await getToken(event.params.id);
 	if (!token) error(404, 'Token not found');
+	const effective = await loadEffectiveSettings(token.id);
+	if (!effective) error(404, 'Token not found');
 
 	// Same cost-analysis workbench the org page renders, scoped to this token.
 	// `service` and `token` are dropped: a token belongs to exactly one service
@@ -28,12 +74,15 @@ export const load: PageServerLoad = async (event) => {
 			serviceName: token.serviceName,
 			policyId: token.policyId,
 			policyName: token.policyName,
+			servicePresetName: effective.servicePresetName,
 			recopyable: token.recopyable,
 			createdAt: token.createdAt,
 			lastUsedAt: token.lastUsedAt,
 			expiresAt: token.expiresAt,
 			revokedAt: token.revokedAt
 		},
+		effectiveConfig: effective.config,
+		providerLabels: Object.fromEntries(Object.values(PROVIDERS).map((p) => [p.id, p.label])),
 		crumb: token.name,
 		...analysis
 	};

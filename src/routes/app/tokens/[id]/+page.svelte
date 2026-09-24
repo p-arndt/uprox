@@ -1,6 +1,8 @@
 <script lang="ts">
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import * as Card from '$lib/components/ui/card/index.js';
+	import EffectiveConfigSummary from '$lib/features/policies/components/effective-config-summary.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import UsageWorkbench from '$lib/features/usage/components/usage-workbench.svelte';
 	import { resolve } from '$app/paths';
@@ -91,20 +93,38 @@
 			>
 				{data.token.serviceName}
 			</a>
-			· Policy: {data.token.policyId
-				? (data.token.policyName ?? 'No policy')
-				: 'inherits service policy'} · created {relativeTime(data.token.createdAt)} · last used {relativeTime(
-				data.token.lastUsedAt
-			)}
+			· Preset: {data.token.policyId
+				? (data.token.policyName ?? 'none')
+				: `inherits service preset (${data.token.servicePresetName ?? 'none'})`} · created {relativeTime(
+				data.token.createdAt
+			)} · last used {relativeTime(data.token.lastUsedAt)}
 		{/snippet}
 		{#snippet extra()}
-			{#if data.token.scopes.length > 0}
-				<div class="flex flex-wrap gap-1 pt-0.5">
-					{#each data.token.scopes as s (s)}<Badge variant="outline">{s}</Badge>{/each}
-				</div>
-			{/if}
+			<div class="flex flex-wrap gap-1 pt-0.5">
+				{#each data.token.scopes as s (s)}<Badge variant="outline">{s}</Badge>{:else}<Badge
+						variant="outline">All endpoints</Badge
+					>{/each}
+			</div>
 		{/snippet}
 	</DetailHeader>
+
+	<Card.Root>
+		<Card.Header>
+			<Card.Title class="text-base">Effective settings</Card.Title>
+			<Card.Description>
+				What applies to this token after combining token, presets, service and instance defaults.
+				All budgets that are set apply at once.
+			</Card.Description>
+		</Card.Header>
+		<Card.Content>
+			<EffectiveConfigSummary
+				config={data.effectiveConfig}
+				subject="token"
+				serviceName={data.token.serviceName}
+				providerLabels={data.providerLabels}
+			/>
+		</Card.Content>
+	</Card.Root>
 
 	<UsageWorkbench analysis={data} {view} {rowLabel} />
 </PageShell>
