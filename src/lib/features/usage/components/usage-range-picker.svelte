@@ -5,6 +5,7 @@
 	import { parseDate, type DateValue } from '@internationalized/date';
 	import type { ResolvedPathname } from '$app/types';
 	import type { UsageUrlOverrides } from '$lib/features/usage/url';
+	import { formatDayRange } from '$lib/features/usage/date-range';
 	import CalendarIcon from '@lucide/svelte/icons/calendar';
 	import Check from '@lucide/svelte/icons/check';
 	import ChevronDown from '@lucide/svelte/icons/chevron-down';
@@ -60,7 +61,7 @@
 	const isCustom = $derived(range === 'custom');
 	const label = $derived(
 		isCustom && customFrom && customTo
-			? `${customFrom} → ${customTo}`
+			? formatDayRange(customFrom, customTo)
 			: (ranges.find((r) => r.key === range)?.label ?? range)
 	);
 

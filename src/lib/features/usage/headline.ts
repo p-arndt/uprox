@@ -30,11 +30,20 @@ export interface HeadlineCell {
 	/** true for cells that compare against the previous window (even while it loads) */
 	compares?: boolean;
 	tone?: 'cost' | 'neutral';
+	/** the figure itself is a problem worth colouring (error rate past the threshold) */
+	alert?: boolean;
 	/** the qualifier under the figure — where the number came from */
 	note: string;
 	/** per-bucket values; cells without a meaningful trend line omit it */
 	spark?: number[];
 }
+
+/**
+ * Share of requests that failed or were denied from which the errors cell turns
+ * destructive. A few percent is normal background (clients retrying, the odd
+ * policy denial); past this, something is systematically wrong.
+ */
+export const FAILURE_RATE_ALERT = 0.05;
 
 /**
  * Period-over-period change in percent against the immediately-preceding
@@ -61,7 +70,8 @@ export function headlineCells(
 		prevTotals ? { delta: pctDelta(cur, prior(prevTotals)) } : {};
 	const totalTokens = totals.inputTokens + totals.outputTokens;
 	const avgCostPerReq = totals.requests > 0 ? totals.costUsd / totals.requests : 0;
-	const errorRate = totals.requests > 0 ? totals.errors / totals.requests : 0;
+	const failed = totals.errors + totals.denied;
+	const failureRate = totals.requests > 0 ? failed / totals.requests : 0;
 	return [
 		{
 			label: 'Spend',
@@ -77,7 +87,7 @@ export function headlineCells(
 			value: formatCount(totals.requests),
 			compares: true,
 			...delta(totals.requests, (t) => t.requests),
-			note: `${(errorRate * 100).toFixed(1)}% errors · ${formatCount(totals.denied)} denied`,
+			note: `${formatCount(totals.requests - failed)} succeeded`,
 			spark: points.map((p) => p.requests)
 		},
 		{
@@ -87,6 +97,12 @@ export function headlineCells(
 			...delta(totalTokens, (t) => t.inputTokens + t.outputTokens),
 			note: `${formatTokens(totals.inputTokens)} in · ${formatTokens(totals.outputTokens)} out`,
 			spark: points.map((p) => p.inputTokens + p.outputTokens)
+		},
+		{
+			label: 'Errors & denials',
+			value: `${(failureRate * 100).toFixed(1)}%`,
+			alert: failureRate >= FAILURE_RATE_ALERT,
+			note: `${formatCount(totals.errors)} errors · ${formatCount(totals.denied)} denied`
 		},
 		{
 			label: 'Cache rate',

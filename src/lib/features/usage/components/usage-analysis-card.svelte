@@ -25,16 +25,20 @@
 		groupBy,
 		rangeLabel,
 		bucket,
-		bucketHref
+		bucketHref,
+		metric: pickedMetric,
+		onMetric
 	}: {
 		grouped: GroupedSeriesResult;
 		groupBy: UsageDimension;
 		rangeLabel: string;
 		bucket: string;
 		bucketHref: (key: string) => ResolvedPathname;
+		/** the metric the reader picked; URL state, owned by the page's view */
+		metric: UsageMetric;
+		onMetric: (metric: UsageMetric) => void;
 	} = $props();
 
-	let pickedMetric = $state<UsageMetric>('cost');
 	const ALL_METRICS: { key: UsageMetric; label: string }[] = [
 		{ key: 'cost', label: 'Spend' },
 		{ key: 'requests', label: 'Requests' },
@@ -86,7 +90,14 @@
 				? 'accumulated'
 				: (UNIT_ADVERB[grouped.unit] ?? grouped.unit)
 	);
-	const optionsActive = $derived(chartType !== 'bars' || mode !== 'absolute');
+	// what the options chip spells out, so a non-default chart is never a
+	// surprise hidden behind an icon
+	const activeOptions = $derived(
+		[
+			chartType === 'area' ? 'Area' : null,
+			mode === 'cumulative' ? 'Accumulated' : mode === 'normalized' ? '100%' : null
+		].filter((o): o is string => o !== null)
+	);
 </script>
 
 <Card.Root>
@@ -99,12 +110,13 @@
 				{shape} · by {dimensionLabel(groupBy).toLowerCase()} · {rangeLabel}
 			</Card.Description>
 		</div>
-		<div class="flex shrink-0 items-center gap-2">
-			<div class="flex gap-1 rounded-lg border p-0.5">
+		<div class="flex shrink-0 flex-wrap items-center gap-2">
+			<div class="flex gap-1 rounded-lg border p-0.5" role="group" aria-label="Chart metric">
 				{#each METRICS as m (m.key)}
 					<button
 						type="button"
-						onclick={() => (pickedMetric = m.key)}
+						aria-pressed={m.key === metric}
+						onclick={() => onMetric(m.key)}
 						class="rounded-md px-3 py-1 text-sm font-medium transition-colors {m.key === metric
 							? 'bg-accent text-accent-foreground'
 							: 'text-muted-foreground hover:text-foreground'}"
@@ -115,20 +127,30 @@
 			</div>
 			<Popover.Root>
 				<Popover.Trigger
-					class="flex size-8 items-center justify-center rounded-lg border transition-colors hover:bg-accent {optionsActive
+					class="flex h-8 min-w-8 items-center justify-center gap-1.5 rounded-lg border px-2 transition-colors hover:bg-accent {activeOptions.length >
+					0
 						? 'text-accent-foreground'
 						: 'text-muted-foreground'}"
+					aria-label={activeOptions.length > 0
+						? `Chart options (${activeOptions.join(', ')})`
+						: 'Chart options'}
 					title="Chart options"
 				>
 					<SlidersHorizontal class="size-4" />
+					{#if activeOptions.length > 0}
+						<span class="rounded-full bg-accent px-1.5 text-xs font-medium" aria-hidden="true">
+							{activeOptions.join(' · ')}
+						</span>
+					{/if}
 				</Popover.Trigger>
 				<Popover.Content align="end" class="w-60 space-y-3">
 					<div class="space-y-1.5">
 						<span class="text-xs font-medium text-muted-foreground">Chart type</span>
-						<div class="flex gap-1 rounded-lg border p-0.5">
+						<div class="flex gap-1 rounded-lg border p-0.5" role="group" aria-label="Chart type">
 							{#each [{ key: 'bars', label: 'Columns' }, { key: 'area', label: 'Area' }] as c (c.key)}
 								<button
 									type="button"
+									aria-pressed={c.key === chartType}
 									onclick={() => (chartType = c.key as ChartType)}
 									class="flex-1 rounded-md px-2.5 py-1 text-xs font-medium transition-colors {c.key ===
 									chartType

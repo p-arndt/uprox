@@ -18,6 +18,8 @@ import {
 	type UsageUrlState
 } from '$lib/features/usage/url';
 import type { UsageDimension, UsageFilter } from '$lib/features/usage/group';
+import { normalizeMetric, type UsageMetric } from '$lib/features/usage/metric';
+import { formatDayRange } from '$lib/features/usage/date-range';
 
 /** The slice of a usage page's load data the controller reads. */
 export interface UsageViewData {
@@ -38,7 +40,7 @@ export const FRESH_PARAM = 'fresh';
 /** Human label for the active window: the preset label or the custom bounds. */
 export function usageRangeLabel(data: UsageViewData): string {
 	return data.range === 'custom'
-		? `${data.customFrom} – ${data.customTo}`
+		? formatDayRange(data.customFrom ?? '', data.customTo ?? '')
 		: (data.ranges.find((r) => r.key === data.range)?.label ?? data.range);
 }
 
@@ -57,6 +59,11 @@ export function buildUsageExportHref(
 export interface UsageView {
 	readonly rangeLabel: string;
 	readonly refreshing: boolean;
+	/** the chart's plotted figure, round-tripped through `?metric=` */
+	readonly metric: UsageMetric;
+	/** true when any dimension filter is active */
+	readonly filtered: boolean;
+	setMetric(metric: UsageMetric): void;
 	hrefWith(overrides: UsageUrlOverrides): ResolvedPathname;
 	applyCustom(from: string, to: string): void;
 	setGroupBy(dim: UsageDimension): void;
@@ -72,6 +79,10 @@ export function createUsageView(opts: {
 	basePath: () => string;
 }): UsageView {
 	let refreshing = $state(false);
+	// Seeded from the URL, then owned here: switching the metric only redraws
+	// the chart, so it updates the address bar shallowly instead of navigating,
+	// which would re-run the whole load for a change the server never sees.
+	let metric = $state<UsageMetric>(normalizeMetric(page.url.searchParams.get('metric')));
 	const rangeLabel = $derived(usageRangeLabel(opts.data()));
 
 	function current(): UsageUrlState {
@@ -82,7 +93,8 @@ export function createUsageView(opts: {
 			customFrom: d.customFrom,
 			customTo: d.customTo,
 			groupBy: d.groupBy,
-			filters: d.filters
+			filters: d.filters,
+			metric
 		};
 	}
 
@@ -96,6 +108,16 @@ export function createUsageView(opts: {
 		},
 		get refreshing() {
 			return refreshing;
+		},
+		get metric() {
+			return metric;
+		},
+		get filtered() {
+			return opts.data().filters.length > 0;
+		},
+		setMetric(next) {
+			metric = next;
+			replaceState(hrefWith({}), page.state);
 		},
 		hrefWith,
 		applyCustom(from, to) {

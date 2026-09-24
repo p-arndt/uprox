@@ -50,12 +50,14 @@
 		<BudgetAlert statuses={budgets.value} threshold={data.budgetThreshold} />
 	{/await}
 
-	<!-- The setup checklist lives on /app and has no nav entry of its own, so an
-	     unfiltered empty window is the one place that still has to point back at
-	     it: on a fresh instance this page is where a new operator lands. -->
-	{#if data.totals.requests === 0 && data.filters.length === 0}
+	<!-- The setup checklist lives on /app and has no nav entry of its own, so a
+	     gateway that has never proxied anything is the one case that still has
+	     to point back at it: on a fresh instance this page is where a new
+	     operator lands. `?setup` keeps /app on the checklist instead of
+	     redirecting onward. -->
+	{#if !data.everProxied}
 		<a
-			href={resolve('/app')}
+			href="{resolve('/app')}?setup"
 			class="inline-flex items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
 		>
 			Nothing proxied yet — finish setting up the gateway

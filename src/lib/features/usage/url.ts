@@ -14,6 +14,7 @@ import {
 	type UsageDimension,
 	type UsageFilter
 } from '$lib/features/usage/group';
+import { DEFAULT_METRIC, type UsageMetric } from '$lib/features/usage/metric';
 
 /** The window params a usage page round-trips through the query string. */
 export interface UsageUrlState {
@@ -26,6 +27,8 @@ export interface UsageUrlState {
 	groupBy?: UsageDimension;
 	/** active dimension filters; omitted on the non-analysis pages */
 	filters?: UsageFilter[];
+	/** the chart's plotted figure; client-only, the loader never reads it */
+	metric?: UsageMetric;
 }
 
 export interface UsageUrlOverrides {
@@ -36,6 +39,7 @@ export interface UsageUrlOverrides {
 	groupBy?: UsageDimension;
 	/** replaces the whole filter set — pass `[]` to clear it */
 	filters?: UsageFilter[];
+	metric?: UsageMetric;
 }
 
 /**
@@ -69,6 +73,9 @@ export function buildUsageHref(
 	const filters = overrides.filters ?? current.filters;
 	// one repeated `f=<dim>:<value>` per value — see parseFilters for why
 	for (const entry of serializeFilters(filters ?? [])) p.append('f', entry);
+
+	const metric = overrides.metric ?? current.metric;
+	if (metric && metric !== DEFAULT_METRIC) p.set('metric', metric);
 
 	return `${basePath}?${p}`;
 }

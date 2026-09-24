@@ -37,6 +37,29 @@ export const USAGE_RANGES: readonly UsageRangeOption[] = [
 export const DEFAULT_USAGE_RANGE: UsageRangeKey = 'today';
 
 /**
+ * The presets an empty window offers as one-click ways out: the next wider
+ * windows, so the reader lands on traffic instead of guessing in the picker.
+ * Custom ranges count as narrow, since they are usually a few days.
+ */
+export function widerRanges(current: string): UsageRangeKey[] {
+	switch (current) {
+		case '7d':
+			return ['30d', '90d'];
+		case '30d':
+		case 'this-month':
+		case 'last-month':
+			return ['90d'];
+		// year-to-date is shorter than 90 days for a quarter of the year, so it
+		// is not offered as a widening of either
+		case '90d':
+		case 'ytd':
+			return [];
+		default:
+			return ['7d', '30d'];
+	}
+}
+
+/**
  * Resolved-range keys cover the presets above plus `'custom'`, which is driven by
  * explicit `from`/`to` query params rather than a switcher button (so it is
  * deliberately absent from `USAGE_RANGES`).

@@ -7,6 +7,13 @@ import { formatCount, formatTokens, formatUsd } from '$lib/format';
  */
 export type UsageMetric = 'cost' | 'requests' | 'tokens';
 
+export const DEFAULT_METRIC: UsageMetric = 'cost';
+
+/** Coerce a query value to a metric; anything unknown is the default. */
+export function normalizeMetric(value: string | null | undefined): UsageMetric {
+	return value === 'requests' || value === 'tokens' ? value : DEFAULT_METRIC;
+}
+
 /** The per-bucket fields every metric reads from. */
 export interface MetricPoint {
 	costUsd: number;

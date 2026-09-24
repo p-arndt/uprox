@@ -9,6 +9,7 @@ import { orgUsageSeries } from '$lib/server/usage-queries/series';
 import { orgTokenMeters } from '$lib/server/usage-queries/meters';
 import { orgTopMovers } from '$lib/server/usage-queries/movers';
 import { orgModelEfficiency } from '$lib/server/usage-queries/efficiency';
+import { lastRequestAt } from '$lib/server/usage-queries/last-request';
 import type { DimensionUsageRow, Streamed, UsageAnalysis } from '$lib/features/usage/types';
 import {
 	USAGE_RANGES,
@@ -128,6 +129,26 @@ function cachedQueries(opts: {
 		const key = usageCacheKey({ query, window, ...opts.scope, ...parts });
 		return usageCache.fetch(key, window.ttlMs, load, opts.fresh);
 	};
+}
+
+/** A resolved window as ISO instants; rolling windows end at `now`. */
+function windowOf(r: ResolvedRange, now: Date) {
+	return { start: r.start.toISOString(), end: (r.end ?? now).toISOString() };
+}
+
+/**
+ * The latest request in scope, for an empty window's "last request" line. Only
+ * an empty window asks: a window with requests already answers the question.
+ * A failure degrades to "unknown" rather than failing the page.
+ */
+function lastRequestOrNull(
+	scope: { serviceId?: string; tokenId?: string },
+	filters: UsageFilter[]
+): Promise<string | null> {
+	return lastRequestAt({ ...scope, filters }).catch((err: unknown) => {
+		console.error('usage: last-request lookup failed', err);
+		return null;
+	});
 }
 
 /**
@@ -267,6 +288,9 @@ export async function loadUsageAnalysis(
 
 	const [totals, grouped, breakdown, series] = await firstPaint;
 
+	const lastRequest = totals.requests > 0 ? null : await lastRequestOrNull(scope, filters);
+	const now = new Date();
+
 	return {
 		range: range.key,
 		ranges: USAGE_RANGES,
@@ -282,6 +306,9 @@ export async function loadUsageAnalysis(
 		grouped,
 		breakdown,
 		series,
+		window: windowOf(range, now),
+		prevWindow: windowOf(prevRange, now),
+		lastRequestAt: lastRequest,
 		...secondary
 	};
 }
