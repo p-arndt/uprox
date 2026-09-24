@@ -32,10 +32,11 @@ export interface NavSection {
 export const NAV_SECTIONS: NavSection[] = [
 	{
 		label: 'Gateway',
+		// setup order: an upstream first, then who may call it, then how to call it
 		items: [
+			{ href: '/app/providers', label: 'Providers', icon: Plug },
 			{ href: '/app/services', label: 'Services', icon: Boxes },
 			{ href: '/app/tokens', label: 'Machine Tokens', icon: KeyRound },
-			{ href: '/app/providers', label: 'Providers', icon: Plug },
 			{ href: '/app/connect', label: 'Connect', icon: Cable }
 		]
 	},

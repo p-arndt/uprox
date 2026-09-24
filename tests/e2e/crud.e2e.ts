@@ -13,18 +13,25 @@ test.describe('dashboard CRUD', () => {
 		await page.getByRole('link', { name: 'Providers', exact: true }).click();
 		await expect(page).toHaveURL(/\/app\/providers$/);
 
-		// each provider is a card headed by its label; open OpenAI's "Add key" dialog
-		const openaiCard = page
-			.locator('[data-slot="card"]')
-			.filter({ has: page.getByText('OpenAI', { exact: true }) });
-		await openaiCard.getByRole('button', { name: 'Add key' }).click();
+		// OpenAI sits in the "Add a provider" grid until it has a key, and in its own
+		// card afterwards; both expose the same "Add OpenAI key" button name
+		await page.getByRole('button', { name: 'Add OpenAI key', exact: true }).click();
 
 		const keyDialog = page.getByRole('dialog', { name: 'Add OpenAI key' });
 		await expect(keyDialog).toBeVisible();
 		await keyDialog.getByLabel('API key', { exact: true }).fill('sk-test-deadbeefdeadbeefdeadbeef');
 		await keyDialog.getByRole('button', { name: 'Save key' }).click();
 
+		// the fake key fails the connection test (401 upstream, or no network in CI),
+		// so the dialog offers to save it regardless
+		const saveAnyway = keyDialog.getByRole('button', { name: 'Save anyway' });
+		await expect(saveAnyway).toBeVisible({ timeout: 15_000 });
+		await saveAnyway.click();
+
 		await expect(keyDialog).toBeHidden();
+		const openaiCard = page
+			.locator('[data-slot="card"]')
+			.filter({ has: page.getByText('OpenAI', { exact: true }) });
 		// a regex is matched against the raw text, so allow the template's line break
 		await expect(openaiCard).toContainText(/[1-9]\d*\s+keys?\s+configured/);
 		await expect(openaiCard.getByText('••••beef')).toBeVisible();

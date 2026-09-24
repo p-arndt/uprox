@@ -7,7 +7,11 @@
 	import EntityDialog from '$lib/components/form/entity-dialog.svelte';
 	import FormError from '$lib/components/form/form-error.svelte';
 	import { endpointPlaceholder } from '$lib/components/form/form-options';
-	import type { ProviderMetaDraft } from '$lib/features/providers/providers';
+	import {
+		credentialNoun,
+		labelPlaceholder,
+		type ProviderMetaDraft
+	} from '$lib/features/providers/providers';
 
 	let {
 		editingMeta,
@@ -19,22 +23,28 @@
 		message?: string;
 		onClose: () => void;
 	} = $props();
+
+	let pending = $state(false);
 </script>
 
 <!-- Edit details -->
 <EntityDialog
 	open={editingMeta !== null}
 	{onClose}
-	title="{editingMeta?.label || 'Provider'} details"
+	title="Edit {editingMeta?.providerLabel} {credentialNoun(editingMeta?.requiresEndpoint ?? false)}"
 	description="Update the label, endpoint and priority. The stored key is unchanged."
 >
 	<form
 		method="post"
 		action="?/editMeta"
 		class="space-y-4"
-		use:enhance={() =>
-			async ({ update }) =>
-				update()}
+		use:enhance={() => {
+			pending = true;
+			return async ({ update }) => {
+				await update();
+				pending = false;
+			};
+		}}
 	>
 		<input type="hidden" name="id" value={editingMeta?.id} />
 		<input type="hidden" name="provider" value={editingMeta?.provider} />
@@ -59,7 +69,7 @@
 					id="meta-label"
 					name="label"
 					value={editingMeta?.label ?? ''}
-					placeholder="e.g. Azure East US"
+					placeholder={labelPlaceholder(editingMeta?.provider)}
 				/>
 			</div>
 			<div class="space-y-2">
@@ -74,7 +84,7 @@
 		</div>
 		<FormError {message} />
 		<Dialog.Footer>
-			<Button type="submit">Save details</Button>
+			<Button type="submit" disabled={pending}>{pending ? 'Saving…' : 'Save details'}</Button>
 		</Dialog.Footer>
 	</form>
 </EntityDialog>
