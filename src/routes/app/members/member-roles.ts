@@ -16,3 +16,24 @@ export function roleVariant(role: string): 'default' | 'secondary' | 'outline' {
 	if (role === 'admin') return 'secondary';
 	return 'outline';
 }
+
+/**
+ * Whether moving a member from `from` to `to` grants them more power. Those
+ * changes are confirmed first: one misclick in the inline select would
+ * otherwise hand someone full admin rights.
+ */
+export function isEscalation(from: string, to: string): boolean {
+	const rank = (role: string) => (role === 'owner' ? 2 : role === 'admin' ? 1 : 0);
+	return rank(to) > rank(from);
+}
+
+/** What the org's member-permission toggles currently let plain members manage. */
+export function memberGrants(settings: {
+	membersCanManageTokens: boolean;
+	membersCanManageServices: boolean;
+}): string[] {
+	const grants: string[] = [];
+	if (settings.membersCanManageTokens) grants.push('machine tokens');
+	if (settings.membersCanManageServices) grants.push('services');
+	return grants;
+}
