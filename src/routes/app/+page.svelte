@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
+	import { resolve } from '$app/paths';
 	import type { Pathname } from '$app/types';
 	import ArrowRight from '@lucide/svelte/icons/arrow-right';
 	import Check from '@lucide/svelte/icons/check';
@@ -28,9 +29,9 @@
 		{
 			done: data.stats.requests > 0,
 			title: 'Make your first request',
-			desc: 'Proxy a call through the gateway and watch it land here.',
-			href: '/app/audit',
-			cta: 'View audit log'
+			desc: 'Point your client at the gateway with the token and send a request.',
+			href: '/app/connect',
+			cta: 'Connect a client'
 		}
 	]);
 	const completed = $derived(steps.filter((s) => s.done).length);
@@ -39,15 +40,24 @@
 
 <PageShell width="narrow">
 	<PageHeader
-		title="Welcome to uprox"
-		description="Three steps to your first proxied request. Once one lands, this page hands over to the cost analysis."
+		title="Get started with uprox"
+		description="Three steps to your first proxied request. After your first request, this page shows your costs."
 	/>
 
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>Get started with uprox</Card.Title>
-			<Card.Description>{completed} of {steps.length} done.</Card.Description>
-			<div class="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
+			<Card.Description id="setup-progress-label">
+				{completed} of {steps.length} steps done
+			</Card.Description>
+			<div
+				class="mt-3 h-1.5 overflow-hidden rounded-full bg-muted"
+				role="progressbar"
+				aria-labelledby="setup-progress-label"
+				aria-valuemin={0}
+				aria-valuemax={steps.length}
+				aria-valuenow={completed}
+				aria-valuetext="{completed} of {steps.length} steps done"
+			>
 				<div
 					class="h-full rounded-full bg-accent-foreground transition-all duration-500"
 					style="width: {(completed / steps.length) * 100}%"
@@ -57,7 +67,7 @@
 		<Card.Content class="space-y-2">
 			{#each steps as s, i (s.title)}
 				<div
-					class="flex items-center gap-3 rounded-xl border p-3 transition-colors {s.done
+					class="flex flex-wrap items-center gap-3 rounded-xl border p-3 transition-colors {s.done
 						? 'border-transparent bg-muted/40'
 						: i === firstIncomplete
 							? 'border-accent-foreground/30 bg-accent/40'
@@ -68,6 +78,7 @@
 							class="flex size-7 shrink-0 items-center justify-center rounded-full bg-accent-foreground text-background"
 						>
 							<Check class="size-4" />
+							<span class="sr-only">Done:</span>
 						</span>
 					{:else}
 						<span
@@ -79,7 +90,7 @@
 							{i + 1}
 						</span>
 					{/if}
-					<div class="flex-1">
+					<div class="min-w-0 flex-1">
 						<p class="text-sm font-medium {s.done ? 'text-muted-foreground line-through' : ''}">
 							{s.title}
 						</p>
@@ -94,5 +105,13 @@
 				</div>
 			{/each}
 		</Card.Content>
+		{#if completed === steps.length}
+			<Card.Footer>
+				<Button href={resolve('/app/usage')} variant="outline">
+					Open cost analysis
+					<ArrowRight class="size-4" />
+				</Button>
+			</Card.Footer>
+		{/if}
 	</Card.Root>
 </PageShell>
