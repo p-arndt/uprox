@@ -15,17 +15,20 @@ export const actions: Actions = {
 		await requirePermission(event, 'settings:manage');
 		const data = await event.request.formData();
 		await updateSettings({ ssoSignupEnabled: isOn(data.get('ssoSignupEnabled')) });
-		return { success: true };
+		return { success: true, action: 'updateSsoSignup' };
 	},
 	updateCache: async (event) => {
 		await requirePermission(event, 'settings:manage');
 		const data = await event.request.formData();
 		const ttl = Number(data.get('cacheTtlSeconds'));
 		if (!Number.isFinite(ttl) || ttl < 0) {
-			return fail(400, { message: 'Cache TTL must be a non-negative number' });
+			return fail(400, {
+				action: 'updateCache',
+				message: 'Cache TTL must be a non-negative number'
+			});
 		}
 		await updateSettings({ cacheTtlSeconds: ttl });
-		return { success: true };
+		return { success: true, action: 'updateCache' };
 	},
 	updateMemberPermissions: async (event) => {
 		await requirePermission(event, 'settings:manage');
@@ -36,7 +39,7 @@ export const actions: Actions = {
 			membersCanManageTokens,
 			membersCanManageServices
 		});
-		return { success: true };
+		return { success: true, action: 'updateMemberPermissions' };
 	},
 	updateTokenSecurity: async (event) => {
 		await requirePermission(event, 'settings:manage');
@@ -44,7 +47,7 @@ export const actions: Actions = {
 		await updateSettings({
 			tokensRecopyableDefault: isOn(data.get('tokensRecopyableDefault'))
 		});
-		return { success: true };
+		return { success: true, action: 'updateTokenSecurity' };
 	},
 	updateInstanceBudget: async (event) => {
 		await requirePermission(event, 'settings:manage');
@@ -53,10 +56,13 @@ export const actions: Actions = {
 		const daily = parseOptionalPrice(data.get('dailyBudgetUsd'));
 		const monthly = parseOptionalPrice(data.get('monthlyBudgetUsd'));
 		if (daily === null || monthly === null) {
-			return fail(400, { message: 'Budgets must be non-negative numbers' });
+			return fail(400, {
+				action: 'updateInstanceBudget',
+				message: 'Budgets must be non-negative numbers'
+			});
 		}
 		await updateSettings({ dailyBudgetUsd: daily ?? null, monthlyBudgetUsd: monthly ?? null });
-		return { success: true };
+		return { success: true, action: 'updateInstanceBudget' };
 	},
 	updateBudgetAlerts: async (event) => {
 		await requirePermission(event, 'settings:manage');
@@ -64,17 +70,25 @@ export const actions: Actions = {
 		const enabled = isOn(data.get('budgetAlertsEnabled'));
 		const pct = Number(data.get('budgetAlertThresholdPct'));
 		if (enabled && (!Number.isFinite(pct) || pct < 1 || pct > 100)) {
-			return fail(400, { message: 'Alert threshold must be between 1 and 100' });
+			return fail(400, {
+				action: 'updateBudgetAlerts',
+				message: 'Alert threshold must be between 1 and 100'
+			});
 		}
 		const email = String(data.get('budgetAlertEmail') ?? '').trim();
 		if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-			return fail(400, { message: 'Notification email is not a valid address' });
+			return fail(400, {
+				action: 'updateBudgetAlerts',
+				message: 'Notification email is not a valid address'
+			});
 		}
 		await updateSettings({
 			budgetAlertsEnabled: enabled,
-			budgetAlertThresholdPct: pct,
+			// the threshold input is disabled (so not submitted) while alerts are
+			// off; keep the stored value instead of overwriting it with 0
+			budgetAlertThresholdPct: enabled ? pct : undefined,
 			budgetAlertEmail: email
 		});
-		return { success: true };
+		return { success: true, action: 'updateBudgetAlerts' };
 	}
 };
