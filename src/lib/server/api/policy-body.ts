@@ -12,25 +12,17 @@ import {
 	requiredString,
 	type JsonBody
 } from '$lib/server/api/fields';
-import { badRequest } from '$lib/server/api/errors';
-import { modelPatternsError } from '$lib/model-patterns';
+import { checkedModelPatterns } from '$lib/server/api/inline-config-body';
 
 export type PolicyCreateInput = Parameters<typeof createPolicy>[0];
 export type PolicyPatch = Parameters<typeof updatePolicy>[1];
-
-/** Like optionalStringArray, but rejects patterns the matcher can't honor. */
-function modelPatterns<T extends string[] | null | undefined>(list: T): T {
-	const err = list ? modelPatternsError(list) : null;
-	if (err) throw badRequest(err, 'allowedModels');
-	return list;
-}
 
 /** POST /api/policies. Absent (or null) limits fall back to the column defaults. */
 export function parsePolicyCreate(body: JsonBody): PolicyCreateInput {
 	return {
 		name: requiredString(body, 'name').trim(),
 		allowedProviders: optionalStringArray(body, 'allowedProviders') ?? [],
-		allowedModels: modelPatterns(optionalStringArray(body, 'allowedModels')) ?? [],
+		allowedModels: checkedModelPatterns(optionalStringArray(body, 'allowedModels')) ?? [],
 		preferredProvider: optionalString(body, 'preferredProvider') ?? null,
 		rateLimitPerMinute: optionalNumber(body, 'rateLimitPerMinute', { integer: true }) ?? 0,
 		dailyBudgetUsd: optionalNumber(body, 'dailyBudgetUsd') ?? 0,
@@ -49,7 +41,9 @@ export function parsePolicyPatch(body: JsonBody): PolicyPatch {
 	const patch = definedOnly<PolicyPatch>({
 		name: body.name === undefined ? undefined : requiredString(body, 'name').trim(),
 		allowedProviders: optionalStringArray(body, 'allowedProviders', { nullable: false }),
-		allowedModels: modelPatterns(optionalStringArray(body, 'allowedModels', { nullable: false })),
+		allowedModels: checkedModelPatterns(
+			optionalStringArray(body, 'allowedModels', { nullable: false })
+		),
 		preferredProvider: optionalString(body, 'preferredProvider'),
 		rateLimitPerMinute: optionalNumber(body, 'rateLimitPerMinute', {
 			integer: true,

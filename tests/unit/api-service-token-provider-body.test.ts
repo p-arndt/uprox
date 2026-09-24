@@ -186,3 +186,25 @@ describe('parseProviderCreate', () => {
 		).toBe('https://x');
 	});
 });
+
+describe('model allowlist patterns on services and tokens', () => {
+	it('rejects a * that is not at the end, naming the field', () => {
+		const bad = { name: 'x', allowedModels: ['gpt-*-mini'] };
+		for (const parse of [
+			parseServiceCreate,
+			parseServicePatch,
+			parseTokenCreate,
+			parseTokenPatch
+		]) {
+			const err = apiError(() => parse(bad));
+			expect(err.status).toBe(400);
+			expect(err.field).toBe('allowedModels');
+		}
+	});
+
+	it('accepts exact ids and trailing prefix globs', () => {
+		const ok = { name: 'x', allowedModels: ['gpt-4o*', 'claude-sonnet-4-6'] };
+		expect(parseServiceCreate(ok).allowedModels).toEqual(ok.allowedModels);
+		expect(parseTokenCreate(ok).allowedModels).toEqual(ok.allowedModels);
+	});
+});

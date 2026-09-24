@@ -1,3 +1,4 @@
+import { modelPatternsError } from '$lib/model-patterns';
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
@@ -59,6 +60,8 @@ export const actions: Actions = {
 
 		const scopes = data.getAll('scopes').map((s) => s.toString());
 		const allowedModels = splitList(data.get('allowedModels'));
+		const modelsError = modelPatternsError(allowedModels);
+		if (modelsError) return fail(400, { action: 'create' as const, message: modelsError });
 		// blank = no token preset; the service's preset (if any) still applies
 		const policyId = data.get('policyId')?.toString() || null;
 		const expiresAt = expiryFromForm(data.get('expiresInDays')) ?? null;

@@ -13,6 +13,15 @@ import {
 	optionalStringArray,
 	type JsonBody
 } from '$lib/server/api/fields';
+import { badRequest } from '$lib/server/api/errors';
+import { modelPatternsError } from '$lib/model-patterns';
+
+/** Passes a parsed model allowlist through, rejecting patterns the matcher can't honor. */
+export function checkedModelPatterns<T extends string[] | null | undefined>(list: T): T {
+	const err = list ? modelPatternsError(list) : null;
+	if (err) throw badRequest(err, 'allowedModels');
+	return list;
+}
 
 export type InlineConfigBody = Omit<InlineConfigInput, 'allowedModels'>;
 

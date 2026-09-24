@@ -1,3 +1,4 @@
+import { modelPatternsError } from '$lib/model-patterns';
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
@@ -37,6 +38,8 @@ export const actions: Actions = {
 		if (await serviceNameTaken(name))
 			return fail(409, { action: 'create', message: SERVICE_NAME_TAKEN });
 		const fields = serviceFromForm(data);
+		const modelsError = modelPatternsError(fields.allowedModels ?? []);
+		if (modelsError) return fail(400, { action: 'create', message: modelsError });
 		await createService({ ...fields, name, description: fields.description ?? undefined });
 		return { action: 'create', success: true };
 	},
@@ -49,7 +52,10 @@ export const actions: Actions = {
 		if (!name) return fail(400, { action: 'update', message: 'Name is required' });
 		if (await serviceNameTaken(name, id))
 			return fail(409, { action: 'update', message: SERVICE_NAME_TAKEN });
-		await updateService(id, { ...serviceFromForm(data), name });
+		const fields = serviceFromForm(data);
+		const modelsError = modelPatternsError(fields.allowedModels ?? []);
+		if (modelsError) return fail(400, { action: 'update', message: modelsError });
+		await updateService(id, { ...fields, name });
 		return { action: 'update', success: true };
 	},
 	delete: async (event) => {

@@ -13,7 +13,7 @@ import {
 	requiredString,
 	type JsonBody
 } from '$lib/server/api/fields';
-import { parseInlineConfigBody } from '$lib/server/api/inline-config-body';
+import { checkedModelPatterns, parseInlineConfigBody } from '$lib/server/api/inline-config-body';
 import { badRequest } from '$lib/server/api/errors';
 
 export type TokenCreateInput = Parameters<typeof createToken>[1];
@@ -26,7 +26,7 @@ export function parseTokenCreate(body: JsonBody): TokenCreateInput {
 		serviceId: optionalUuid(body, 'serviceId') ?? undefined,
 		name: requiredString(body, 'name').trim(),
 		scopes: optionalStringArray(body, 'scopes') ?? [],
-		allowedModels: optionalStringArray(body, 'allowedModels') ?? [],
+		allowedModels: checkedModelPatterns(optionalStringArray(body, 'allowedModels')) ?? [],
 		policyId: optionalUuid(body, 'policyId') ?? null,
 		expiresAt: optionalDate(body, 'expiresAt') ?? null
 	};
@@ -54,7 +54,9 @@ export function parseTokenPatch(body: JsonBody, now = Date.now()): TokenPatch {
 		...parseInlineConfigBody(body),
 		name: body.name === undefined ? undefined : requiredString(body, 'name').trim(),
 		scopes: optionalStringArray(body, 'scopes', { nullable: false }),
-		allowedModels: optionalStringArray(body, 'allowedModels', { nullable: false }),
+		allowedModels: checkedModelPatterns(
+			optionalStringArray(body, 'allowedModels', { nullable: false })
+		),
 		policyId: optionalUuid(body, 'policyId'),
 		expiresAt,
 		recopyable

@@ -14,7 +14,6 @@ export function serviceTypeLabel(type: string): string {
 	return SERVICE_TYPE_OPTIONS.find((o) => o.value === type)?.label ?? type;
 }
 
-
 /** Confirmation copy for deleting a service, which revokes all of its tokens. */
 export function deleteServiceDescription(activeTokens: number, name?: string): string {
 	const tail = "This can't be undone.";

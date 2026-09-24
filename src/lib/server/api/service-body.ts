@@ -12,7 +12,7 @@ import {
 	requiredString,
 	type JsonBody
 } from '$lib/server/api/fields';
-import { parseInlineConfigBody } from '$lib/server/api/inline-config-body';
+import { checkedModelPatterns, parseInlineConfigBody } from '$lib/server/api/inline-config-body';
 
 export type ServiceCreateInput = Parameters<typeof createService>[0];
 export type ServicePatch = Parameters<typeof updateService>[1];
@@ -21,7 +21,9 @@ export type ServicePatch = Parameters<typeof updateService>[1];
 export function parseServiceCreate(body: JsonBody): ServiceCreateInput {
 	return {
 		...parseInlineConfigBody(body),
-		...definedOnly({ allowedModels: optionalStringArray(body, 'allowedModels') }),
+		...definedOnly({
+			allowedModels: checkedModelPatterns(optionalStringArray(body, 'allowedModels'))
+		}),
 		name: requiredString(body, 'name').trim(),
 		type: optionalString(body, 'type')?.trim() || undefined,
 		description: optionalString(body, 'description') ?? undefined,
@@ -34,7 +36,7 @@ export function parseServiceCreate(body: JsonBody): ServiceCreateInput {
 export function parseServicePatch(body: JsonBody): ServicePatch {
 	const patch = definedOnly<ServicePatch>({
 		...parseInlineConfigBody(body),
-		allowedModels: optionalStringArray(body, 'allowedModels'),
+		allowedModels: checkedModelPatterns(optionalStringArray(body, 'allowedModels')),
 		name: body.name === undefined ? undefined : requiredString(body, 'name').trim(),
 		type: body.type === undefined ? undefined : requiredString(body, 'type').trim(),
 		description: optionalString(body, 'description'),

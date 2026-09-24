@@ -1,3 +1,4 @@
+import { modelPatternsError } from '$lib/model-patterns';
 /**
  * Form actions shared by the token list and token detail pages, so both parse
  * the same fields and enforce the same permission.
@@ -56,6 +57,9 @@ export async function updateTokenAction(event: RequestEvent, routeId?: string) {
 		rawServiceId === null
 			? undefined
 			: rawServiceId.toString() || (await getOrCreateDefaultService())?.id;
+	const allowedModels = splitList(data.get('allowedModels'));
+	const modelsError = modelPatternsError(allowedModels);
+	if (modelsError) return fail(400, { action: 'update' as const, message: modelsError });
 	const expiresAt = expiryFromForm(data.get('expiresInDays'));
 	const recopyable = recopyFromForm(data.get('recopyable'));
 	try {
@@ -63,7 +67,7 @@ export async function updateTokenAction(event: RequestEvent, routeId?: string) {
 			name,
 			...(serviceId ? { serviceId } : {}),
 			scopes: data.getAll('scopes').map((s) => s.toString()),
-			allowedModels: splitList(data.get('allowedModels')),
+			allowedModels,
 			policyId: data.get('policyId')?.toString() || null,
 			...(expiresAt !== undefined ? { expiresAt } : {}),
 			...(recopyable !== undefined ? { recopyable } : {}),
