@@ -12,6 +12,7 @@
 		dir,
 		numeric = false,
 		hint,
+		class: className,
 		onclick
 	}: {
 		label: string;
@@ -22,13 +23,15 @@
 		numeric?: boolean;
 		/** tooltip explaining the column */
 		hint?: string;
+		/** extra classes, e.g. to match the padding of the surrounding table */
+		class?: string;
 		onclick: () => void;
 	} = $props();
 </script>
 
 <th
 	scope="col"
-	class="py-2 font-medium {numeric ? 'text-right' : 'text-left'}"
+	class="py-2 font-medium {numeric ? 'text-right' : 'text-left'} {className ?? ''}"
 	aria-sort={active ? (dir === 'desc' ? 'descending' : 'ascending') : 'none'}
 >
 	<button

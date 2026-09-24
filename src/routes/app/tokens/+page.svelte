@@ -2,9 +2,12 @@
 	import { untrack } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
 	import { page } from '$app/state';
+	import { resolve } from '$app/paths';
 	import * as Table from '$lib/components/ui/table/index.js';
-	import { Label } from '$lib/components/ui/label/index.js';
-	import { Switch } from '$lib/components/ui/switch/index.js';
+	import * as Select from '$lib/components/ui/select/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import SearchInput from '$lib/components/form/search-input.svelte';
+	import SortableHeader from '$lib/components/form/sortable-header.svelte';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import EmptyState from '$lib/components/layout/empty-state.svelte';
 	import StatCard from '$lib/components/layout/stat-card.svelte';
@@ -15,9 +18,21 @@
 	import { type TokenFormValues } from '$lib/features/tokens/components/token-form.svelte';
 	import { tokenStats, type RevealedSecret, type Token } from '$lib/features/tokens/tokens';
 	import { inlineLimitsFromRow } from '$lib/features/policies/inline-limits';
+	import {
+		GROUPING_OPTIONS,
+		STATUS_FILTER_OPTIONS,
+		TOKEN_SORTERS,
+		groupTokens,
+		matchesQuery,
+		matchesStatus,
+		type TokenGrouping,
+		type TokenStatusFilter
+	} from '$lib/features/tokens/token-table';
+	import { createTableState } from '$lib/state/table.svelte';
 	import { relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
 	import KeyRound from '@lucide/svelte/icons/key-round';
+	import X from '@lucide/svelte/icons/x';
 	import PageShell from '$lib/components/layout/page-shell.svelte';
 
 	let { data, form } = $props();
@@ -28,6 +43,7 @@
 	let editing = $state<TokenFormValues | null>(null);
 
 	const canManage = $derived(can(data.role, 'tokens:manage', data.memberPermissions));
+	const canManageServices = $derived(can(data.role, 'services:manage', data.memberPermissions));
 
 	// ?service=<id> (linked from a service page) opens the create dialog on that service
 	const requestedService = $derived(page.url.searchParams.get('service'));
@@ -54,13 +70,50 @@
 
 	const stats = $derived(tokenStats(data.tokens));
 
-	// Revoked tokens are kept for the audit trail but hidden by default —
-	// the row is functionally dead the moment it's revoked.
-	let showRevoked = $state(false);
-	const revokedCount = $derived(data.tokens.filter((t) => t.revokedAt).length);
-	const visibleTokens = $derived(
-		showRevoked ? data.tokens : data.tokens.filter((t) => !t.revokedAt)
+	let statusFilter = $state<TokenStatusFilter>('current');
+	let serviceFilter = $state('all');
+	let grouping = $state<TokenGrouping>('none');
+
+	const table = createTableState({
+		rows: () => data.tokens,
+		matches: matchesQuery,
+		predicate: () => {
+			const status = statusFilter;
+			const service = serviceFilter;
+			return (t) => matchesStatus(t, status) && (service === 'all' || t.serviceId === service);
+		},
+		sorters: TOKEN_SORTERS,
+		initialSort: 'created',
+		initialDir: 'desc',
+		dirFor: (key) => (key === 'lastUsed' || key === 'created' ? 'desc' : 'asc')
+	});
+	const groups = $derived(groupTokens(table.visible, grouping));
+
+	const serviceOptions = $derived([
+		{ value: 'all', label: 'All services' },
+		...data.services.map((s) => ({ value: s.id, label: s.name }))
+	]);
+	const labelOf = (options: { value: string; label: string }[], value: string) =>
+		options.find((o) => o.value === value)?.label ?? '';
+
+	const hasFilters = $derived(
+		table.query.trim() !== '' || statusFilter !== 'current' || serviceFilter !== 'all'
 	);
+	function clearFilters() {
+		table.query = '';
+		statusFilter = 'current';
+		serviceFilter = 'all';
+	}
+
+	const COLUMNS = [
+		{ key: 'name', label: 'Name' },
+		{ key: null, label: 'Token' },
+		{ key: 'service', label: 'Service' },
+		{ key: null, label: 'Scopes' },
+		{ key: null, label: 'Preset / Models' },
+		{ key: 'lastUsed', label: 'Last used' },
+		{ key: 'status', label: 'Status' }
+	] as const;
 
 	function startEdit(t: Token) {
 		editing = {
@@ -84,6 +137,7 @@
 				<CreateTokenDialog
 					bind:open={createOpen}
 					services={data.services}
+					canCreateService={canManageServices}
 					policies={data.policies}
 					providers={data.providers}
 					recopyDefault={data.recopyDefault}
@@ -120,42 +174,110 @@
 			/>
 		</div>
 
-		{#if revokedCount > 0}
-			<div class="flex items-center justify-end gap-2">
-				<Switch id="showRevoked" bind:checked={showRevoked} />
-				<Label for="showRevoked" class="text-sm text-muted-foreground">
-					Show revoked ({revokedCount})
-				</Label>
-			</div>
-		{/if}
-
-		<div class="rounded-xl border">
-			<Table.Root>
-				<Table.Header>
-					<Table.Row>
-						<Table.Head>Name</Table.Head>
-						<Table.Head>Token</Table.Head>
-						<Table.Head>Service</Table.Head>
-						<Table.Head>Scopes</Table.Head>
-						<Table.Head>Preset / Models</Table.Head>
-						<Table.Head>Last used</Table.Head>
-						<Table.Head>Status</Table.Head>
-						<Table.Head class="w-10"></Table.Head>
-					</Table.Row>
-				</Table.Header>
-				<Table.Body>
-					{#if visibleTokens.length === 0}
-						<Table.Row class="hover:bg-transparent">
-							<Table.Cell colspan={8} class="py-8 text-center text-sm text-muted-foreground">
-								All tokens are revoked. Toggle “Show revoked” to view them.
-							</Table.Cell>
-						</Table.Row>
-					{/if}
-					{#each visibleTokens as t (t.id)}
-						<TokenRow token={t} {canManage} onEdit={startEdit} />
+		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+			<SearchInput
+				bind:value={table.query}
+				placeholder="Search name, service, preset, model…"
+				class="flex-1"
+			/>
+			<Select.Root type="single" bind:value={serviceFilter}>
+				<Select.Trigger class="w-full sm:w-44"
+					>{labelOf(serviceOptions, serviceFilter)}</Select.Trigger
+				>
+				<Select.Content>
+					{#each serviceOptions as o (o.value)}
+						<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
 					{/each}
-				</Table.Body>
-			</Table.Root>
+				</Select.Content>
+			</Select.Root>
+			<Select.Root type="single" bind:value={statusFilter}>
+				<Select.Trigger class="w-full sm:w-36">
+					{labelOf(STATUS_FILTER_OPTIONS, statusFilter)}
+				</Select.Trigger>
+				<Select.Content>
+					{#each STATUS_FILTER_OPTIONS as o (o.value)}
+						<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+			<Select.Root type="single" bind:value={grouping}>
+				<Select.Trigger class="w-full sm:w-44">{labelOf(GROUPING_OPTIONS, grouping)}</Select.Trigger
+				>
+				<Select.Content>
+					{#each GROUPING_OPTIONS as o (o.value)}
+						<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+					{/each}
+				</Select.Content>
+			</Select.Root>
+			{#if hasFilters}
+				<Button variant="ghost" size="sm" onclick={clearFilters} class="shrink-0">
+					<X class="size-4" /> Clear
+				</Button>
+			{/if}
+		</div>
+
+		<p class="text-xs text-muted-foreground">
+			Showing <span class="font-medium text-foreground tabular-nums">{table.visible.length}</span>
+			of {data.tokens.length} tokens
+		</p>
+
+		<div class="overflow-hidden rounded-xl border">
+			<div class="overflow-x-auto">
+				<Table.Root>
+					<Table.Header>
+						<Table.Row class="hover:bg-transparent">
+							{#each COLUMNS as c (c.label)}
+								{#if c.key}
+									{@const key = c.key}
+									<SortableHeader
+										label={c.label}
+										active={table.sortKey === key}
+										dir={table.sortDir}
+										class="h-12 px-3 whitespace-nowrap"
+										onclick={() => table.toggleSort(key)}
+									/>
+								{:else}
+									<Table.Head>{c.label}</Table.Head>
+								{/if}
+							{/each}
+							<Table.Head class="w-10"></Table.Head>
+						</Table.Row>
+					</Table.Header>
+					<Table.Body>
+						{#if table.visible.length === 0}
+							<Table.Row class="hover:bg-transparent">
+								<Table.Cell
+									colspan={COLUMNS.length + 1}
+									class="py-8 text-center text-sm text-muted-foreground"
+								>
+									No tokens match these filters.
+									<Button variant="link" size="sm" onclick={clearFilters}>Clear filters</Button>
+								</Table.Cell>
+							</Table.Row>
+						{/if}
+						{#each groups as g (g.key)}
+							{#if grouping !== 'none'}
+								<Table.Row class="bg-muted/40 hover:bg-muted/40">
+									<Table.Cell colspan={COLUMNS.length + 1} class="py-2 text-xs font-medium">
+										{#if g.serviceId}
+											<a
+												href={resolve('/app/services/[id]', { id: g.serviceId })}
+												class="hover:underline">{g.label}</a
+											>
+										{:else}
+											<span class="capitalize">{g.label}</span>
+										{/if}
+										<span class="ml-1 text-muted-foreground tabular-nums">· {g.tokens.length}</span>
+									</Table.Cell>
+								</Table.Row>
+							{/if}
+							{#each g.tokens as t (t.id)}
+								<TokenRow token={t} {canManage} onEdit={startEdit} />
+							{/each}
+						{/each}
+					</Table.Body>
+				</Table.Root>
+			</div>
 		</div>
 	{/if}
 </PageShell>
@@ -175,5 +297,6 @@
 	policies={data.policies}
 	providers={data.providers}
 	services={data.services}
+	canCreateService={canManageServices}
 	message={form?.action === 'update' ? form.message : undefined}
 />
