@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
@@ -26,6 +28,12 @@
 	let editing = $state<TokenFormValues | null>(null);
 
 	const canManage = $derived(can(data.role, 'tokens:manage', data.memberPermissions));
+
+	// ?service=<id> (linked from a service page) opens the create dialog on that service
+	const requestedService = $derived(page.url.searchParams.get('service'));
+	$effect(() => {
+		if (requestedService && untrack(() => canManage)) createOpen = true;
+	});
 
 	// Surface action results: a fresh secret from create is revealed once (and the
 	// create dialog closes), a re-copy reveal shows the stored secret again, and a
