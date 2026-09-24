@@ -1,5 +1,5 @@
 /** Service (machine identity) CRUD. */
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, count, desc, eq, gt, isNull, or } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { service, machineToken } from '$lib/server/db/schema';
 import { type InlineConfigInput, inlineConfigColumns } from '$lib/server/inline-config';
@@ -29,7 +29,7 @@ export async function getOrCreateDefaultService() {
 	if (existing) return existing;
 	return createService({
 		name: DEFAULT_SERVICE_NAME,
-		description: 'Catch-all project for tokens created without one.'
+		description: 'Catch-all service for tokens created without one.'
 	});
 }
 
@@ -134,4 +134,44 @@ export async function getService(id: string) {
 		.where(and(eq(service.id, id), isNull(service.deletedAt)))
 		.limit(1);
 	return row ?? null;
+}
+
+/**
+ * Active (not revoked, not expired) token count per service, keyed by service
+ * id. One grouped query for the whole list instead of a count per row; services
+ * without active tokens are absent, so callers default to 0.
+ */
+export async function countActiveTokensByService(): Promise<Record<string, number>> {
+	const rows = await db
+		.select({ serviceId: machineToken.serviceId, count: count() })
+		.from(machineToken)
+		.where(
+			and(
+				isNull(machineToken.revokedAt),
+				or(isNull(machineToken.expiresAt), gt(machineToken.expiresAt, new Date()))
+			)
+		)
+		.groupBy(machineToken.serviceId);
+	return Object.fromEntries(rows.map((r) => [r.serviceId, Number(r.count)]));
+}
+
+/**
+ * Every token of a service, including revoked, expired and never-used ones, so
+ * the service page shows the full history rather than just what can call now.
+ * Newest first. Never selects the hash or the encrypted secret.
+ */
+export function listServiceTokens(serviceId: string) {
+	return db
+		.select({
+			id: machineToken.id,
+			name: machineToken.name,
+			display: machineToken.display,
+			lastUsedAt: machineToken.lastUsedAt,
+			expiresAt: machineToken.expiresAt,
+			revokedAt: machineToken.revokedAt,
+			createdAt: machineToken.createdAt
+		})
+		.from(machineToken)
+		.where(eq(machineToken.serviceId, serviceId))
+		.orderBy(desc(machineToken.createdAt));
 }
