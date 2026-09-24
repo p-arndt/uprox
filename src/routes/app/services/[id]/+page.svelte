@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
+	import { toast } from 'svelte-sonner';
 	import { resolve } from '$app/paths';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
@@ -18,7 +19,14 @@
 	import DetailHeader from '$lib/components/layout/detail-header.svelte';
 	import PageShell from '$lib/components/layout/page-shell.svelte';
 	import ServiceForm, { type ServiceFormValues } from '../service-form.svelte';
-	import { deleteServiceDescription } from '../service-display';
+	import {
+		actionError,
+		deleteServiceDescription,
+		partitionTokens,
+		serviceTypeLabel,
+		SUCCESS_MESSAGES,
+		type ActionResult
+	} from '../service-display';
 	import EffectiveConfigSummary from '$lib/features/policies/components/effective-config-summary.svelte';
 	import Boxes from '@lucide/svelte/icons/boxes';
 	import Pencil from '@lucide/svelte/icons/pencil';
@@ -27,6 +35,10 @@
 
 	let { data, form } = $props();
 	let editOpen = $state(false);
+	let showInactive = $state(false);
+	// The result whose dialog the user closed; keeps its error from reappearing on reopen.
+	let dismissed = $state<ActionResult | null>(null);
+	const updateError = $derived(actionError(form, 'update', dismissed));
 
 	const view = createUsageView({
 		data: () => data,
@@ -35,8 +47,10 @@
 
 	const canManage = $derived(can(data.role, 'services:manage', data.memberPermissions));
 	const canIssueTokens = $derived(can(data.role, 'tokens:manage', data.memberPermissions));
-	const activeTokenCount = $derived(
-		data.tokens.filter((t) => tokenStatus(t).label === 'active').length
+	const tokenParts = $derived(partitionTokens(data.tokens));
+	const activeTokenCount = $derived(tokenParts.active.length);
+	const visibleTokens = $derived(
+		showInactive ? [...tokenParts.active, ...tokenParts.inactive] : tokenParts.active
 	);
 	const issueTokenHref = $derived(
 		`${resolve('/app/tokens')}?service=${encodeURIComponent(data.service.id)}`
@@ -54,10 +68,16 @@
 		...inlineLimitsFromRow(data.service)
 	});
 
+	// Update errors render in the edit dialog; delete redirects on success, so
+	// only its failure lands here, with no dialog left to show it in.
 	$effect(() => {
-		if (form?.success) {
+		if (!form) return;
+		if (form.success) {
 			editOpen = false;
+			toast.success(SUCCESS_MESSAGES[form.action] ?? 'Done');
 			invalidateAll();
+		} else if (form.message && form.action === 'delete') {
+			toast.error(form.message);
 		}
 	});
 </script>
@@ -81,7 +101,7 @@
 <PageShell width="wide">
 	<DetailHeader icon={Boxes} eyebrow="Service" title={data.service.name}>
 		{#snippet badges()}
-			<Badge variant="outline">{data.service.type}</Badge>
+			<Badge variant="outline">{serviceTypeLabel(data.service.type)}</Badge>
 		{/snippet}
 		{#snippet lede()}
 			{#if data.service.description}
@@ -89,7 +109,15 @@
 			{/if}
 		{/snippet}
 		{#snippet meta()}
-			Preset: {data.service.policyName ?? 'None'} · created {relativeTime(data.service.createdAt)}
+			Preset:
+			{#if data.service.policyName}
+				<a href={resolve('/app/policies')} class="hover:text-foreground hover:underline">
+					{data.service.policyName}
+				</a>
+			{:else}
+				None
+			{/if}
+			· created {relativeTime(data.service.createdAt)}
 		{/snippet}
 		{#snippet action()}
 			{#if canManage}
@@ -100,7 +128,7 @@
 					<ConfirmAction
 						action="?/delete"
 						title={`Delete “${data.service.name}”?`}
-						description={deleteServiceDescription(activeTokenCount)}
+						description={deleteServiceDescription(activeTokenCount, data.service.name)}
 						actionLabel="Delete service"
 					>
 						{#snippet trigger({ props })}
@@ -132,7 +160,18 @@
 		</Card.Header>
 		<Card.Content>
 			{#if data.tokens.length === 0}
-				<p class="text-sm text-muted-foreground">No tokens have been issued to this service yet.</p>
+				<div
+					class="flex flex-col items-center gap-3 rounded-xl border border-dashed py-8 text-center"
+				>
+					<p class="text-sm text-muted-foreground">
+						No tokens have been issued to this service yet.
+					</p>
+					{#if canIssueTokens}
+						<Button href={issueTokenHref} size="sm"><Plus class="size-4" /> Issue token</Button>
+					{:else}
+						<p class="text-sm text-muted-foreground">Ask an admin to issue one.</p>
+					{/if}
+				</div>
 			{:else}
 				<div class="rounded-xl border">
 					<Table.Root>
@@ -146,7 +185,7 @@
 							</Table.Row>
 						</Table.Header>
 						<Table.Body>
-							{#each data.tokens as t (t.id)}
+							{#each visibleTokens as t (t.id)}
 								{@const st = tokenStatus(t)}
 								<Table.Row class="transition-colors hover:bg-accent/40">
 									<Table.Cell class="font-medium">
@@ -180,6 +219,19 @@
 						</Table.Body>
 					</Table.Root>
 				</div>
+				{#if tokenParts.inactive.length > 0}
+					<Button
+						variant="ghost"
+						size="sm"
+						class="mt-2 text-muted-foreground"
+						aria-expanded={showInactive}
+						onclick={() => (showInactive = !showInactive)}
+					>
+						{showInactive
+							? 'Hide inactive'
+							: `Show ${tokenParts.inactive.length} inactive (revoked or expired)`}
+					</Button>
+				{/if}
 			{/if}
 		</Card.Content>
 	</Card.Root>
@@ -192,16 +244,29 @@
 				comes from.
 			</Card.Description>
 		</Card.Header>
-		<Card.Content class="space-y-3">
+		<Card.Content>
 			<EffectiveConfigSummary
 				config={data.effectiveConfig}
 				subject="service"
 				serviceName={data.service.name}
 				providerLabels={data.providerLabels}
 			/>
-			<p class="text-sm text-muted-foreground">
-				Upstream key: {data.service.upstreamKeyLabel ?? 'Automatic (default key)'}
-			</p>
+			<!-- same row markup as EffectiveConfigSummary, so the key reads as one more setting -->
+			<dl class="mt-2.5 border-t pt-2.5 text-sm">
+				<div class="grid gap-1 sm:grid-cols-[11rem_1fr] sm:gap-4">
+					<dt class="text-muted-foreground">Upstream key</dt>
+					<dd class="min-w-0">
+						<div class="font-medium break-words">
+							{data.service.upstreamKeyLabel ?? 'Automatic'}
+						</div>
+						<div class="text-xs text-muted-foreground">
+							{data.service.upstreamKeyLabel
+								? 'Pinned on this service'
+								: "Each provider's default key"}
+						</div>
+					</dd>
+				</div>
+			</dl>
 		</Card.Content>
 	</Card.Root>
 
@@ -215,11 +280,18 @@
 </PageShell>
 
 {#if canManage}
-	<Dialog.Root bind:open={editOpen}>
+	<Dialog.Root
+		bind:open={editOpen}
+		onOpenChange={(v) => {
+			if (!v) dismissed = form ?? null;
+		}}
+	>
 		<Dialog.Content class="max-h-[88vh] overflow-y-auto sm:max-w-lg">
 			<Dialog.Header>
 				<Dialog.Title>Edit service</Dialog.Title>
-				<Dialog.Description>Update this machine identity.</Dialog.Description>
+				<Dialog.Description
+					>Changes apply immediately to all tokens in this service.</Dialog.Description
+				>
 			</Dialog.Header>
 			{#if editOpen}
 				<ServiceForm
@@ -231,6 +303,7 @@
 					policies={data.policies}
 					providers={data.providers}
 					secretOptions={data.providerSecrets}
+					message={updateError}
 				/>
 			{/if}
 		</Dialog.Content>

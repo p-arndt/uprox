@@ -33,27 +33,31 @@ export const actions: Actions = {
 		await requirePermission(event, 'services:manage');
 		const data = await event.request.formData();
 		const name = data.get('name')?.toString().trim();
-		if (!name) return fail(400, { message: 'Name is required' });
-		if (await serviceNameTaken(name)) return fail(409, { message: SERVICE_NAME_TAKEN });
+		if (!name) return fail(400, { action: 'create', message: 'Name is required' });
+		if (await serviceNameTaken(name))
+			return fail(409, { action: 'create', message: SERVICE_NAME_TAKEN });
 		const fields = serviceFromForm(data);
 		await createService({ ...fields, name, description: fields.description ?? undefined });
-		return { success: true };
+		return { action: 'create', success: true };
 	},
 	update: async (event) => {
 		await requirePermission(event, 'services:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
+		if (!id) return fail(400, { action: 'update', message: 'Missing service id' });
 		const name = data.get('name')?.toString().trim();
-		if (!name) return fail(400, { message: 'Name is required' });
-		if (await serviceNameTaken(name, id)) return fail(409, { message: SERVICE_NAME_TAKEN });
-		await updateService(id ?? '', { ...serviceFromForm(data), name });
-		return { success: true };
+		if (!name) return fail(400, { action: 'update', message: 'Name is required' });
+		if (await serviceNameTaken(name, id))
+			return fail(409, { action: 'update', message: SERVICE_NAME_TAKEN });
+		await updateService(id, { ...serviceFromForm(data), name });
+		return { action: 'update', success: true };
 	},
 	delete: async (event) => {
 		await requirePermission(event, 'services:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
-		if (id) await deleteService(id);
-		return { success: true };
+		if (!id) return fail(400, { action: 'delete', message: 'Missing service id' });
+		await deleteService(id);
+		return { action: 'delete', success: true };
 	}
 };

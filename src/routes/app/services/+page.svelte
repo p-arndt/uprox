@@ -1,5 +1,8 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
+	import { onMount } from 'svelte';
+	import { invalidateAll, replaceState } from '$app/navigation';
+	import { page } from '$app/state';
+	import { toast } from 'svelte-sonner';
 	import { resolve } from '$app/paths';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as Table from '$lib/components/ui/table/index.js';
@@ -11,7 +14,13 @@
 	import ServiceForm, { type ServiceFormValues } from './service-form.svelte';
 	import { emptyInlineLimits, inlineLimitsFromRow } from '$lib/features/policies/inline-limits';
 	import { relativeTime } from '$lib/format';
-	import { deleteServiceDescription } from './service-display';
+	import {
+		actionError,
+		deleteServiceDescription,
+		serviceTypeLabel,
+		SUCCESS_MESSAGES,
+		type ActionResult
+	} from './service-display';
 	import { can } from '$lib/permissions';
 	import Plus from '@lucide/svelte/icons/plus';
 	import Boxes from '@lucide/svelte/icons/boxes';
@@ -27,6 +36,11 @@
 	const canManage = $derived(can(data.role, 'services:manage', data.memberPermissions));
 	const secretOptions = $derived(data.providerSecrets ?? []);
 
+	// The result whose dialog the user closed; keeps its error from reappearing on reopen.
+	let dismissed = $state<ActionResult | null>(null);
+	const createError = $derived(actionError(form, 'create', dismissed));
+	const updateError = $derived(actionError(form, 'update', dismissed));
+
 	const createValues: ServiceFormValues = {
 		...emptyInlineLimits(),
 		name: '',
@@ -36,13 +50,31 @@
 		providerSecretId: ''
 	};
 
-	// Close the active dialog and refresh once a create/update succeeds.
+	// Close the active dialog and refresh once an action succeeds. Errors of
+	// create/update render inside their dialog; delete has none left open.
 	$effect(() => {
-		if (form?.success) {
+		if (!form) return;
+		if (form.success) {
 			open = false;
 			editing = null;
+			toast.success(SUCCESS_MESSAGES[form.action] ?? 'Done');
 			invalidateAll();
+		} else if (form.message && form.action === 'delete') {
+			toast.error(form.message);
 		}
+	});
+
+	function closeDialogs() {
+		dismissed = form ?? null;
+	}
+
+	// The detail page redirects here after deleting, naming the service once in the URL.
+	onMount(() => {
+		const deleted = page.url.searchParams.get('deleted');
+		if (deleted === null) return;
+		toast.success(`Service “${deleted}” deleted`);
+		// the list reads no other query params, so the bare path is the clean URL
+		replaceState(resolve('/app/services'), page.state);
 	});
 
 	type ServiceRow = (typeof data.services)[number];
@@ -62,11 +94,16 @@
 <PageShell width="default">
 	<PageHeader
 		title="Services"
-		description="Machine identities — apps, workloads and agents that call the gateway."
+		description="The apps, agents and workloads that call the gateway, each with its own tokens and shared limits."
 	>
 		{#snippet action()}
 			{#if canManage}
-				<Dialog.Root bind:open>
+				<Dialog.Root
+					bind:open
+					onOpenChange={(v) => {
+						if (!v) closeDialogs();
+					}}
+				>
 					<Dialog.Trigger>
 						{#snippet child({ props })}
 							<Button {...props}><Plus class="size-4" /> New service</Button>
@@ -75,7 +112,9 @@
 					<Dialog.Content class="max-h-[88vh] overflow-y-auto sm:max-w-lg">
 						<Dialog.Header>
 							<Dialog.Title>Create service</Dialog.Title>
-							<Dialog.Description>A service represents one machine identity.</Dialog.Description>
+							<Dialog.Description>
+								Group tokens for one app or agent and give them shared limits, budget and a preset.
+							</Dialog.Description>
 						</Dialog.Header>
 						<ServiceForm
 							defaults={data.defaults}
@@ -86,6 +125,7 @@
 							policies={data.policies}
 							providers={data.providers}
 							{secretOptions}
+							message={createError}
 							resetOnSuccess
 						/>
 					</Dialog.Content>
@@ -99,7 +139,16 @@
 			icon={Boxes}
 			title="No services yet"
 			description="Tokens you issue land in the Default service automatically. Create a service to group tokens by app or workload and give them shared limits."
-		/>
+		>
+			<div class="flex flex-wrap items-center justify-center gap-2">
+				{#if canManage}
+					<Button onclick={() => (open = true)}><Plus class="size-4" /> New service</Button>
+				{:else}
+					<p class="text-sm text-muted-foreground">Ask an admin to create a service.</p>
+				{/if}
+				<Button variant="outline" href={resolve('/app/tokens')}>Go to tokens</Button>
+			</div>
+		</EmptyState>
 	{:else}
 		<div class="rounded-xl border">
 			<Table.Root>
@@ -108,9 +157,9 @@
 						<Table.Head>Name</Table.Head>
 						<Table.Head>Type</Table.Head>
 						<Table.Head>Preset</Table.Head>
-						<Table.Head class="text-right">Tokens</Table.Head>
+						<Table.Head class="text-right">Active tokens</Table.Head>
 						<Table.Head>Created</Table.Head>
-						<Table.Head class="w-10"></Table.Head>
+						<Table.Head class="w-24"><span class="sr-only">Actions</span></Table.Head>
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
@@ -127,15 +176,20 @@
 									<div class="text-xs text-muted-foreground">{s.description}</div>
 								{/if}
 							</Table.Cell>
-							<Table.Cell><Badge variant="outline">{s.type}</Badge></Table.Cell>
+							<Table.Cell><Badge variant="outline">{serviceTypeLabel(s.type)}</Badge></Table.Cell>
 							<Table.Cell class="text-muted-foreground">
-								{(s.policyId && policyName.get(s.policyId)) || '—'}
+								{#if s.policyId && policyName.get(s.policyId)}
+									<a href={resolve('/app/policies')} class="hover:text-foreground hover:underline">
+										{policyName.get(s.policyId)}
+									</a>
+								{:else}
+									—
+								{/if}
 							</Table.Cell>
 							<Table.Cell
 								class="text-right tabular-nums {s.activeTokenCount === 0
 									? 'text-muted-foreground'
 									: ''}"
-								title="Active tokens (not revoked or expired)"
 							>
 								{s.activeTokenCount}
 							</Table.Cell>
@@ -146,7 +200,8 @@
 										<Button
 											variant="ghost"
 											size="icon"
-											class="size-8 text-muted-foreground hover:text-foreground"
+											class="size-10 text-muted-foreground hover:text-foreground"
+											aria-label={`Edit ${s.name}`}
 											title="Edit service"
 											onclick={() => startEdit(s)}
 										>
@@ -155,7 +210,7 @@
 										<ConfirmAction
 											action="?/delete"
 											title={`Delete “${s.name}”?`}
-											description={deleteServiceDescription(s.activeTokenCount)}
+											description={deleteServiceDescription(s.activeTokenCount, s.name)}
 											actionLabel="Delete service"
 										>
 											{#snippet trigger({ props })}
@@ -163,7 +218,8 @@
 													{...props}
 													variant="ghost"
 													size="icon"
-													class="size-8 text-muted-foreground hover:text-destructive"
+													class="size-10 text-muted-foreground hover:text-destructive"
+													aria-label={`Delete ${s.name}`}
 													title="Delete service"
 												>
 													<Trash2 class="size-4" />
@@ -187,13 +243,18 @@
 <Dialog.Root
 	open={editing !== null}
 	onOpenChange={(v) => {
-		if (!v) editing = null;
+		if (!v) {
+			editing = null;
+			closeDialogs();
+		}
 	}}
 >
 	<Dialog.Content class="max-h-[88vh] overflow-y-auto sm:max-w-lg">
 		<Dialog.Header>
 			<Dialog.Title>Edit service</Dialog.Title>
-			<Dialog.Description>Update this machine identity.</Dialog.Description>
+			<Dialog.Description
+				>Changes apply immediately to all tokens in this service.</Dialog.Description
+			>
 		</Dialog.Header>
 		{#if editing}
 			{#key editing.id}
@@ -206,6 +267,7 @@
 					policies={data.policies}
 					providers={data.providers}
 					{secretOptions}
+					message={updateError}
 				/>
 			{/key}
 		{/if}
