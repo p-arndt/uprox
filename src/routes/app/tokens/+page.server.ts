@@ -53,7 +53,7 @@ export const actions: Actions = {
 
 		const scopes = data.getAll('scopes').map((s) => s.toString());
 		const allowedModels = splitList(data.get('allowedModels'));
-		// blank = inherit the service's policy
+		// blank = no token preset; the service's preset (if any) still applies
 		const policyId = data.get('policyId')?.toString() || null;
 		const days = Number(data.get('expiresInDays')) || 0;
 		const expiresAt = days > 0 ? new Date(Date.now() + days * 86_400_000) : null;
