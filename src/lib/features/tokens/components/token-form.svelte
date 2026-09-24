@@ -120,27 +120,22 @@
 		<ScopePicker idPrefix={id('scope')} selected={values.scopes} />
 	</div>
 
-	<InlineLimitsFields
-		{providers}
-		{values}
-		idPrefix={id('inline')}
-		scope="token"
-		extraAdvancedActive={!!values.policyId}
-	>
+	<div class="space-y-2">
+		<Label for={id('policyId')}>Preset</Label>
+		<SelectField
+			id={id('policyId')}
+			name="policyId"
+			bind:value={policyId}
+			options={presetOptions(policies)}
+		/>
+		<p class="text-xs text-muted-foreground">
+			Applies in addition to the service's preset — allowed providers and models must pass both.
+			Values set below take priority over the preset.
+		</p>
+	</div>
+
+	<InlineLimitsFields {providers} {values} idPrefix={id('inline')} scope="token">
 		{#snippet advanced()}
-			<div class="space-y-2">
-				<FieldLabel
-					for={id('policyId')}
-					label="Preset"
-					hint="Optional reusable baseline. The overrides take priority field-by-field."
-				/>
-				<SelectField
-					id={id('policyId')}
-					name="policyId"
-					bind:value={policyId}
-					options={presetOptions(policies)}
-				/>
-			</div>
 			{@render advancedFields?.()}
 		{/snippet}
 	</InlineLimitsFields>
