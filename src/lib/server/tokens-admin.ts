@@ -173,12 +173,14 @@ export async function revealToken(id: string): Promise<{ name: string; plaintext
 			id: machineToken.id,
 			name: machineToken.name,
 			serviceId: machineToken.serviceId,
-			encryptedToken: machineToken.encryptedToken
+			encryptedToken: machineToken.encryptedToken,
+			revokedAt: machineToken.revokedAt
 		})
 		.from(machineToken)
 		.where(eq(machineToken.id, id))
 		.limit(1);
-	if (!row?.encryptedToken) return null;
+	// a revoked token is dead; handing out its secret again serves no purpose
+	if (!row?.encryptedToken || row.revokedAt) return null;
 
 	const plaintext = decrypt(row.encryptedToken);
 	await audit({

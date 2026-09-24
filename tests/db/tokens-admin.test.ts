@@ -106,3 +106,16 @@ describe('updateToken expiry and re-copy (real SQL)', () => {
 		expect(row.expiresAt).toBeNull();
 	});
 });
+
+describe('revealToken (real SQL)', () => {
+	beforeEach(async () => {
+		await db.execute(sql`delete from machine_token`);
+	});
+
+	it('refuses to reveal the stored secret of a revoked token', async () => {
+		const token = await insertToken({ recopyable: true });
+		await revokeToken(token.id);
+
+		expect(await revealToken(token.id)).toBeNull();
+	});
+});
