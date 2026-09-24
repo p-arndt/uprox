@@ -23,3 +23,25 @@ export function addModelPatterns(chips: string[], raw: string): string[] {
 	}
 	return out;
 }
+
+/**
+ * The suggestions to list under the input: known ids not yet chosen, matching
+ * the draft anywhere (people type "sonnet", not "claude-sonnet"), ids starting
+ * with the draft first, capped so the list stays scannable.
+ */
+export function matchSuggestions(
+	suggestions: readonly string[],
+	chips: readonly string[],
+	draft: string,
+	limit = 8
+): string[] {
+	const taken = new Set(chips.map((c) => c.toLowerCase()));
+	const q = draft.trim().toLowerCase();
+	const open = suggestions.filter((s) => !taken.has(s.toLowerCase()));
+	if (!q) return open.slice(0, limit);
+	const starts = open.filter((s) => s.toLowerCase().startsWith(q));
+	const contains = open.filter(
+		(s) => !s.toLowerCase().startsWith(q) && s.toLowerCase().includes(q)
+	);
+	return [...starts, ...contains].slice(0, limit);
+}
