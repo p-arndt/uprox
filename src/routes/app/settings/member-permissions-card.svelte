@@ -17,14 +17,24 @@
 	description="Control what members (not admins/owners) can do."
 	action="updateMemberPermissions"
 >
-	<SwitchField
-		name="membersCanManageTokens"
-		label="Members can create & revoke tokens"
-		bind:checked={tokensOn}
-	/>
-	<SwitchField
-		name="membersCanManageServices"
-		label="Members can create services"
-		bind:checked={servicesOn}
-	/>
+	<div class="space-y-1">
+		<SwitchField
+			name="membersCanManageTokens"
+			label="Members can manage machine tokens"
+			bind:checked={tokensOn}
+		/>
+		<p class="text-xs text-muted-foreground">
+			Create, edit, reveal stored secrets, revoke and delete any token.
+		</p>
+	</div>
+	<div class="space-y-1">
+		<SwitchField
+			name="membersCanManageServices"
+			label="Members can manage services"
+			bind:checked={servicesOn}
+		/>
+		<p class="text-xs text-muted-foreground">
+			Create, edit and delete any service. Deleting a service revokes its tokens.
+		</p>
+	</div>
 </SettingsCard>
