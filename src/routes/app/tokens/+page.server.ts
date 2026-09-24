@@ -25,8 +25,16 @@ export const load: PageServerLoad = async (event) => {
 		getSettings()
 	]);
 	// drives the default state of the "allow re-copying" checkbox in the create form
+	// the service's preset still applies to tokens without their own, so the row names it
+	const presetNames = new Map(policies.map((p) => [p.id, p.name]));
+	const servicePresets = new Map(
+		services.map((s) => [s.id, s.policyId ? (presetNames.get(s.policyId) ?? null) : null])
+	);
 	return {
-		tokens,
+		tokens: tokens.map((t) => ({
+			...t,
+			servicePolicyName: servicePresets.get(t.serviceId) ?? null
+		})),
 		services,
 		policies,
 		providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label })),
