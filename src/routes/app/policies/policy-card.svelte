@@ -9,7 +9,8 @@
 	import Gauge from '@lucide/svelte/icons/gauge';
 	import Wallet from '@lucide/svelte/icons/wallet';
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
-	import { formatBudget } from '$lib/format';
+	import Users from '@lucide/svelte/icons/users';
+	import { budgetText, cacheText, deleteDescription, rateText, usageText } from './policy-display';
 	import type { PageData } from './$types';
 
 	// One preset: its access lists and a one-line summary of limits and cache.
@@ -29,7 +30,7 @@
 	<div>
 		<div class="mb-1 text-xs font-medium text-muted-foreground">{label}</div>
 		{#if items.length === 0}
-			<Badge variant="outline">all</Badge>
+			<Badge variant="outline">all allowed</Badge>
 		{:else}
 			<div class="flex flex-wrap gap-1">
 				{#each items as item (item)}<Badge variant="secondary">{item}</Badge>{/each}
@@ -44,7 +45,13 @@
 			<div class="flex size-9 items-center justify-center rounded-lg border bg-muted">
 				<ShieldHalf class="size-4" />
 			</div>
-			<Card.Title class="text-base">{p.name}</Card.Title>
+			<div class="space-y-0.5">
+				<Card.Title class="text-base">{p.name}</Card.Title>
+				<p class="flex items-center gap-1 text-xs text-muted-foreground">
+					<Users class="size-3" />
+					{usageText(p.usage)}
+				</p>
+			</div>
 		</div>
 		{#if canManage}
 			<div class="flex items-center gap-1">
@@ -52,7 +59,8 @@
 					variant="ghost"
 					size="icon"
 					class="size-8 text-muted-foreground"
-					title="Edit policy"
+					title="Edit preset"
+					aria-label={`Edit preset ${p.name}`}
 					onclick={onEdit}
 				>
 					<Pencil class="size-4" />
@@ -60,8 +68,8 @@
 				<ConfirmAction
 					action="?/delete"
 					title={`Delete “${p.name}”?`}
-					description="Services assigned to this policy will no longer be governed by it. This can't be undone."
-					actionLabel="Delete policy"
+					description={deleteDescription(p.usage)}
+					actionLabel="Delete preset"
 				>
 					{#snippet trigger({ props })}
 						<Button
@@ -69,7 +77,8 @@
 							variant="ghost"
 							size="icon"
 							class="size-8 text-muted-foreground hover:text-destructive"
-							title="Delete policy"
+							title="Delete preset"
+							aria-label={`Delete preset ${p.name}`}
 						>
 							<Trash2 class="size-4" />
 						</Button>
@@ -87,19 +96,15 @@
 		<div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
 			<span class="flex items-center gap-1.5">
 				<Gauge class="size-3.5" />
-				{p.rateLimitPerMinute === 0 ? 'Unlimited' : `${p.rateLimitPerMinute} req/min`}
+				{rateText(p.rateLimitPerMinute)}
 			</span>
 			<span class="flex items-center gap-1.5">
 				<Wallet class="size-3.5" />
-				{formatBudget(p.dailyBudgetUsd, p.monthlyBudgetUsd)}
+				{budgetText(p.dailyBudgetUsd, p.monthlyBudgetUsd)}
 			</span>
 			<span class="flex items-center gap-1.5">
 				<DatabaseZap class="size-3.5" />
-				{p.cacheTtlSeconds == null
-					? 'Cache: inherit'
-					: p.cacheTtlSeconds === 0
-						? 'Cache: off'
-						: `Cache ${p.cacheTtlSeconds}s`}
+				{cacheText(p.cacheTtlSeconds)}
 			</span>
 		</div>
 	</Card.Content>

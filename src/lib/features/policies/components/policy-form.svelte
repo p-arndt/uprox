@@ -6,6 +6,8 @@
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import FormError from '$lib/components/form/form-error.svelte';
 	import InlineLimitsFields from '$lib/features/policies/components/inline-limits-fields.svelte';
 	import type { InlineLimitValues } from '$lib/features/policies/inline-limits';
 
@@ -19,7 +21,7 @@
 		rateLimitPerMinute: number | string;
 		dailyBudgetUsd: number | string;
 		monthlyBudgetUsd: number | string;
-		/** '' = inherit org default */
+		/** '' = inherit the instance default */
 		cacheTtlSeconds: string;
 	}
 
@@ -29,6 +31,8 @@
 		submitLabel,
 		values,
 		idPrefix,
+		modelSuggestions = [],
+		message,
 		resetOnSuccess = false
 	}: {
 		providers: { id: string; label: string }[];
@@ -37,10 +41,15 @@
 		values: PolicyFormValues;
 		/** prefixes field ids so create & edit forms don't collide in the DOM */
 		idPrefix: string;
+		/** known model ids for the allowed-models input */
+		modelSuggestions?: string[];
+		/** server-side validation message for this form, shown above the submit button */
+		message?: string;
 		resetOnSuccess?: boolean;
 	} = $props();
 
 	const id = (field: string) => `${idPrefix}-${field}`;
+	let pending = $state(false);
 
 	// The shared access/limits fields are string-typed; a policy stores its rate &
 	// budgets as numbers, so coerce for the initial render (submission is native).
@@ -59,9 +68,13 @@
 	method="post"
 	{action}
 	class="space-y-4"
-	use:enhance={() =>
-		async ({ update }) =>
-			update({ reset: resetOnSuccess })}
+	use:enhance={() => {
+		pending = true;
+		return async ({ update }) => {
+			await update({ reset: resetOnSuccess });
+			pending = false;
+		};
+	}}
 >
 	{#if values.id}
 		<input type="hidden" name="id" value={values.id} />
@@ -80,9 +93,20 @@
 
 	<Separator />
 
-	<InlineLimitsFields {providers} values={inlineValues} {idPrefix} scope="policy" />
+	<InlineLimitsFields
+		{providers}
+		values={inlineValues}
+		{idPrefix}
+		{modelSuggestions}
+		scope="policy"
+	/>
+
+	<FormError {message} />
 
 	<Dialog.Footer>
-		<Button type="submit">{submitLabel}</Button>
+		<Button type="submit" disabled={pending}>
+			{#if pending}<Spinner />{/if}
+			{submitLabel}
+		</Button>
 	</Dialog.Footer>
 </form>
