@@ -73,28 +73,29 @@ export const actions: Actions = {
 		await requirePermission(event, 'pricing:manage');
 		const data = await event.request.formData();
 		const model = data.get('model')?.toString().trim();
-		if (!model) return fail(400, { message: 'Model is required' });
+		if (!model) return fail(400, { action: 'create', message: 'Model is required' });
 		const parsed = parsePriceForm(data);
-		if ('error' in parsed) return fail(400, { message: parsed.error });
+		if ('error' in parsed) return fail(400, { action: 'create', message: parsed.error });
 		await createOrgModelPrice({ model, ...parsed.prices });
-		return { success: true };
+		return { action: 'create', success: true };
 	},
 	update: async (event) => {
 		await requirePermission(event, 'pricing:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
-		if (!id) return fail(400, { message: 'Missing id' });
+		if (!id) return fail(400, { action: 'update', message: 'Missing id' });
 		const parsed = parsePriceForm(data);
-		if ('error' in parsed) return fail(400, { message: parsed.error });
+		if ('error' in parsed) return fail(400, { action: 'update', message: parsed.error });
 		const row = await updateOrgModelPrice(id, parsed.prices);
-		if (!row) return fail(404, { message: 'Not found' });
-		return { success: true };
+		if (!row) return fail(404, { action: 'update', message: 'Not found' });
+		return { action: 'update', success: true };
 	},
 	delete: async (event) => {
 		await requirePermission(event, 'pricing:manage');
 		const data = await event.request.formData();
 		const id = data.get('id')?.toString();
-		if (id) await deleteOrgModelPrice(id);
-		return { success: true };
+		if (!id) return fail(400, { action: 'delete', message: 'Missing id' });
+		await deleteOrgModelPrice(id);
+		return { action: 'delete', success: true };
 	}
 };
