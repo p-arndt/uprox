@@ -21,12 +21,11 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import InlineLimitsFields from '$lib/features/policies/components/inline-limits-fields.svelte';
-	import CheckboxGroup from '$lib/components/form/checkbox-group.svelte';
+	import ScopePicker from '$lib/features/tokens/components/scope-picker.svelte';
 	import FieldLabel from '$lib/components/form/field-label.svelte';
 	import FormError from '$lib/components/form/form-error.svelte';
 	import SelectField from '$lib/components/form/select-field.svelte';
 	import { presetOptions } from '$lib/components/form/form-options';
-	import { GATEWAY_SCOPES } from '$lib/scopes';
 
 	let {
 		action,
@@ -73,7 +72,6 @@
 		{ value: '', label: 'Default' },
 		...services.map((s) => ({ value: s.id, label: s.name }))
 	]);
-	const scopeOptions = GATEWAY_SCOPES.map((s) => ({ value: s, label: s }));
 </script>
 
 <form
@@ -115,29 +113,21 @@
 
 	<Separator />
 
+	<div class="space-y-2">
+		<FieldLabel
+			label="Permissions"
+			hint="Which gateway endpoints this token may call. Provider and model limits live under Access."
+		/>
+		<ScopePicker idPrefix={id('scope')} selected={values.scopes} />
+	</div>
+
 	<InlineLimitsFields
 		{providers}
 		{values}
 		idPrefix={id('inline')}
 		scope="token"
-		extraAccessActive={values.scopes.length > 0}
 		extraAdvancedActive={!!values.policyId}
 	>
-		{#snippet accessExtra()}
-			<div class="space-y-2">
-				<FieldLabel
-					label="Scopes"
-					hint="Leave all unchecked to grant every scope."
-					class="text-muted-foreground"
-				/>
-				<CheckboxGroup
-					name="scopes"
-					idPrefix={id('scope')}
-					options={scopeOptions}
-					selected={values.scopes}
-				/>
-			</div>
-		{/snippet}
 		{#snippet advanced()}
 			<div class="space-y-2">
 				<FieldLabel

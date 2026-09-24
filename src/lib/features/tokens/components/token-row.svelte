@@ -6,6 +6,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import ConfirmAction from '$lib/components/form/confirm-action.svelte';
 	import { relativeTime } from '$lib/format';
+	import { scopeBadges } from '$lib/scopes';
 	import { tokenStatus, type Token } from '$lib/features/tokens/tokens';
 	import Ban from '@lucide/svelte/icons/ban';
 	import Pencil from '@lucide/svelte/icons/pencil';
@@ -44,13 +45,9 @@
 	</Table.Cell>
 	<Table.Cell class="text-muted-foreground">{token.serviceName}</Table.Cell>
 	<Table.Cell>
-		{#if token.scopes.length === 0}
-			<Badge variant="outline">all</Badge>
-		{:else}
-			<div class="flex flex-wrap gap-1">
-				{#each token.scopes as s (s)}<Badge variant="outline">{s}</Badge>{/each}
-			</div>
-		{/if}
+		<div class="flex flex-wrap gap-1">
+			{#each scopeBadges(token.scopes) as s (s)}<Badge variant="outline">{s}</Badge>{/each}
+		</div>
 	</Table.Cell>
 	<Table.Cell>
 		{#if token.policyId}
