@@ -4,7 +4,8 @@
 	import DatabaseZap from '@lucide/svelte/icons/database-zap';
 	import SettingsCard from './settings-card.svelte';
 
-	let { cacheTtlSeconds }: { cacheTtlSeconds: number } = $props();
+	let { cacheTtlSeconds, readonly = false }: { cacheTtlSeconds: number; readonly?: boolean } =
+		$props();
 </script>
 
 <SettingsCard
@@ -12,6 +13,8 @@
 	title="Response cache"
 	description="Exact-match cache for chat & embeddings, applied to every service."
 	action="updateCache"
+	savedMessage="Cache settings saved"
+	{readonly}
 >
 	<div class="space-y-2">
 		<Label for="cacheTtlSeconds">Default cache TTL (seconds)</Label>
@@ -25,7 +28,7 @@
 		/>
 		<p class="text-xs text-muted-foreground">
 			0 disables caching org-wide. Identical requests within the TTL replay the stored response at
-			zero cost (streaming included). A policy can override this per service.
+			zero cost (streaming included). A preset can override this per service.
 		</p>
 	</div>
 </SettingsCard>

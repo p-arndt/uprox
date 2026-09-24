@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import type { ResolvedPathname } from '$app/types';
+	import { toast } from 'svelte-sonner';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import * as Select from '$lib/components/ui/select/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -7,16 +10,16 @@
 	import SearchInput from '$lib/components/form/search-input.svelte';
 	import { formatDateTime, relativeTime, formatUsd, formatCount } from '$lib/format';
 	import { eventTone, toneDot, toneText, actionIcon, isGatewayAction } from '$lib/events';
+	import { actionLabel, auditFilterParams, type AuditFilter } from '$lib/audit-view';
 	import ScrollText from '@lucide/svelte/icons/scroll-text';
 	import Search from '@lucide/svelte/icons/search';
+	import KeyRound from '@lucide/svelte/icons/key-round';
 	import X from '@lucide/svelte/icons/x';
 	import PageShell from '$lib/components/layout/page-shell.svelte';
 
 	let { data } = $props();
 
-	let query = $state('');
-	let status = $state('all');
-	let kind = $state('all');
+	type Entry = (typeof data.entries)[number];
 
 	const statusOptions = [
 		{ value: 'all', label: 'All statuses' },
@@ -29,36 +32,71 @@
 		{ value: 'gateway', label: 'Gateway' },
 		{ value: 'admin', label: 'Admin' }
 	];
-	const statusLabel = $derived(statusOptions.find((o) => o.value === status)?.label ?? '');
-	const kindLabel = $derived(kindOptions.find((o) => o.value === kind)?.label ?? '');
+	const rangeOptions = [
+		{ value: 'all', label: 'All time' },
+		{ value: '1h', label: 'Last hour' },
+		{ value: '24h', label: 'Last 24 hours' },
+		{ value: '7d', label: 'Last 7 days' },
+		{ value: '30d', label: 'Last 30 days' }
+	];
+	const labelOf = (options: { value: string; label: string }[], value: string) =>
+		options.find((o) => o.value === value)?.label ?? '';
 
-	const filtered = $derived(
-		data.entries.filter((e) => {
-			const tone = eventTone(e.status);
-			if (status === 'ok' && tone !== 'ok') return false;
-			if (status === 'denied' && tone !== 'denied') return false;
-			if (status === 'error' && tone !== 'error') return false;
-			if (kind === 'gateway' && !isGatewayAction(e.action)) return false;
-			if (kind === 'admin' && isGatewayAction(e.action)) return false;
-			if (query.trim()) {
-				const q = query.toLowerCase();
-				const haystack = [e.action, e.status, e.model, e.serviceName, e.detail, e.ip]
-					.filter(Boolean)
-					.join(' ')
-					.toLowerCase();
-				if (!haystack.includes(q)) return false;
-			}
-			return true;
-		})
-	);
+	// The filter lives in the URL and is applied by the server, so it covers the
+	// whole log rather than only the rows already loaded.
+	const filter = $derived(data.filter as AuditFilter);
+	const hasFilters = $derived(Boolean(filter.q || filter.status || filter.kind || filter.range));
 
-	const hasFilters = $derived(query.trim() !== '' || status !== 'all' || kind !== 'all');
+	// Writable derived: the typed text runs ahead of the URL while debouncing,
+	// and a navigation re-syncs it.
+	let query = $derived(filter.q ?? '');
+
+	function applyFilter(next: AuditFilter) {
+		const params = auditFilterParams({ ...next, cursor: undefined }).toString();
+		goto(`/app/audit${params ? `?${params}` : ''}` as ResolvedPathname, {
+			noScroll: true,
+			keepFocus: true,
+			replaceState: true
+		});
+	}
+
+	function setSelect(key: 'status' | 'kind' | 'range', value: string) {
+		applyFilter({ ...filter, [key]: value === 'all' ? undefined : value });
+	}
+
+	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+	function setQuery(value: string) {
+		query = value;
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => applyFilter({ ...filter, q: value.trim() || undefined }), 300);
+	}
 
 	function reset() {
-		query = '';
-		status = 'all';
-		kind = 'all';
+		clearTimeout(searchTimer);
+		applyFilter({});
 	}
+
+	// Rows appended by "Load more"; a new filter (new page data) starts over.
+	let loaded = $derived({ entries: data.entries as Entry[], nextCursor: data.nextCursor });
+	let loadingMore = $state(false);
+
+	async function loadMore() {
+		if (!loaded.nextCursor || loadingMore) return;
+		loadingMore = true;
+		try {
+			const params = auditFilterParams({ ...filter, cursor: loaded.nextCursor });
+			const res = await fetch(`/app/audit/entries?${params}`);
+			if (!res.ok) throw new Error(`HTTP ${res.status}`);
+			const next: { entries: Entry[]; nextCursor: string | null } = await res.json();
+			loaded = { entries: [...loaded.entries, ...next.entries], nextCursor: next.nextCursor };
+		} catch {
+			toast.error('Could not load more events');
+		} finally {
+			loadingMore = false;
+		}
+	}
+
+	let expanded = $state<Record<string, boolean>>({});
 </script>
 
 <PageShell width="default">
@@ -67,35 +105,63 @@
 		description="Append-only record of gateway requests and administrative actions."
 	/>
 
-	{#if data.entries.length === 0}
+	{#if loaded.entries.length === 0 && !hasFilters}
 		<EmptyState
 			icon={ScrollText}
 			title="No events yet"
 			description="Activity will appear here as it happens."
 		/>
 	{:else}
-		<div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+		<div class="flex flex-col gap-3 lg:flex-row lg:items-center">
 			<SearchInput
-				bind:value={query}
-				placeholder="Search action, model, service, IP…"
+				bind:value={() => query, setQuery}
+				placeholder="Search action, model, service, token, IP…"
 				class="flex-1"
 			/>
-			<Select.Root type="single" bind:value={kind}>
-				<Select.Trigger class="w-full sm:w-40">{kindLabel}</Select.Trigger>
-				<Select.Content>
-					{#each kindOptions as o (o.value)}
-						<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
-			<Select.Root type="single" bind:value={status}>
-				<Select.Trigger class="w-full sm:w-40">{statusLabel}</Select.Trigger>
-				<Select.Content>
-					{#each statusOptions as o (o.value)}
-						<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
-					{/each}
-				</Select.Content>
-			</Select.Root>
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:flex">
+				<Select.Root
+					type="single"
+					value={filter.range ?? 'all'}
+					onValueChange={(v) => setSelect('range', v)}
+				>
+					<Select.Trigger class="w-full lg:w-40" aria-label="Time range">
+						{labelOf(rangeOptions, filter.range ?? 'all')}
+					</Select.Trigger>
+					<Select.Content>
+						{#each rangeOptions as o (o.value)}
+							<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+				<Select.Root
+					type="single"
+					value={filter.kind ?? 'all'}
+					onValueChange={(v) => setSelect('kind', v)}
+				>
+					<Select.Trigger class="w-full lg:w-36" aria-label="Event kind">
+						{labelOf(kindOptions, filter.kind ?? 'all')}
+					</Select.Trigger>
+					<Select.Content>
+						{#each kindOptions as o (o.value)}
+							<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+				<Select.Root
+					type="single"
+					value={filter.status ?? 'all'}
+					onValueChange={(v) => setSelect('status', v)}
+				>
+					<Select.Trigger class="w-full lg:w-36" aria-label="Status">
+						{labelOf(statusOptions, filter.status ?? 'all')}
+					</Select.Trigger>
+					<Select.Content>
+						{#each statusOptions as o (o.value)}
+							<Select.Item value={o.value} label={o.label}>{o.label}</Select.Item>
+						{/each}
+					</Select.Content>
+				</Select.Root>
+			</div>
 			{#if hasFilters}
 				<Button variant="ghost" size="sm" onclick={reset} class="shrink-0">
 					<X class="size-4" /> Clear
@@ -103,11 +169,15 @@
 			{/if}
 		</div>
 
-		<div class="flex items-center justify-between text-xs text-muted-foreground">
-			<span>
-				Showing <span class="font-medium text-foreground tabular-nums">{filtered.length}</span>
-				of {data.entries.length} events
-			</span>
+		<div class="text-xs text-muted-foreground">
+			<!-- No total: counting a large log on every filter change is expensive,
+			     so say whether more exist instead of claiming a number. -->
+			Showing
+			<span class="font-medium text-foreground tabular-nums"
+				>{formatCount(loaded.entries.length)}</span
+			>
+			{loaded.entries.length === 1 ? 'event' : 'events'}{#if loaded.nextCursor}, newest first — more
+				available{/if}
 		</div>
 
 		<div class="overflow-hidden rounded-xl border">
@@ -118,8 +188,9 @@
 							<Table.Head class="bg-muted/40">Time</Table.Head>
 							<Table.Head class="bg-muted/40">Action</Table.Head>
 							<Table.Head class="bg-muted/40">Status</Table.Head>
+							<Table.Head class="bg-muted/40">Who</Table.Head>
 							<Table.Head class="bg-muted/40">Service</Table.Head>
-							<Table.Head class="bg-muted/40">Model</Table.Head>
+							<Table.Head class="bg-muted/40">Provider / model</Table.Head>
 							<Table.Head class="bg-muted/40 text-right">Cost</Table.Head>
 							<Table.Head class="bg-muted/40 text-right">Provider cache</Table.Head>
 							<Table.Head class="bg-muted/40 text-right">Latency</Table.Head>
@@ -127,7 +198,7 @@
 						</Table.Row>
 					</Table.Header>
 					<Table.Body>
-						{#each filtered as e (e.id)}
+						{#each loaded.entries as e (e.id)}
 							{@const tone = eventTone(e.status)}
 							{@const Icon = actionIcon(e.action)}
 							<Table.Row>
@@ -135,11 +206,14 @@
 									<span class="text-xs" title={formatDateTime(e.createdAt)}>
 										{relativeTime(e.createdAt)}
 									</span>
+									<span class="hidden text-xs text-muted-foreground/70 xl:block">
+										{formatDateTime(e.createdAt)}
+									</span>
 								</Table.Cell>
 								<Table.Cell>
-									<span class="flex items-center gap-2">
+									<span class="flex items-center gap-2 whitespace-nowrap" title={e.action}>
 										<Icon class="size-3.5 shrink-0 text-muted-foreground" />
-										<span class="font-mono text-xs font-medium">{e.action}</span>
+										<span class="text-xs font-medium">{actionLabel(e.action)}</span>
 									</span>
 								</Table.Cell>
 								<Table.Cell>
@@ -150,8 +224,29 @@
 										</span>
 									</span>
 								</Table.Cell>
+								<Table.Cell class="text-xs whitespace-nowrap text-muted-foreground">
+									{#if isGatewayAction(e.action) && e.tokenName}
+										<span class="flex items-center gap-1.5" title="Machine token">
+											<KeyRound class="size-3.5 shrink-0" />
+											{e.tokenName}
+										</span>
+									{:else if isGatewayAction(e.action)}
+										<span title="No token recorded">—</span>
+									{:else}
+										<!-- Admin rows don't store who acted yet, and a member with
+										     token rights can write them too, so don't guess a role. -->
+										<span title="The acting user isn't recorded for admin events">—</span>
+									{/if}
+								</Table.Cell>
 								<Table.Cell class="text-muted-foreground">{e.serviceName ?? '—'}</Table.Cell>
-								<Table.Cell class="text-muted-foreground">{e.model ?? '—'}</Table.Cell>
+								<Table.Cell class="text-muted-foreground">
+									{#if e.model || e.provider}
+										<span class="block text-xs whitespace-nowrap">{e.provider ?? '—'}</span>
+										<span class="block whitespace-nowrap">{e.model ?? '—'}</span>
+									{:else}
+										—
+									{/if}
+								</Table.Cell>
 								<Table.Cell class="text-right text-muted-foreground tabular-nums">
 									{e.costUsd ? formatUsd(e.costUsd) : '—'}
 								</Table.Cell>
@@ -161,8 +256,20 @@
 								<Table.Cell class="text-right text-muted-foreground tabular-nums">
 									{e.latencyMs != null ? `${e.latencyMs}ms` : '—'}
 								</Table.Cell>
-								<Table.Cell class="max-w-[240px] truncate text-xs text-muted-foreground">
-									{e.detail ?? ''}
+								<Table.Cell class="max-w-[280px] text-xs text-muted-foreground">
+									{#if e.detail}
+										<button
+											type="button"
+											class="block w-full text-left {expanded[e.id]
+												? 'break-words whitespace-pre-wrap'
+												: 'truncate'}"
+											title={expanded[e.id] ? 'Collapse' : e.detail}
+											aria-expanded={expanded[e.id] ?? false}
+											onclick={() => (expanded[e.id] = !expanded[e.id])}
+										>
+											{e.detail}
+										</button>
+									{/if}
 								</Table.Cell>
 							</Table.Row>
 						{/each}
@@ -170,7 +277,7 @@
 				</Table.Root>
 			</div>
 
-			{#if filtered.length === 0}
+			{#if loaded.entries.length === 0}
 				<div class="flex flex-col items-center justify-center py-16">
 					<Search class="size-7 text-muted-foreground" />
 					<p class="mt-3 text-sm font-medium">No matching events</p>
@@ -179,5 +286,13 @@
 				</div>
 			{/if}
 		</div>
+
+		{#if loaded.nextCursor}
+			<div class="flex justify-center">
+				<Button variant="outline" onclick={loadMore} disabled={loadingMore}>
+					{loadingMore ? 'Loading…' : 'Load more'}
+				</Button>
+			</div>
+		{/if}
 	{/if}
 </PageShell>

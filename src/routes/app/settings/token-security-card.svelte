@@ -14,6 +14,7 @@
 	title="Token security"
 	description="How machine tokens are stored at rest."
 	action="updateTokenSecurity"
+	savedMessage="Token security saved"
 >
 	<SwitchField
 		name="tokensRecopyableDefault"

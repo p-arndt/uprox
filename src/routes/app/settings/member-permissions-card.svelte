@@ -16,6 +16,7 @@
 	title="Member permissions"
 	description="Control what members (not admins/owners) can do."
 	action="updateMemberPermissions"
+	savedMessage="Member permissions saved"
 >
 	<div class="space-y-1">
 		<SwitchField

@@ -15,8 +15,9 @@
 <SettingsCard
 	icon={BellRing}
 	title="Budget alerts"
-	description="Email owners & admins when a service nears or exceeds its policy budget."
+	description="Email owners & admins when a service nears or exceeds its budget."
 	action="updateBudgetAlerts"
+	savedMessage="Budget alerts saved"
 >
 	<SwitchField name="budgetAlertsEnabled" label="Enable budget alerts" bind:checked={alertsOn} />
 

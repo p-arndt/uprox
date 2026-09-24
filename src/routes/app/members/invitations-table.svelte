@@ -60,6 +60,7 @@
 									size="icon"
 									class="size-8 text-muted-foreground"
 									title="Copy invite link"
+									aria-label={`Copy invite link for ${inv.email}`}
 									onclick={() => copyInvite(inv.id)}
 								>
 									<Copy class="size-4" />
@@ -78,6 +79,7 @@
 												size="icon"
 												class="size-8 text-muted-foreground hover:text-destructive"
 												title="Revoke invitation"
+												aria-label={`Revoke invitation for ${inv.email}`}
 											>
 												<Ban class="size-4" />
 											</Button>

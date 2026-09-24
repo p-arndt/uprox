@@ -81,7 +81,7 @@ test.describe('admin pages', () => {
 			await toggle.click();
 			await expect(toggle).toHaveAttribute('aria-checked', String(expected));
 			await card.getByRole('button', { name: 'Save' }).click();
-			await expect(page.getByText('Settings saved').first()).toBeVisible();
+			await expect(page.getByText('Token security saved').first()).toBeVisible();
 			await page.reload();
 			await expect(toggle).toHaveAttribute('aria-checked', String(expected));
 		};

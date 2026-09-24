@@ -29,7 +29,8 @@ test.describe('authentication', () => {
 
 	test('sign out returns to /login and re-guards the dashboard', async ({ page }) => {
 		await signInAdmin(page);
-		await page.getByRole('button', { name: 'Sign out' }).click();
+		await page.getByRole('button', { name: /^Account menu/ }).click();
+		await page.getByRole('menuitem', { name: 'Sign out' }).click();
 		await expect(page).toHaveURL(/\/login$/);
 
 		// session is gone: the dashboard bounces back to login

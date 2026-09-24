@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import PageShell from '$lib/components/layout/page-shell.svelte';
@@ -9,24 +8,24 @@
 	import InviteMemberDialog from './invite-member-dialog.svelte';
 	import MembersTable from './members-table.svelte';
 	import InvitationsTable from './invitations-table.svelte';
+	import RoleLegend from './role-legend.svelte';
 
 	let { data, form } = $props();
 	let inviteOpen = $state(false);
 
 	const canManage = $derived(can(data.role, 'members:manage', data.memberPermissions));
+	const canManageSettings = $derived(can(data.role, 'settings:manage', data.memberPermissions));
 
-	// Surface action results: close the invite dialog and refresh on success,
-	// show errors as toasts.
+	// Only the confirm-dialog actions report here; the invite dialog and the
+	// role select handle their own results.
 	$effect(() => {
-		if (form?.invited) {
-			toast.success('Invitation sent');
-			inviteOpen = false;
-			invalidateAll();
-		} else if (form?.success) {
-			toast.success('Done');
-			invalidateAll();
-		} else if (form?.message) {
-			toast.error(form.message);
+		if (form?.action !== 'remove' && form?.action !== 'revokeInvite') return;
+		if (!form.success) {
+			toast.error(form.message ?? 'Something went wrong');
+		} else if (form.action === 'remove') {
+			toast.success(form.name ? `Removed ${form.name}` : 'Member removed');
+		} else {
+			toast.success('Invitation revoked');
 		}
 	});
 </script>
@@ -35,7 +34,7 @@
 	<PageHeader title="Members" description="People with access to this workspace and their roles.">
 		{#snippet action()}
 			{#if canManage}
-				<InviteMemberDialog bind:open={inviteOpen} message={form?.message} />
+				<InviteMemberDialog bind:open={inviteOpen} />
 			{/if}
 		{/snippet}
 	</PageHeader>
@@ -53,4 +52,6 @@
 			{canManage}
 		/>
 	{/if}
+
+	<RoleLegend memberPermissions={data.memberPermissions} {canManageSettings} />
 </PageShell>

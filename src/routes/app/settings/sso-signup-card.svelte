@@ -14,6 +14,7 @@
 	title="Single sign-on"
 	description="Who may join the instance through SSO."
 	action="updateSsoSignup"
+	savedMessage="Single sign-on setting saved"
 >
 	<SwitchField
 		name="ssoSignupEnabled"

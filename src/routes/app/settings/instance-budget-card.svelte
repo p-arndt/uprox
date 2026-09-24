@@ -13,6 +13,7 @@
 	title="Instance budget"
 	description="A spend ceiling across every service and token. Enforced on top of per-service and per-token budgets."
 	action="updateInstanceBudget"
+	savedMessage="Instance budget saved"
 >
 	<div class="grid max-w-md grid-cols-2 gap-3">
 		<div class="space-y-2">
