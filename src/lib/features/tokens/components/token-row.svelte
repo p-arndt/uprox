@@ -8,6 +8,7 @@
 	import { relativeTime } from '$lib/format';
 	import { scopeBadges } from '$lib/scopes';
 	import { tokenStatus, type Token } from '$lib/features/tokens/tokens';
+	import { tokenPresetLabel } from '$lib/features/tokens/token-helpers';
 	import Ban from '@lucide/svelte/icons/ban';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Eye from '@lucide/svelte/icons/eye';
@@ -24,9 +25,10 @@
 	} = $props();
 
 	const st = $derived(tokenStatus(token));
-	// ghost icon buttons stay hidden until the row is hovered or focused within
+	// always visible (touch has no hover), muted until the row is hovered
 	const hoverBtn =
-		'size-8 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100';
+		'size-8 text-muted-foreground/70 transition-colors group-hover:text-muted-foreground hover:text-foreground';
+	const preset = $derived(tokenPresetLabel(token));
 </script>
 
 <Table.Row class="group transition-colors hover:bg-accent/40">
@@ -43,17 +45,25 @@
 			{token.display}
 		</span>
 	</Table.Cell>
-	<Table.Cell class="text-muted-foreground">{token.serviceName}</Table.Cell>
+	<Table.Cell class="text-muted-foreground">
+		<a href={resolve('/app/services/[id]', { id: token.serviceId })} class="hover:underline">
+			{token.serviceName}
+		</a>
+	</Table.Cell>
 	<Table.Cell>
 		<div class="flex flex-wrap gap-1">
 			{#each scopeBadges(token.scopes) as s (s)}<Badge variant="outline">{s}</Badge>{/each}
 		</div>
 	</Table.Cell>
 	<Table.Cell>
-		{#if token.policyId}
-			<Badge variant="secondary">{token.policyName}</Badge>
+		{#if preset.source === 'token'}
+			<Badge variant="secondary">{preset.name}</Badge>
+		{:else if preset.source === 'service'}
+			<span class="text-xs text-muted-foreground" title="Inherited from the token's service">
+				{preset.name} (from service)
+			</span>
 		{:else}
-			<span class="text-xs text-muted-foreground">service policy</span>
+			<span class="text-xs text-muted-foreground">—</span>
 		{/if}
 		{#if token.allowedModels.length > 0}
 			<div class="mt-1 flex flex-wrap gap-1">

@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { invalidateAll } from '$app/navigation';
+	import { page } from '$app/state';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
@@ -26,6 +28,12 @@
 	let editing = $state<TokenFormValues | null>(null);
 
 	const canManage = $derived(can(data.role, 'tokens:manage', data.memberPermissions));
+
+	// ?service=<id> (linked from a service page) opens the create dialog on that service
+	const requestedService = $derived(page.url.searchParams.get('service'));
+	$effect(() => {
+		if (requestedService && untrack(() => canManage)) createOpen = true;
+	});
 
 	// Surface action results: a fresh secret from create is revealed once (and the
 	// create dialog closes), a re-copy reveal shows the stored secret again, and a
@@ -69,7 +77,7 @@
 <PageShell width="default">
 	<PageHeader
 		title="Machine Tokens"
-		description="Opaque, hashed-at-rest tokens your services use to authenticate to the gateway."
+		description="Opaque bearer tokens your services use to authenticate to the gateway. Stored as a hash, plus an encrypted copy only if re-copying is allowed."
 	>
 		{#snippet action()}
 			{#if canManage}
@@ -129,7 +137,7 @@
 						<Table.Head>Token</Table.Head>
 						<Table.Head>Service</Table.Head>
 						<Table.Head>Scopes</Table.Head>
-						<Table.Head>Policy / Models</Table.Head>
+						<Table.Head>Preset / Models</Table.Head>
 						<Table.Head>Last used</Table.Head>
 						<Table.Head>Status</Table.Head>
 						<Table.Head class="w-10"></Table.Head>
@@ -167,5 +175,5 @@
 	policies={data.policies}
 	providers={data.providers}
 	services={data.services}
-	message={form?.message}
+	message={form?.action === 'update' ? form.message : undefined}
 />

@@ -67,11 +67,9 @@
 	let serviceId = $state(untrack(() => values.serviceId ?? ''));
 
 	const id = (field: string) => `${idPrefix}-${field}`;
-	// '' renders as "Default" — the catch-all service the server assigns
-	const serviceOptions = $derived([
-		{ value: '', label: 'Default' },
-		...services.map((s) => ({ value: s.id, label: s.name }))
-	]);
+	// listServices() already includes the real Default service, so no synthetic
+	// entry here; '' only survives when Default doesn't exist yet
+	const serviceOptions = $derived(services.map((s) => ({ value: s.id, label: s.name })));
 </script>
 
 <form
@@ -105,6 +103,7 @@
 				name="serviceId"
 				bind:value={serviceId}
 				options={serviceOptions}
+				fallback="Default"
 			/>
 		</div>
 	{/if}

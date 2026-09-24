@@ -11,6 +11,8 @@ export interface Token {
 	serviceName: string;
 	policyId: string | null;
 	policyName: string | null;
+	/** the owning service's preset, which applies when the token has none */
+	servicePolicyName?: string | null;
 	// inline overrides (NULL = inherit); surfaced so the edit form can prefill them
 	allowedProviders: string[] | null;
 	preferredProvider: string | null;
