@@ -41,7 +41,11 @@
 	let created = $state<{ id: string; name: string; createdAt?: string }[]>([]);
 
 	const options = $derived.by(() => {
-		const all = servicePickerOptions([...services, ...created]);
+		// the form action invalidates the page data while this picker is still
+		// mounted, so a service created here can arrive in `services` too
+		const known = new Set(services.map((s) => s.id));
+		const pending = created.filter((c) => !known.has(c.id));
+		const all = servicePickerOptions([...services, ...pending]);
 		// '' makes the server file the token under Default, creating it on first use
 		return all.some((o) => o.name === DEFAULT_SERVICE_NAME)
 			? all
