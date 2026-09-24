@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { toast } from 'svelte-sonner';
 	import {
 		TIER_FIELDS,
 		tierValues,
@@ -13,6 +14,7 @@
 	import PriceCell from '$lib/features/pricing/components/price-cell.svelte';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
+	import Trash2 from '@lucide/svelte/icons/trash-2';
 	import Check from '@lucide/svelte/icons/check';
 	import X from '@lucide/svelte/icons/x';
 
@@ -61,6 +63,7 @@
 	let draftOut = $state('');
 	let draftCacheRead = $state('');
 	let draftCacheWrite = $state('');
+	let saving = $state(false);
 
 	const str = (v: number | null) => (v != null ? String(v) : '');
 
@@ -140,11 +143,25 @@
 					method="post"
 					action={price.id ? '?/update' : '?/create'}
 					class="flex justify-end gap-1"
-					use:enhance={() =>
-						async ({ result, update }) => {
-							await update();
-							if (result.type === 'success') editing = false;
-						}}
+					use:enhance={() => {
+						saving = true;
+						// Each row reports its own outcome: routing it through the page's
+						// `form` would land it in the add-model dialog, which shares ?/create.
+						return async ({ result, update }) => {
+							saving = false;
+							if (result.type === 'success') {
+								await update();
+								editing = false;
+								toast.success(`Saved price for ${price.model}`);
+							} else if (result.type === 'failure') {
+								toast.error(String(result.data?.message ?? 'Could not save the price'));
+							} else if (result.type === 'error') {
+								toast.error(result.error?.message ?? 'Something went wrong');
+							} else {
+								await update();
+							}
+						};
+					}}
 				>
 					{#if price.id}
 						<input type="hidden" name="id" value={price.id} />
@@ -155,7 +172,15 @@
 					{#each hidden as h (h.name)}
 						<input type="hidden" name={h.name} value={h.value} />
 					{/each}
-					<Button type="submit" variant="ghost" size="icon" class="size-8" title="Save">
+					<Button
+						type="submit"
+						variant="ghost"
+						size="icon"
+						class="size-8"
+						title="Save"
+						aria-label="Save price for {price.model}"
+						disabled={saving}
+					>
 						<Check class="size-4 text-primary" />
 					</Button>
 					<Button
@@ -164,6 +189,8 @@
 						size="icon"
 						class="size-8 text-muted-foreground"
 						title="Cancel"
+						aria-label="Cancel editing {price.model}"
+						disabled={saving}
 						onclick={() => (editing = false)}
 					>
 						<X class="size-4" />
@@ -171,13 +198,16 @@
 				</form>
 			{:else}
 				<div
-					class="flex justify-end opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100"
+					class="flex justify-end transition-opacity focus-within:opacity-100 md:opacity-60 md:group-hover:opacity-100"
 				>
 					<Button
 						variant="ghost"
 						size="icon"
 						class="size-8"
 						title={price.source === 'custom' ? 'Edit price' : 'Override default'}
+						aria-label="{price.source === 'custom'
+							? 'Edit price'
+							: 'Override default'} for {price.model}"
 						onclick={startEdit}
 					>
 						<Pencil class="size-4" />
@@ -198,8 +228,15 @@
 									size="icon"
 									class="size-8 text-muted-foreground hover:text-destructive"
 									title={isReset ? 'Reset to platform default' : 'Remove price'}
+									aria-label="{isReset
+										? 'Reset to platform default'
+										: 'Remove price'} for {price.model}"
 								>
-									<RotateCcw class="size-4" />
+									{#if isReset}
+										<RotateCcw class="size-4" />
+									{:else}
+										<Trash2 class="size-4" />
+									{/if}
 								</Button>
 							{/snippet}
 							{#snippet fields()}

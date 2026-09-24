@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { toast } from 'svelte-sonner';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import PageShell from '$lib/components/layout/page-shell.svelte';
@@ -57,6 +58,14 @@
 	const longCount = $derived(data.prices.filter((p) => p.longInputPerMtok !== null).length);
 	const canManage = $derived(can(data.role, 'pricing:manage', data.memberPermissions));
 
+	// The delete confirm lives in the shared ConfirmAction, which only applies the
+	// result to `form`; create and update report from their own enhance callbacks.
+	$effect(() => {
+		if (form?.action !== 'delete') return;
+		if (form.success) toast.success('Custom price removed');
+		else if (form.message) toast.error(form.message);
+	});
+
 	let addOpen = $state(false);
 	const addProvider = $derived(
 		providerFilter !== 'all' && providerFilter !== OTHER_PROVIDER_KEY ? providerFilter : ''
@@ -84,7 +93,14 @@
 			icon={Coins}
 			title="No model prices"
 			description="Add a model to start tracking its cost."
-		/>
+		>
+			{#if canManage}
+				<Button onclick={() => (addOpen = true)}>
+					<Plus class="size-4" />
+					Add model
+				</Button>
+			{/if}
+		</EmptyState>
 	{:else}
 		<PricingToolbar
 			bind:providerFilter
@@ -105,9 +121,4 @@
 	{/if}
 </PageShell>
 
-<AddModelDialog
-	bind:open={addOpen}
-	providers={data.providers}
-	defaultProvider={addProvider}
-	message={form?.message}
-/>
+<AddModelDialog bind:open={addOpen} providers={data.providers} defaultProvider={addProvider} />

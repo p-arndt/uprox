@@ -30,6 +30,11 @@
 	} = $props();
 
 	const longThresholdLabel = `${Math.round(LONG_CONTEXT_MIN_PROMPT_TOKENS / 1000)}k`;
+
+	// Only the active column carries aria-sort, so screen readers announce the
+	// one order that actually applies.
+	const ariaSort = (key: string) =>
+		table.sortKey === key ? (table.sortDir === 'asc' ? 'ascending' : 'descending') : undefined;
 </script>
 
 {#snippet sortHead(label: string, key: string, align: 'left' | 'right')}
@@ -63,24 +68,26 @@
 	<Table.Root>
 		<Table.Header>
 			<Table.Row class="hover:bg-transparent">
-				<Table.Head>{@render sortHead('Model', 'model', 'left')}</Table.Head>
+				<Table.Head aria-sort={ariaSort('model')}>
+					{@render sortHead('Model', 'model', 'left')}
+				</Table.Head>
 				{#if showProvider}
 					<Table.Head>Provider</Table.Head>
 				{/if}
-				<Table.Head class="text-right">
+				<Table.Head class="text-right" aria-sort={ariaSort('input')}>
 					{@render sortHead('Input / 1M', 'input', 'right')}
 				</Table.Head>
-				<Table.Head class="text-right">
+				<Table.Head class="text-right" aria-sort={ariaSort('output')}>
 					{@render sortHead('Output / 1M', 'output', 'right')}
 				</Table.Head>
-				<Table.Head class="text-right">
+				<Table.Head class="text-right" aria-sort={ariaSort('cacheRead')}>
 					{@render sortHead('Cache read / 1M', 'cacheRead', 'right')}
 				</Table.Head>
-				<Table.Head class="text-right">
+				<Table.Head class="text-right" aria-sort={ariaSort('cacheWrite')}>
 					{@render sortHead('Cache write / 1M', 'cacheWrite', 'right')}
 				</Table.Head>
 				<Table.Head class="w-[1%]">Source</Table.Head>
-				<Table.Head class="w-[1%]"></Table.Head>
+				<Table.Head class="w-[1%]"><span class="sr-only">Actions</span></Table.Head>
 			</Table.Row>
 		</Table.Header>
 		<Table.Body>

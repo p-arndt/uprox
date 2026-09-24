@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { toast } from 'svelte-sonner';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
@@ -16,21 +17,27 @@
 		open = $bindable(false),
 		providers,
 		/** preselect this provider when opened from a provider-filtered tab */
-		defaultProvider = '',
-		message
+		defaultProvider = ''
 	}: {
 		open?: boolean;
 		providers: { id: string; label: string }[];
 		defaultProvider?: string;
-		/** server-side validation error from the create action */
-		message?: string;
 	} = $props();
 
 	let provider = $state('');
+	// Kept local rather than read from the page's `form`, because inline row
+	// overrides post to the same ?/create action and their errors must not
+	// surface here.
+	let message = $state<string | undefined>();
+	let submitting = $state(false);
 
-	// Seed the provider select from the active tab each time the dialog opens.
+	// Seed the provider select from the active tab each time the dialog opens,
+	// and drop any error left over from the last attempt.
 	$effect(() => {
-		if (open) provider = defaultProvider;
+		if (open) {
+			provider = defaultProvider;
+			message = undefined;
+		}
 	});
 	const providerOptions = $derived([
 		{ value: '', label: '—' },
@@ -55,11 +62,24 @@
 			method="post"
 			action="?/create"
 			class="space-y-4"
-			use:enhance={() =>
-				async ({ result, update }) => {
-					await update();
-					if (result.type === 'success') open = false;
-				}}
+			use:enhance={() => {
+				submitting = true;
+				message = undefined;
+				return async ({ result, update }) => {
+					submitting = false;
+					if (result.type === 'success') {
+						await update();
+						open = false;
+						toast.success('Model price added');
+					} else if (result.type === 'failure') {
+						message = String(result.data?.message ?? 'Could not add the model');
+					} else if (result.type === 'error') {
+						message = result.error?.message ?? 'Something went wrong';
+					} else {
+						await update();
+					}
+				};
+			}}
 		>
 			<div class="space-y-2">
 				<Label for="model">Model</Label>
@@ -107,7 +127,9 @@
 			</div>
 			<FormError {message} />
 			<Dialog.Footer>
-				<Button type="submit">Add model</Button>
+				<Button type="submit" disabled={submitting}>
+					{submitting ? 'Adding…' : 'Add model'}
+				</Button>
 			</Dialog.Footer>
 		</form>
 	</Dialog.Content>
