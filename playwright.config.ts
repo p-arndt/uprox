@@ -22,6 +22,8 @@ export default defineConfig({
 	fullyParallel: false,
 	workers: 1,
 	reporter: process.env.CI ? 'github' : 'list',
+	// a local fake LLM provider, so no test depends on the public internet
+	globalSetup: './tests/e2e/mock-upstream.ts',
 	use: {
 		baseURL: ORIGIN,
 		trace: 'on-first-retry'

@@ -140,9 +140,20 @@ test.describe('admin pages', () => {
 	test('providers: lists every provider, configured or not', async ({ page }) => {
 		await page.goto('/app/providers');
 		await expect(page.getByRole('heading', { name: 'Providers' })).toBeVisible();
-		// configured providers get a card, the rest a tile in the "Add a provider" grid
-		for (const label of ['OpenAI', 'Anthropic', 'Google Gemini', 'Azure OpenAI', 'Ollama']) {
-			await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+		// configured providers get a card, the rest a tile in the "Add a provider"
+		// grid; both carry an "Add <provider> key|endpoint" button
+		for (const label of [
+			'OpenAI',
+			'Anthropic',
+			'Google Gemini',
+			'Azure OpenAI',
+			'Ollama',
+			'Custom (OpenAI-compatible)'
+		]) {
+			const add = page
+				.getByRole('button', { name: `Add ${label} key`, exact: true })
+				.or(page.getByRole('button', { name: `Add ${label} endpoint`, exact: true }));
+			await expect(add).toBeVisible();
 		}
 	});
 
