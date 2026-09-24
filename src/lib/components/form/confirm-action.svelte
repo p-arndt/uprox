@@ -23,9 +23,13 @@
 		/** hidden inputs the action needs (e.g. the row id) */
 		fields?: Snippet;
 	} = $props();
+
+	let open = $state(false);
+	// blocks a second submit while the first is in flight (double-click deletes)
+	let pending = $state(false);
 </script>
 
-<AlertDialog.Root>
+<AlertDialog.Root bind:open>
 	<AlertDialog.Trigger>
 		{#snippet child({ props })}
 			{@render trigger({ props })}
@@ -41,12 +45,19 @@
 			<form
 				method="post"
 				{action}
-				use:enhance={() =>
-					async ({ update }) =>
-						update()}
+				use:enhance={() => {
+					pending = true;
+					return async ({ update }) => {
+						await update();
+						pending = false;
+						open = false;
+					};
+				}}
 			>
 				{@render fields?.()}
-				<AlertDialog.Action type="submit" variant={actionVariant}>{actionLabel}</AlertDialog.Action>
+				<AlertDialog.Action type="submit" variant={actionVariant} disabled={pending}>
+					{pending ? 'Working…' : actionLabel}
+				</AlertDialog.Action>
 			</form>
 		</AlertDialog.Footer>
 	</AlertDialog.Content>
