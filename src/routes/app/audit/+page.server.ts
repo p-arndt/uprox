@@ -1,8 +1,11 @@
 import type { PageServerLoad } from './$types';
 import { requireOrg } from '$lib/server/org';
-import { listAudit } from '$lib/server/audit-queries';
+import { listAuditPage } from '$lib/server/audit-queries';
+import { parseAuditFilter } from '$lib/audit-view';
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
-	return { entries: await listAudit(200) };
+	// The page always starts at the newest row; later pages come from ./entries.
+	const filter = { ...parseAuditFilter(event.url.searchParams), cursor: undefined };
+	return { filter, ...(await listAuditPage(filter)) };
 };
