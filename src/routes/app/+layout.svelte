@@ -1,10 +1,11 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import type { ResolvedPathname } from '$app/types';
-	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Breadcrumb from '$lib/components/ui/breadcrumb/index.js';
 	import * as Command from '$lib/components/ui/command/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { Separator } from '$lib/components/ui/separator/index.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { Toaster } from '$lib/components/ui/sonner/index.js';
@@ -12,12 +13,25 @@
 	import Search from '@lucide/svelte/icons/search';
 	import Sun from '@lucide/svelte/icons/sun';
 	import Moon from '@lucide/svelte/icons/moon';
+	import ChevronsUpDown from '@lucide/svelte/icons/chevrons-up-down';
 	import { toggleMode } from 'mode-watcher';
 	import { NAV_ITEMS, NAV_SECTIONS as sections, isNavActive, navItemFor } from '$lib/nav';
+	import { viewOnlyNav } from '$lib/nav-access';
 
 	let { data, children } = $props();
 
 	let cmdOpen = $state(false);
+	let signOutForm: HTMLFormElement | undefined = $state();
+
+	const viewOnly = (href: string) => viewOnlyNav(href, data.role, data.memberPermissions);
+
+	// The shortcut hint names the modifier the viewer actually has. Decided on
+	// mount: the server can't know the platform, and a wrong guess would flash.
+	let modKey = $state('');
+	onMount(() => {
+		const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+		modKey = /mac|iphone|ipad/i.test(nav.userAgentData?.platform ?? nav.platform) ? '⌘' : 'Ctrl';
+	});
 
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
@@ -63,6 +77,9 @@
 					<Command.Item value={item.label} onSelect={() => go(item.href)}>
 						<item.icon class="size-4" />
 						<span>{item.label}</span>
+						{#if viewOnly(item.href)}
+							<span class="ml-auto text-xs text-muted-foreground">View only</span>
+						{/if}
 					</Command.Item>
 				{/each}
 			</Command.Group>
@@ -94,10 +111,11 @@
 					<Sidebar.GroupContent>
 						<Sidebar.Menu>
 							{#each section.items as item (item.href)}
+								{@const readOnly = viewOnly(item.href)}
 								<Sidebar.MenuItem>
 									<Sidebar.MenuButton
 										isActive={isNavActive(page.url.pathname, item)}
-										tooltipContent={item.label}
+										tooltipContent={readOnly ? `${item.label} (view only)` : item.label}
 									>
 										{#snippet child({ props })}
 											<a href={item.href} {...props}>
@@ -106,6 +124,11 @@
 											</a>
 										{/snippet}
 									</Sidebar.MenuButton>
+									{#if readOnly}
+										<Sidebar.MenuBadge class="font-normal text-muted-foreground">
+											View only
+										</Sidebar.MenuBadge>
+									{/if}
 								</Sidebar.MenuItem>
 							{/each}
 						</Sidebar.Menu>
@@ -114,33 +137,52 @@
 			{/each}
 		</Sidebar.Content>
 		<Sidebar.Footer>
-			<div class="flex items-center gap-2 rounded-lg px-2 py-1.5">
-				<div
-					class="flex size-8 items-center justify-center rounded-full bg-muted text-xs font-medium"
-				>
-					{initials}
-				</div>
-				<div class="grid flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
-					<span class="truncate text-sm font-medium">{data.user.name}</span>
-					<span class="truncate text-xs text-muted-foreground">{data.user.email}</span>
-				</div>
-				<Button
-					onclick={toggleMode}
-					variant="ghost"
-					size="icon"
-					class="size-8 group-data-[collapsible=icon]:hidden"
-					title="Toggle theme"
-				>
-					<Sun class="size-4 dark:hidden" />
-					<Moon class="hidden size-4 dark:block" />
-					<span class="sr-only">Toggle theme</span>
-				</Button>
-				<form method="post" action="/signout" class="group-data-[collapsible=icon]:hidden">
-					<Button type="submit" variant="ghost" size="icon" class="size-8" title="Sign out">
-						<LogOut class="size-4" />
-					</Button>
-				</form>
-			</div>
+			<!-- The account actions live in one menu: loose icon buttons disappear
+			     when the sidebar collapses to icons, which stranded sign out. -->
+			<form method="post" action="/signout" class="hidden" bind:this={signOutForm}></form>
+			<Sidebar.Menu>
+				<Sidebar.MenuItem>
+					<DropdownMenu.Root>
+						<DropdownMenu.Trigger>
+							{#snippet child({ props })}
+								<Sidebar.MenuButton
+									{...props}
+									size="lg"
+									class="px-2"
+									aria-label={`Account menu for ${data.user.name}`}
+								>
+									<span
+										class="flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-medium"
+									>
+										{initials}
+									</span>
+									<span class="grid flex-1 text-left leading-tight">
+										<span class="truncate text-sm font-medium">{data.user.name}</span>
+										<span class="truncate text-xs text-muted-foreground">{data.user.email}</span>
+									</span>
+									<ChevronsUpDown class="ml-auto size-4 text-muted-foreground" />
+								</Sidebar.MenuButton>
+							{/snippet}
+						</DropdownMenu.Trigger>
+						<DropdownMenu.Content side="right" align="end" class="w-56">
+							<DropdownMenu.Label class="font-normal">
+								<span class="block truncate text-sm font-medium">{data.user.name}</span>
+								<span class="block truncate text-xs text-muted-foreground">{data.user.email}</span>
+							</DropdownMenu.Label>
+							<DropdownMenu.Separator />
+							<DropdownMenu.Item onSelect={() => toggleMode()}>
+								<Sun class="size-4 dark:hidden" />
+								<Moon class="hidden size-4 dark:block" />
+								Toggle theme
+							</DropdownMenu.Item>
+							<DropdownMenu.Item onSelect={() => signOutForm?.requestSubmit()}>
+								<LogOut class="size-4" />
+								Sign out
+							</DropdownMenu.Item>
+						</DropdownMenu.Content>
+					</DropdownMenu.Root>
+				</Sidebar.MenuItem>
+			</Sidebar.Menu>
 		</Sidebar.Footer>
 	</Sidebar.Root>
 
@@ -174,15 +216,18 @@
 			</Breadcrumb.Root>
 			<button
 				type="button"
+				aria-label="Jump to a page"
 				onclick={() => (cmdOpen = true)}
 				class="ml-auto flex items-center gap-2 rounded-lg border bg-muted/40 py-1.5 pr-1.5 pl-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 			>
 				<Search class="size-4" />
-				<span class="hidden sm:inline">Search…</span>
-				<kbd
-					class="hidden rounded border bg-background px-1.5 font-mono text-[10px] leading-5 text-muted-foreground sm:inline"
-					>⌘K</kbd
-				>
+				<span class="hidden sm:inline">Jump to…</span>
+				{#if modKey}
+					<kbd
+						class="hidden rounded border bg-background px-1.5 font-mono text-[10px] leading-5 text-muted-foreground sm:inline"
+						>{modKey} K</kbd
+					>
+				{/if}
 			</button>
 		</header>
 		<main class="flex-1 p-4 sm:p-6">
