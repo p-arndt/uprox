@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { inlineLimitHints } from '$lib/features/policies/inline-limits-hints';
+import {
+	inheritedText,
+	inlineLimitHelp,
+	inlineLimitHints
+} from '$lib/features/policies/inline-limits-hints';
 
 describe('inlineLimitHints', () => {
 	it('describes a policy as the concrete base layer', () => {
@@ -19,5 +23,70 @@ describe('inlineLimitHints', () => {
 			'Aggregate ceiling across all of this service’s tokens. Blank = inherit, 0 = unlimited. UTC windows.'
 		);
 		expect(inlineLimitHints('service').rate).toBe('Blank = inherit, 0 = unlimited.');
+	});
+});
+
+describe('inlineLimitHelp', () => {
+	it('spells out per-token rate vs shared service budget', () => {
+		const svc = inlineLimitHelp('service');
+		expect(svc.rate).toContain('per token');
+		expect(svc.budget).toContain('shared by all');
+		expect(inlineLimitHelp('token').budget).toContain('service budget applies on top');
+		expect(inlineLimitHelp('policy').rate).toBe('Counted per token. 0 = unlimited.');
+	});
+});
+
+describe('inheritedText', () => {
+	it('falls back to a bare "inherit" without inherited values', () => {
+		const t = inheritedText(undefined);
+		expect(t.rate).toBe('inherit');
+		expect(t.daily).toBe('inherit');
+		expect(t.cache).toBe('inherit');
+		expect(t.preferred).toBe('Inherit');
+		expect(t.providers).toBeNull();
+		expect(t.models).toBeNull();
+		expect(t.limitsSummary).toBe('Inherited');
+		expect(t.accessSummary).toBe('Inherited');
+		expect(t.advancedSummary).toBe('Inherited');
+	});
+
+	it('shows the inherited values', () => {
+		const t = inheritedText(
+			{
+				rateLimitPerMinute: 60,
+				dailyBudgetUsd: 50,
+				monthlyBudgetUsd: 0,
+				cacheTtlSeconds: 0,
+				preferredProvider: 'azure',
+				allowedProviders: ['openai', 'azure'],
+				allowedModels: [['gpt-4o*'], ['gpt-4o-mini']]
+			},
+			(id) => id.toUpperCase()
+		);
+		expect(t.rate).toBe('60 (inherited)');
+		expect(t.daily).toBe('50 (inherited)');
+		expect(t.monthly).toBe('unlimited (inherited)');
+		expect(t.cache).toBe('off (inherited)');
+		expect(t.preferred).toBe('Inherit (AZURE)');
+		expect(t.providers).toBe('Inherited: OPENAI, AZURE');
+		expect(t.models).toBe('inherited: gpt-4o* ∩ gpt-4o-mini');
+		expect(t.limitsSummary).toBe('Inherited: 60 req/min, $50/day');
+		expect(t.accessSummary).toBe('Inherited: some providers, restricted models');
+		expect(t.advancedSummary).toBe('Inherited: cache off');
+	});
+
+	it('names the unrestricted cases', () => {
+		const t = inheritedText({
+			rateLimitPerMinute: 0,
+			dailyBudgetUsd: 0,
+			monthlyBudgetUsd: 0,
+			preferredProvider: null,
+			allowedProviders: null,
+			allowedModels: []
+		});
+		expect(t.providers).toBe('Inherited: all providers');
+		expect(t.preferred).toBe('Inherit (no preference)');
+		expect(t.limitsSummary).toBe('Inherited: no rate limit, no budget');
+		expect(t.accessSummary).toBe('Inherited: all providers');
 	});
 });
