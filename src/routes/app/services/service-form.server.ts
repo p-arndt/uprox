@@ -3,6 +3,7 @@ import { listPolicies } from '$lib/server/policies';
 import { listProviderSecrets } from '$lib/server/provider-secrets';
 import { inlineFromForm } from '$lib/server/parse-config';
 import { PROVIDERS } from '$lib/server/providers';
+import { getSettings } from '$lib/server/settings';
 
 type Secret = Awaited<ReturnType<typeof listProviderSecrets>>[number];
 
@@ -17,7 +18,11 @@ export function secretLabel(s: Pick<Secret, 'provider' | 'label' | 'hint'>) {
  * single-key providers, so it can't be used for that lookup).
  */
 export async function serviceFormOptions() {
-	const [policies, secrets] = await Promise.all([listPolicies(), listProviderSecrets()]);
+	const [policies, secrets, settings] = await Promise.all([
+		listPolicies(),
+		listProviderSecrets(),
+		getSettings()
+	]);
 	// Options for the per-service "upstream key" picker. Only meaningful where a
 	// provider has more than one key (e.g. several Azure resources); single-key
 	// providers route automatically, so we leave them out to keep the list short.
@@ -36,7 +41,13 @@ export async function serviceFormOptions() {
 		policies,
 		providerSecrets,
 		secrets,
-		providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label }))
+		providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label })),
+		// the bottom of the cascade, so the form can show what blank fields inherit
+		defaults: {
+			cacheTtlSeconds: settings.cacheTtlSeconds,
+			dailyBudgetUsd: settings.dailyBudgetUsd ?? 0,
+			monthlyBudgetUsd: settings.monthlyBudgetUsd ?? 0
+		}
 	};
 }
 

@@ -11,6 +11,11 @@
 	import SelectField from '$lib/components/form/select-field.svelte';
 	import { presetOptions } from '$lib/components/form/form-options';
 	import type { InlineLimitValues } from '$lib/features/policies/inline-limits';
+	import {
+		inheritedForServiceForm,
+		type InstanceDefaults,
+		type PresetLayerRow
+	} from '$lib/features/policies/effective-config';
 
 	export interface ServiceFormValues extends InlineLimitValues {
 		id?: string;
@@ -31,6 +36,7 @@
 		policies,
 		providers,
 		secretOptions = [],
+		defaults,
 		resetOnSuccess = false
 	}: {
 		action: string;
@@ -38,7 +44,8 @@
 		/** prefixes field ids so create & edit forms don't collide in the DOM */
 		idPrefix: string;
 		values: ServiceFormValues;
-		policies: { id: string; name: string }[];
+		/** with their config columns, so blank fields can show what they inherit */
+		policies: (PresetLayerRow & { name: string })[];
 		providers: { id: string; label: string }[];
 		/** upstream-key options; only passed when a provider has more than one key */
 		secretOptions?: {
@@ -47,6 +54,8 @@
 			label: string | null;
 			hint: string | null;
 		}[];
+		/** instance defaults; omitted = blank fields show a bare "inherit" */
+		defaults?: InstanceDefaults;
 		resetOnSuccess?: boolean;
 	} = $props();
 
@@ -57,6 +66,9 @@
 	let type = $state(untrack(() => values.type));
 	let policyId = $state(untrack(() => values.policyId));
 	let providerSecretId = $state(untrack(() => values.providerSecretId));
+
+	// follows the preset select live, so switching presets updates the placeholders
+	const inherited = $derived(defaults && inheritedForServiceForm({ policyId, policies, defaults }));
 
 	const typeOptions = [
 		{ value: 'app', label: 'App' },
@@ -110,6 +122,7 @@
 	<InlineLimitsFields
 		{providers}
 		{values}
+		{inherited}
 		idPrefix={id('inline')}
 		scope="service"
 		extraAccessActive={!!values.providerSecretId}

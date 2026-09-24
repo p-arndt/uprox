@@ -9,6 +9,11 @@
 	import { emptyInlineLimits } from '$lib/features/policies/inline-limits';
 	import SelectField from '$lib/components/form/select-field.svelte';
 	import { initialServiceId } from '$lib/features/tokens/token-helpers';
+	import type {
+		InstanceDefaults,
+		PresetLayerRow,
+		ServiceLayerRow
+	} from '$lib/features/policies/effective-config';
 
 	let {
 		open = $bindable(false),
@@ -19,17 +24,20 @@
 		providers,
 		recopyDefault,
 		serviceId,
+		defaults,
 		message
 	}: {
 		open?: boolean;
 		disabled?: boolean;
-		services: { id: string; name: string; createdAt?: Date | string }[];
+		services: (ServiceLayerRow & { name: string; createdAt?: Date | string })[];
 		canCreateService?: boolean;
-		policies: { id: string; name: string }[];
+		policies: (PresetLayerRow & { name: string })[];
 		providers: { id: string; label: string }[];
 		recopyDefault: boolean;
 		/** service to preselect (e.g. from ?service=); falls back to Default */
 		serviceId?: string | null;
+		/** instance defaults, so blank limit fields can show what they inherit */
+		defaults?: InstanceDefaults;
 		message?: string;
 	} = $props();
 
@@ -82,6 +90,7 @@
 			{providers}
 			{services}
 			{canCreateService}
+			{defaults}
 			resetOnSuccess
 			{message}
 		>

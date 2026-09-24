@@ -38,7 +38,13 @@ export const load: PageServerLoad = async (event) => {
 		services,
 		policies,
 		providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label })),
-		recopyDefault: settings.tokensRecopyableDefault
+		recopyDefault: settings.tokensRecopyableDefault,
+		// the bottom of the cascade, so the token forms can show what blank fields inherit
+		defaults: {
+			cacheTtlSeconds: settings.cacheTtlSeconds,
+			dailyBudgetUsd: settings.dailyBudgetUsd ?? 0,
+			monthlyBudgetUsd: settings.monthlyBudgetUsd ?? 0
+		}
 	};
 };
 

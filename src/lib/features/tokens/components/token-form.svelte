@@ -27,6 +27,12 @@
 	import SelectField from '$lib/components/form/select-field.svelte';
 	import ServicePicker from './service-picker.svelte';
 	import { presetOptions } from '$lib/components/form/form-options';
+	import {
+		inheritedForTokenForm,
+		type InstanceDefaults,
+		type PresetLayerRow,
+		type ServiceLayerRow
+	} from '$lib/features/policies/effective-config';
 
 	let {
 		action,
@@ -37,6 +43,7 @@
 		providers,
 		services = [],
 		canCreateService = false,
+		defaults,
 		resetOnSuccess = false,
 		message,
 		topFields,
@@ -48,12 +55,15 @@
 		/** prefixes field ids so create & edit forms don't collide in the DOM */
 		idPrefix: string;
 		values: TokenFormValues;
-		policies: { id: string; name: string }[];
+		/** with their config columns, so blank fields can show what they inherit */
+		policies: (PresetLayerRow & { name: string })[];
 		providers: { id: string; label: string }[];
 		/** services the token can belong to; empty hides the picker entirely */
-		services?: { id: string; name: string; createdAt?: Date | string }[];
+		services?: (ServiceLayerRow & { name: string; createdAt?: Date | string })[];
 		/** offer creating a service from the picker (services:manage) */
 		canCreateService?: boolean;
+		/** instance defaults; omitted = blank fields show a bare "inherit" */
+		defaults?: InstanceDefaults;
 		resetOnSuccess?: boolean;
 		/** server-side validation message, shown above the submit button */
 		message?: string;
@@ -71,6 +81,10 @@
 	let serviceId = $state(untrack(() => values.serviceId ?? ''));
 
 	const id = (field: string) => `${idPrefix}-${field}`;
+	// follows the selects live, so switching service or preset updates the placeholders
+	const inherited = $derived(
+		defaults && inheritedForTokenForm({ serviceId, policyId, services, policies, defaults })
+	);
 </script>
 
 <form
@@ -135,7 +149,7 @@
 		</p>
 	</div>
 
-	<InlineLimitsFields {providers} {values} idPrefix={id('inline')} scope="token">
+	<InlineLimitsFields {providers} {values} {inherited} idPrefix={id('inline')} scope="token">
 		{#snippet advanced()}
 			{@render advancedFields?.()}
 		{/snippet}
