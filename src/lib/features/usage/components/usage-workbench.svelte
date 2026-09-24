@@ -1,14 +1,19 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
 	import UsageHeadline from '$lib/features/usage/components/usage-headline.svelte';
 	import UsageToolbarControls from '$lib/features/usage/components/usage-toolbar-controls.svelte';
 	import UsageAnalysisCard from '$lib/features/usage/components/usage-analysis-card.svelte';
 	import UsageDeepDive from '$lib/features/usage/components/usage-deep-dive.svelte';
+	import UsageStreamedPanel from '$lib/features/usage/components/usage-streamed-panel.svelte';
 	import BudgetGauge from '$lib/features/budget/components/budget-gauge.svelte';
 	import type { UsageDimension } from '$lib/features/usage/group';
 	import type { DimensionUsageRow, Streamed, UsageAnalysis } from '$lib/features/usage/types';
 	import type { BudgetStatus } from '$lib/features/budget/budget';
+	import { USAGE_RANGES, widerRanges } from '$lib/features/usage/range';
+	import { formatWindow } from '$lib/features/usage/date-range';
+	import { formatDateTime, relativeTime } from '$lib/format';
 	import { latest, type UsageView } from '$lib/features/usage/view.svelte';
 	import type { ResolvedPathname } from '$app/types';
 
@@ -46,41 +51,86 @@
 	const comparison = $derived(
 		prevTotals.current === undefined ? 'pending' : prevTotals.current.failed ? 'failed' : 'ready'
 	);
+	const comparedWith = $derived(formatWindow(analysis.prevWindow.start, analysis.prevWindow.end));
+
+	const widen = $derived(
+		widerRanges(analysis.range).map((key) => ({
+			key,
+			label: USAGE_RANGES.find((r) => r.key === key)?.label ?? key
+		}))
+	);
 </script>
 
 <UsageToolbarControls {analysis} {view} {exportPath} />
 
 <!-- Budget headroom: instance ceiling and policy ceilings in ONE card, one row
-     each. Two separate cards pushed the chart most of a screen below the command
-     bar that drives it, which broke the loop the page exists for — change the
-     grouping, see the chart move. It stays outside the traffic check because a
-     ceiling belongs to the billing period, not to the window on screen, so it is
-     still true (and worth seeing) on a day with no requests at all. That same
-     mismatch is why it can't be a line on the chart — dividing a monthly ceiling
-     down to an hourly bucket produces a threshold any single request clears. -->
+     each. It sits directly under the headline so spend-vs-limit is on screen at
+     first paint, next to the spend figure it qualifies. It stays outside the
+     traffic check because a ceiling belongs to the billing period, not to the
+     window on screen, so it is still true (and worth seeing) on a day with no
+     requests at all. That same mismatch is why it can't be a line on the chart —
+     dividing a monthly ceiling down to an hourly bucket produces a threshold any
+     single request clears. -->
 {#snippet budgetHeadroom()}
-	<!-- no skeleton: most instances carry no ceiling, and the gauge renders
-	     nothing then, so a placeholder would only flash and disappear -->
-	{#if budgetStatuses.current?.failed}
-		<p class="text-sm text-muted-foreground" role="status">Budget headroom could not be loaded.</p>
+	{#if budgets}
+		<UsageStreamedPanel state={budgetStatuses.current} title="Budget headroom">
+			<!-- no skeleton: most instances carry no ceiling, and the gauge renders
+			     nothing then, so a placeholder would only flash and disappear -->
+			{#snippet skeleton()}{/snippet}
+			{#snippet children(value)}
+				<BudgetGauge
+					statuses={value}
+					threshold={budgetThreshold}
+					showServiceName={true}
+					title="Budget headroom"
+					description="Spend against the instance and policy ceilings this period"
+				/>
+			{/snippet}
+		</UsageStreamedPanel>
 	{/if}
-	<BudgetGauge
-		statuses={budgetStatuses.current?.value ?? []}
-		threshold={budgetThreshold}
-		showServiceName={true}
-		title="Budget headroom"
-		description="Spend against the instance and policy ceilings this period"
-	/>
 {/snippet}
 
 {#if !hasTraffic}
 	{@render budgetHeadroom()}
 	<Card.Root>
-		<Card.Content class="py-16 text-center text-sm text-muted-foreground">
-			{#if analysis.filters.length > 0}
-				No gateway traffic for {view.rangeLabel} matching these filters.
-			{:else}
-				No gateway traffic for {view.rangeLabel}.
+		<Card.Content class="flex flex-col items-center gap-3 py-12 text-center text-sm">
+			<p class="font-medium">
+				{#if view.filtered}
+					No gateway traffic for {view.rangeLabel} matching these filters.
+				{:else}
+					No gateway traffic for {view.rangeLabel}.
+				{/if}
+			</p>
+			<p class="text-muted-foreground">
+				{#if analysis.lastRequestAt}
+					Last request:
+					<time datetime={analysis.lastRequestAt} title={formatDateTime(analysis.lastRequestAt)}>
+						{relativeTime(analysis.lastRequestAt)}
+					</time>
+				{:else if view.filtered}
+					No request on record matches these filters.
+				{:else}
+					No request on record yet.
+				{/if}
+			</p>
+			{#if widen.length > 0 || view.filtered}
+				<div class="flex flex-wrap justify-center gap-2 pt-1">
+					{#each widen as w (w.key)}
+						<Button
+							href={view.hrefWith({ range: w.key })}
+							variant="outline"
+							size="sm"
+							data-sveltekit-noscroll
+						>
+							Show {w.label.toLowerCase()}
+						</Button>
+					{/each}
+					{#if view.filtered}
+						<Button variant="ghost" size="sm" onclick={() => view.setFilters([])}>
+							Clear filters
+						</Button>
+					{/if}
+				</div>
 			{/if}
 		</Card.Content>
 	</Card.Root>
@@ -89,9 +139,11 @@
 		totals={analysis.totals}
 		prevTotals={prevTotals.current?.value ?? null}
 		{comparison}
+		{comparedWith}
 		series={analysis.series}
-		rangeLabel={view.rangeLabel}
 	/>
+
+	{@render budgetHeadroom()}
 
 	<UsageAnalysisCard
 		grouped={analysis.grouped}
@@ -99,13 +151,9 @@
 		rangeLabel={view.rangeLabel}
 		bucket={analysis.bucket}
 		bucketHref={(b) => view.hrefWith({ bucket: b })}
+		metric={view.metric}
+		onMetric={view.setMetric}
 	/>
 
-	<UsageDeepDive {analysis} rangeLabel={view.rangeLabel} {rowLabel} />
-
-	<!-- Last, and deliberately: a ceiling belongs to the billing period, not to
-	     the window on screen, so it answers a different question than everything
-	     above it. budget-alert.svelte already interrupts at the top of the page
-	     when one is actually being breached. -->
-	{@render budgetHeadroom()}
+	<UsageDeepDive {analysis} {comparedWith} {rowLabel} />
 {/if}

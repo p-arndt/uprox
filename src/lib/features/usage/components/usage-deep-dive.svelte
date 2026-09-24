@@ -27,11 +27,12 @@
 
 	let {
 		analysis,
-		rangeLabel,
+		comparedWith,
 		rowLabel
 	}: {
 		analysis: UsageAnalysis;
-		rangeLabel: string;
+		/** the previous window's exact dates, which "What changed" measures against */
+		comparedWith: string;
 		rowLabel?: Snippet<[DimensionUsageRow, UsageDimension]>;
 	} = $props();
 
@@ -41,32 +42,35 @@
 	const efficiency = latest(() => analysis.efficiency);
 	const meters = latest(() => analysis.meters);
 
-	/** A streamed tab is offered while loading or failed, and once it has rows. */
-	const offer = (s: { value: unknown[]; failed: boolean } | undefined) =>
-		s === undefined || s.failed || s.value.length > 0;
+	// The tab set is fixed. Hiding the tabs whose panel would be empty made the
+	// bar reshuffle as the streams landed and whenever the grouping changed, so
+	// a tab could vanish from under the pointer; an empty panel now says so
+	// inside itself instead.
+	const TABS = [
+		{ key: 'breakdown', label: 'Breakdown' },
+		{ key: 'movers', label: 'What changed' },
+		{ key: 'composition', label: 'Composition' },
+		{ key: 'efficiency', label: 'Model efficiency' },
+		{ key: 'meters', label: 'Token meters' }
+	];
 
-	// A tab that would open onto an empty panel is not offered at all, so the bar
-	// only ever advertises breakdowns this window can actually show.
-	const tabs = $derived(
-		[
-			{ key: 'breakdown', label: 'Breakdown', show: true },
-			{ key: 'movers', label: 'What changed', show: offer(movers.current) },
-			{ key: 'composition', label: 'Composition', show: offer(donuts.current) },
-			{ key: 'efficiency', label: 'Model efficiency', show: offer(efficiency.current) },
-			{ key: 'meters', label: 'Token meters', show: true }
-		].filter((t) => t.show)
-	);
-
-	let picked = $state('breakdown');
-	// The grouping can remove the tab that's open (movers and composition are
-	// derived per-dimension), which would otherwise leave the bar with nothing
-	// selected and a blank panel below it; fall back to the breakdown then.
-	const active = $derived(tabs.some((t) => t.key === picked) ? picked : 'breakdown');
+	let active = $state('breakdown');
 </script>
 
-<Tabs.Root bind:value={() => active, (v) => (picked = v)} class="min-w-0 gap-4">
+{#snippet emptyPanel(title: string, message: string)}
+	<Card.Root>
+		<Card.Header>
+			<Card.Title>{title}</Card.Title>
+		</Card.Header>
+		<Card.Content>
+			<p class="py-6 text-center text-sm text-muted-foreground">{message}</p>
+		</Card.Content>
+	</Card.Root>
+{/snippet}
+
+<Tabs.Root bind:value={active} class="min-w-0 gap-4">
 	<Tabs.List class="max-w-full overflow-x-auto">
-		{#each tabs as t (t.key)}
+		{#each TABS as t (t.key)}
 			<Tabs.Trigger value={t.key} class="whitespace-nowrap">{t.label}</Tabs.Trigger>
 		{/each}
 	</Tabs.List>
@@ -101,7 +105,7 @@
 	<Tabs.Content value="movers">
 		<UsageStreamedPanel state={movers.current} title="What changed" rows={6}>
 			{#snippet children(value)}
-				<UsageMovers movers={value} dim={analysis.groupBy} {rangeLabel} />
+				<UsageMovers movers={value} dim={analysis.groupBy} {comparedWith} />
 			{/snippet}
 		</UsageStreamedPanel>
 	</Tabs.Content>
@@ -123,7 +127,11 @@
 				</div>
 			{/snippet}
 			{#snippet children(value)}
-				<UsageDonutRow panels={value} scopeTotal={analysis.totals.costUsd} />
+				{#if value.every((p) => p.rows.length === 0)}
+					{@render emptyPanel('Composition', 'Nothing to break down in this window.')}
+				{:else}
+					<UsageDonutRow panels={value} scopeTotal={analysis.totals.costUsd} />
+				{/if}
 			{/snippet}
 		</UsageStreamedPanel>
 	</Tabs.Content>
@@ -131,7 +139,11 @@
 	<Tabs.Content value="efficiency">
 		<UsageStreamedPanel state={efficiency.current} title="Model efficiency" rows={8}>
 			{#snippet children(value)}
-				<UsageModelEfficiency rows={value} />
+				{#if value.length === 0}
+					{@render emptyPanel('Model efficiency', 'No model traffic in this window.')}
+				{:else}
+					<UsageModelEfficiency rows={value} />
+				{/if}
 			{/snippet}
 		</UsageStreamedPanel>
 	</Tabs.Content>
@@ -141,6 +153,8 @@
 			{#snippet children(value)}
 				{#if value}
 					<UsageTokenMeters breakdown={value} />
+				{:else}
+					{@render emptyPanel('Token meters', 'No token usage in this window.')}
 				{/if}
 			{/snippet}
 		</UsageStreamedPanel>

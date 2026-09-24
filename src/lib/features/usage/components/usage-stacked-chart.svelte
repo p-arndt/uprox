@@ -92,22 +92,43 @@
 				)
 	);
 
-	const bucketAria = (bi: number) =>
-		`${bucketLabel(buckets[bi] ?? '', unit)}: ${formatMetric(totals[bi] ?? 0, metric)}`;
+	// One summary for the whole plot. Per-bucket stops made the chart ~90 tab
+	// stops of no-op buttons; the Breakdown table below carries the exact
+	// figures in a form a screen reader can actually navigate.
+	const plotAria = $derived.by(() => {
+		if (buckets.length === 0) return '';
+		const peakAt = totals.indexOf(Math.max(...totals));
+		const total = totals.reduce((a, v) => a + v, 0);
+		return (
+			`Stacked chart, ${buckets.length} buckets from ${bucketLabel(buckets[0] ?? '', unit)} ` +
+			`to ${bucketLabel(buckets[buckets.length - 1] ?? '', unit)}. ` +
+			(normalized ? '' : `Total ${formatMetric(total, metric)}, `) +
+			`peak at ${bucketLabel(buckets[peakAt] ?? '', unit)}. ` +
+			'Exact figures are in the Breakdown tab.'
+		);
+	});
+
+	// A mouse hover follows the pointer; touch has no hover, so a tap pins the
+	// bucket instead and a second tap on it lets go.
+	function pointerEnter(e: PointerEvent, bi: number) {
+		if (e.pointerType === 'mouse') hovered = bi;
+	}
+	function pointerLeave(e: PointerEvent) {
+		if (e.pointerType === 'mouse') hovered = null;
+	}
+	function pointerUp(e: PointerEvent, bi: number) {
+		if (e.pointerType !== 'mouse') hovered = hovered === bi ? null : bi;
+	}
 </script>
 
 {#snippet hitColumn(bi: number, extraClass: string)}
 	<!-- shared hover wiring for both variants -->
-	<button
-		type="button"
-		class="{extraClass} cursor-default border-0 bg-transparent {hovered === bi
-			? 'bg-foreground/[0.04]'
-			: ''}"
-		onmouseenter={() => (hovered = bi)}
-		onmouseleave={() => (hovered = null)}
-		onfocus={() => (hovered = bi)}
-		onblur={() => (hovered = null)}
-		aria-label={bucketAria(bi)}
+	<div
+		role="presentation"
+		class="{extraClass} {hovered === bi ? 'bg-foreground/[0.04]' : ''}"
+		onpointerenter={(e) => pointerEnter(e, bi)}
+		onpointerleave={pointerLeave}
+		onpointerup={(e) => pointerUp(e, bi)}
 	>
 		{#if type === 'bars'}
 			{@const top = topSegmentIndex(heights, bi)}
@@ -124,7 +145,7 @@
 				{/if}
 			{/each}
 		{/if}
-	</button>
+	</div>
 {/snippet}
 
 {#if empty}
@@ -148,7 +169,7 @@
 			{/each}
 		</div>
 
-		<div class="relative h-64 flex-1">
+		<div class="relative h-64 flex-1" role="img" aria-label={plotAria}>
 			<!-- recessive gridlines; the baseline is the only one at full strength -->
 			<div class="pointer-events-none absolute inset-0">
 				{#each scale.ticks, i (i)}
@@ -227,8 +248,10 @@
 		{@const pct = bucketCenterPct(hovered, buckets.length)}
 		{@const leftSide = hovered < buckets.length / 2}
 		<div class="pointer-events-none relative">
+			<!-- below sm the tooltip spans the chart instead of hanging off the
+			     bucket: anchored at a bucket, 18rem overruns a phone-width card -->
 			<div
-				class="absolute z-20 w-72 rounded-lg border bg-popover p-2.5 shadow-lg"
+				class="absolute z-20 w-72 rounded-lg border bg-popover p-2.5 shadow-lg max-sm:right-0! max-sm:left-0! max-sm:w-auto"
 				style="{leftSide ? 'left' : 'right'}: calc({leftSide
 					? pct
 					: 100 - pct}% + 1rem); bottom: 0.5rem;"

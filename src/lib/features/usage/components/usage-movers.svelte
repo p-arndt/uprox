@@ -14,11 +14,12 @@
 	let {
 		movers,
 		dim,
-		rangeLabel
+		comparedWith
 	}: {
 		movers: UsageMover[];
 		dim: UsageDimension;
-		rangeLabel: string;
+		/** the previous window's exact dates */
+		comparedWith: string;
 	} = $props();
 
 	// Bars are scaled to the largest move in either direction, so increases and
@@ -27,13 +28,21 @@
 	const width = (m: UsageMover) => (maxAbs > 0 ? (Math.abs(m.deltaUsd) / maxAbs) * 100 : 0);
 
 	const net = $derived(movers.reduce((a, m) => a + m.deltaUsd, 0));
+	// Summed floats rarely land on exactly 0, so "no net change" is judged at
+	// the precision the figure is printed with.
+	const netFlat = $derived(Math.abs(net) < 0.005);
+
+	// emerald-600 on light, -400 on dark: -500 fell short of text contrast on
+	// the light card
+	const DOWN_TEXT = 'text-emerald-600 dark:text-emerald-400';
+	const DOWN_BAR = 'bg-emerald-600 dark:bg-emerald-400';
 </script>
 
 <Card.Root>
 	<Card.Header class="pb-3">
 		<Card.Title>What changed</Card.Title>
 		<Card.Description>
-			Biggest {dimensionLabel(dim).toLowerCase()} spend moves vs the previous {rangeLabel.toLowerCase()},
+			Biggest {dimensionLabel(dim).toLowerCase()} spend moves vs the previous period ({comparedWith}),
 			ranked by dollar change.
 		</Card.Description>
 	</Card.Header>
@@ -54,11 +63,7 @@
 							{:else if m.isGone}
 								<Badge variant="outline" class="shrink-0 text-[10px]">stopped</Badge>
 							{/if}
-							<span
-								class="shrink-0 font-medium tabular-nums {up
-									? 'text-destructive'
-									: 'text-emerald-500'}"
-							>
+							<span class="shrink-0 font-medium tabular-nums {up ? 'text-destructive' : DOWN_TEXT}">
 								{up ? '+' : '−'}{formatUsd(Math.abs(m.deltaUsd))}
 							</span>
 							<span class="w-16 shrink-0 text-right text-xs text-muted-foreground tabular-nums">
@@ -74,10 +79,7 @@
 						<div class="flex h-1.5 items-center">
 							<div class="flex h-full w-1/2 justify-end">
 								{#if !up}
-									<div
-										class="h-full rounded-l-full bg-emerald-500"
-										style="width: {width(m)}%"
-									></div>
+									<div class="h-full rounded-l-full {DOWN_BAR}" style="width: {width(m)}%"></div>
 								{/if}
 							</div>
 							<div class="h-full w-px bg-border"></div>
@@ -106,11 +108,13 @@
 			<p class="mt-4 border-t pt-3 text-sm">
 				<span class="text-muted-foreground">Net change across these</span>
 				<span
-					class="ml-1 font-semibold tabular-nums {net > 0
-						? 'text-destructive'
-						: 'text-emerald-500'}"
+					class="ml-1 font-semibold tabular-nums {netFlat
+						? 'text-muted-foreground'
+						: net > 0
+							? 'text-destructive'
+							: DOWN_TEXT}"
 				>
-					{net > 0 ? '+' : '−'}{formatUsd(Math.abs(net))}
+					{#if netFlat}±{formatUsd(0)}{:else}{net > 0 ? '+' : '−'}{formatUsd(Math.abs(net))}{/if}
 				</span>
 			</p>
 		{/if}

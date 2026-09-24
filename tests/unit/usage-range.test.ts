@@ -8,7 +8,8 @@ import {
 	shiftRangeBack,
 	MAX_SERIES_BUCKETS,
 	USAGE_RANGES,
-	DEFAULT_USAGE_RANGE
+	DEFAULT_USAGE_RANGE,
+	widerRanges
 } from '$lib/features/usage/range';
 
 // Pin "now" to a mid-month, mid-day UTC instant so calendar buckets are
@@ -215,5 +216,25 @@ describe('normalizeRangeKey', () => {
 	it('coerces anything else to the default', () => {
 		expect(normalizeRangeKey('')).toBe(DEFAULT_USAGE_RANGE);
 		expect(normalizeRangeKey('7days')).toBe(DEFAULT_USAGE_RANGE);
+	});
+});
+
+describe('widerRanges', () => {
+	it('offers a week and a month from the short windows', () => {
+		expect(widerRanges('today')).toEqual(['7d', '30d']);
+		expect(widerRanges('custom')).toEqual(['7d', '30d']);
+	});
+
+	it('only ever offers wider presets', () => {
+		expect(widerRanges('7d')).toEqual(['30d', '90d']);
+		expect(widerRanges('last-month')).toEqual(['90d']);
+		expect(widerRanges('90d')).toEqual([]);
+	});
+
+	it('returns valid preset keys', () => {
+		const keys = USAGE_RANGES.map((r) => r.key as string);
+		for (const r of [...USAGE_RANGES.map((x) => x.key), 'custom']) {
+			for (const w of widerRanges(r)) expect(keys).toContain(w);
+		}
 	});
 });

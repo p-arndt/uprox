@@ -3,6 +3,7 @@ import { requireOrg } from '$lib/server/org';
 import { orgBudgetStatus, instanceBudgetStatus } from '$lib/server/budget-status';
 import { getSettings } from '$lib/server/settings';
 import { loadUsageAnalysis, streamed } from '$lib/server/usage-analysis';
+import { lastRequestAt } from '$lib/server/usage-queries/last-request';
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
@@ -27,8 +28,20 @@ export const load: PageServerLoad = async (event) => {
 		getSettings()
 	]);
 
+	// The setup nudge is for an instance that has never proxied anything, not
+	// for a quiet window: an empty "today" on a busy gateway is not an
+	// onboarding problem. A failed lookup counts as "yes": a wrong nudge on a
+	// working gateway is worse than a missing one.
+	const everProxied =
+		analysis.totals.requests > 0 ||
+		(await lastRequestAt().then(
+			(at) => at !== null,
+			() => true
+		));
+
 	return {
 		...analysis,
+		everProxied,
 		budgets,
 		budgetThreshold: settings.budgetAlertThresholdPct / 100
 	};

@@ -121,7 +121,9 @@ export async function instanceBudgetStatus(): Promise<BudgetStatus | null> {
 
 	return {
 		serviceId: 'instance',
-		serviceName: 'Instance',
+		// the row label wherever the ceiling is listed next to services
+		serviceName: 'Instance ceiling',
+		instance: true,
 		policyName: 'all services',
 		daily:
 			dailyBudget > 0 ? { budgetUsd: dailyBudget, spentUsd: Number(row?.dailySpent ?? 0) } : null,

@@ -141,6 +141,11 @@ export interface Streamed<T> {
 	failed: boolean;
 }
 
+export interface UsageWindow {
+	start: string;
+	end: string;
+}
+
 /**
  * The cost-analysis payload shared by the usage, service and token pages. The
  * fields the first paint needs are plain values; the secondary panels arrive
@@ -161,6 +166,15 @@ export interface UsageAnalysis {
 	grouped: GroupedSeriesResult;
 	breakdown: DimensionUsageRow[];
 	series: UsageSeries;
+	/** the resolved window as ISO instants, exclusive end ("now" for rolling windows) */
+	window: UsageWindow;
+	/** the equal-length window the deltas compare against */
+	prevWindow: UsageWindow;
+	/**
+	 * the latest request in scope and filters, ever — only looked up when the
+	 * window is empty, null otherwise or when there has never been one
+	 */
+	lastRequestAt: string | null;
 	/** previous equal-length window; null when the comparison failed */
 	prevTotals: Promise<Streamed<UsageTotals | null>>;
 	filterOptions: Promise<Streamed<UsageFilterOptions>>;

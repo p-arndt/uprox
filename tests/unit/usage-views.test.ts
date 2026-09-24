@@ -89,7 +89,7 @@ describe('headline', () => {
 		expect(formatLatencyMs(1500)).toBe('1.50 s');
 	});
 
-	it('builds the five cells', () => {
+	it('builds the six cells', () => {
 		const cells = headlineCells(totals, { ...totals, costUsd: 10 }, [
 			{ requests: 1, costUsd: 2, inputTokens: 3, outputTokens: 4 }
 		]);
@@ -97,16 +97,28 @@ describe('headline', () => {
 			'Spend',
 			'Requests',
 			'Tokens',
+			'Errors & denials',
 			'Cache rate',
 			'Latency p95'
 		]);
 		expect(cells[0]).toMatchObject({ value: '$20.00', delta: 100, note: '$0.20 avg / request' });
-		expect(cells[1]?.note).toBe('5.0% errors · 2 denied');
+		expect(cells[1]?.note).toBe('93 succeeded');
 		expect(cells[2]?.spark).toEqual([7]);
-		expect(cells[3]).toMatchObject({ value: '25.0%' });
-		assert(cells[3]);
-		expect(cells[3].delta).toBeUndefined();
-		expect(cells[4]).toMatchObject({ value: '1.50 s', note: 'p50 400 ms' });
+		expect(cells[3]).toMatchObject({ value: '7.0%', note: '5 errors · 2 denied', alert: true });
+		expect(cells[4]).toMatchObject({ value: '25.0%' });
+		assert(cells[4]);
+		expect(cells[4].delta).toBeUndefined();
+		expect(cells[5]).toMatchObject({ value: '1.50 s', note: 'p50 400 ms' });
+	});
+
+	it('keeps the errors cell calm below the alert threshold', () => {
+		const cells = headlineCells({ ...totals, errors: 2, denied: 1 }, null, []);
+		expect(cells[3]).toMatchObject({ value: '3.0%', alert: false });
+	});
+
+	it('does not alert on an empty window', () => {
+		const cells = headlineCells({ ...totals, requests: 0, errors: 0, denied: 0 }, null, []);
+		expect(cells[3]).toMatchObject({ value: '0.0%', alert: false });
 	});
 });
 
