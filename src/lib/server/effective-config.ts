@@ -22,8 +22,18 @@
  * resolveBudget / the gateway. The token and service budgets cascade only within
  * their own scope (inline → preset); the instance budget is a single value from
  * the settings singleton, carried straight through.
+ *
+ * explainEffectiveConfig is the one implementation; it also records which layer
+ * supplied each value so the UI can show where a limit comes from.
  */
 import type { policy, service, machineToken } from '$lib/server/db/schema';
+import type {
+	ConfigSource,
+	ExplainedConfig,
+	Sourced,
+	SourcedBudget,
+	SourcedList
+} from '$lib/features/policies/effective-config-view';
 
 type PolicyRow = typeof policy.$inferSelect;
 type ServiceRow = typeof service.$inferSelect;
@@ -63,12 +73,6 @@ export interface InstanceDefaults {
 	monthlyBudgetUsd: number;
 }
 
-/** First defined (non-null/undefined) value in priority order, or undefined. */
-function firstDefined<T>(...values: (T | null | undefined)[]): T | undefined {
-	for (const v of values) if (v !== null && v !== undefined) return v;
-	return undefined;
-}
-
 /** Coerce a possibly-string numeric column to a number, treating null as unset. */
 function num(v: string | number | null | undefined): number | undefined {
 	if (v === null || v === undefined) return undefined;
@@ -76,20 +80,19 @@ function num(v: string | number | null | undefined): number | undefined {
 	return Number.isFinite(n) ? n : undefined;
 }
 
-/** Non-empty allowlists from the given layers, in cascade order (for display only). */
-function allowlists(...lists: (string[] | null | undefined)[]): string[][] {
-	return lists.filter((l): l is string[] => Array.isArray(l) && l.length > 0);
-}
-
-/** Resolve one budget scope: inline value first, then its preset, default 0. */
-function resolveBudget(
-	inline: { dailyBudgetUsd: string | null; monthlyBudgetUsd: string | null },
-	preset: PolicyRow | null | undefined
-): ResolvedBudget {
-	return {
-		dailyBudgetUsd: num(firstDefined(inline.dailyBudgetUsd, preset?.dailyBudgetUsd)) ?? 0,
-		monthlyBudgetUsd: num(firstDefined(inline.monthlyBudgetUsd, preset?.monthlyBudgetUsd)) ?? 0
-	};
+/**
+ * The config columns every layer shares. Structural so a caller can pass a
+ * partial select; `name` feeds the provenance labels.
+ */
+export interface ConfigLayerRow {
+	name?: string | null;
+	allowedProviders: string[] | null;
+	allowedModels: string[] | null;
+	preferredProvider: string | null;
+	rateLimitPerMinute: number | null;
+	dailyBudgetUsd: string | null;
+	monthlyBudgetUsd: string | null;
+	cacheTtlSeconds: number | null;
 }
 
 export interface ResolveInput {
@@ -103,57 +106,155 @@ export interface ResolveInput {
 }
 
 /**
+ * Input for {@link explainEffectiveConfig}. Without a token it explains a
+ * service on its own (service inline → service preset → instance default).
+ */
+export interface ExplainInput {
+	token?: ConfigLayerRow | null;
+	tokenPolicy?: ConfigLayerRow | null;
+	service: ConfigLayerRow;
+	servicePolicy: ConfigLayerRow | null;
+	defaults: InstanceDefaults;
+}
+
+type Layer = { row: ConfigLayerRow; source: ConfigSource };
+
+const layer = (
+	kind: ConfigSource['layer'],
+	row: ConfigLayerRow | null | undefined
+): Layer | null => (row ? { row, source: { layer: kind, name: row.name ?? null } } : null);
+
+const present = (layers: (Layer | null)[]): Layer[] => layers.filter((l): l is Layer => !!l);
+
+/** First layer (in order) whose picked value is set, with that layer as source. */
+function firstSourced<T>(
+	layers: Layer[],
+	pick: (row: ConfigLayerRow) => T | null | undefined
+): Sourced<T> | undefined {
+	for (const l of layers) {
+		const v = pick(l.row);
+		if (v !== null && v !== undefined) return { value: v, source: l.source };
+	}
+	return undefined;
+}
+
+/** A numeric field's first set value; null columns and non-numbers are skipped. */
+function firstNumber(
+	layers: Layer[],
+	pick: (row: ConfigLayerRow) => string | number | null | undefined
+): Sourced<number> | undefined {
+	return firstSourced(layers, (row) => num(pick(row)));
+}
+
+/** Non-empty allowlists in cascade order (order is cosmetic — all apply). */
+function sourcedLists(
+	layers: Layer[],
+	pick: (row: ConfigLayerRow) => string[] | null | undefined
+): SourcedList[] {
+	return layers.flatMap((l) => {
+		const values = pick(l.row);
+		return Array.isArray(values) && values.length > 0 ? [{ values, source: l.source }] : [];
+	});
+}
+
+/** One budget scope: inline value first, then its preset; unset = 0 (unlimited). */
+function resolveBudget(layers: Layer[]): SourcedBudget {
+	return {
+		daily: firstNumber(layers, (r) => r.dailyBudgetUsd) ?? { value: 0, source: null },
+		monthly: firstNumber(layers, (r) => r.monthlyBudgetUsd) ?? { value: 0, source: null }
+	};
+}
+
+/**
+ * The effective config with the layer each value came from. Pure; the single
+ * implementation of the cascade (resolveEffectiveConfig projects it to values).
+ */
+export function explainEffectiveConfig(input: ExplainInput): ExplainedConfig {
+	const { defaults } = input;
+	const tokenLayer = layer('token', input.token);
+	const tokenPresetLayer = layer('tokenPreset', input.tokenPolicy);
+	const serviceLayer = layer('service', input.service);
+	const servicePresetLayer = layer('servicePreset', input.servicePolicy);
+	// most specific first; the order decides the scalar overrides
+	const all = present([tokenLayer, tokenPresetLayer, serviceLayer, servicePresetLayer]);
+	const instance: ConfigSource = { layer: 'instance', name: null };
+
+	return {
+		providers: sourcedLists(all, (r) => r.allowedProviders),
+		models: sourcedLists(all, (r) => r.allowedModels),
+		preferredProvider: firstSourced(all, (r) => r.preferredProvider) ?? {
+			value: null,
+			source: null
+		},
+		rateLimitPerMinute: firstNumber(all, (r) => r.rateLimitPerMinute) ?? {
+			value: 0,
+			source: null
+		},
+		cacheTtlSeconds: firstNumber(all, (r) => r.cacheTtlSeconds) ?? {
+			value: defaults.cacheTtlSeconds,
+			source: instance
+		},
+		// a token-level cap only exists when a token is in scope
+		tokenBudget: tokenLayer ? resolveBudget(present([tokenLayer, tokenPresetLayer])) : null,
+		serviceBudget: resolveBudget(present([serviceLayer, servicePresetLayer])),
+		// not a cascade — a single instance-wide value carried straight through
+		instanceBudget: {
+			daily: { value: defaults.dailyBudgetUsd, source: instance },
+			monthly: { value: defaults.monthlyBudgetUsd, source: instance }
+		}
+	};
+}
+
+const blankInline = (row: ConfigLayerRow): ConfigLayerRow => ({
+	name: row.name,
+	allowedProviders: null,
+	allowedModels: null,
+	preferredProvider: null,
+	rateLimitPerMinute: null,
+	dailyBudgetUsd: null,
+	monthlyBudgetUsd: null,
+	cacheTtlSeconds: null
+});
+
+/**
+ * What a token's or service's inline fields fall back to when left blank: the
+ * cascade with that layer's inline values cleared (its preset still applies).
+ * Feed the result through toInheritedLimits for the limits form.
+ */
+export function explainInherited(input: ExplainInput, scope: 'token' | 'service'): ExplainedConfig {
+	if (scope === 'service') {
+		return explainEffectiveConfig({
+			service: blankInline(input.service),
+			servicePolicy: input.servicePolicy,
+			defaults: input.defaults
+		});
+	}
+	return explainEffectiveConfig({
+		...input,
+		token: input.token ? blankInline(input.token) : input.token
+	});
+}
+
+const budgetValues = (b: SourcedBudget): ResolvedBudget => ({
+	dailyBudgetUsd: b.daily.value,
+	monthlyBudgetUsd: b.monthly.value
+});
+
+/**
  * Merge the five config layers into a single effective config for a request.
  * Pure and side-effect free — unit-tested in tests/unit/effective-config.test.ts.
  */
 export function resolveEffectiveConfig(input: ResolveInput): EffectiveConfig {
-	const { token, service, tokenPolicy, servicePolicy, defaults } = input;
-
+	const e = explainEffectiveConfig(input);
 	return {
-		// intersection layers, most specific first (order is cosmetic — all apply)
-		providerLists: allowlists(
-			token.allowedProviders,
-			tokenPolicy?.allowedProviders,
-			service.allowedProviders,
-			servicePolicy?.allowedProviders
-		),
-		modelLists: allowlists(
-			token.allowedModels,
-			tokenPolicy?.allowedModels,
-			service.allowedModels,
-			servicePolicy?.allowedModels
-		),
-		preferredProvider:
-			firstDefined(
-				token.preferredProvider,
-				tokenPolicy?.preferredProvider,
-				service.preferredProvider,
-				servicePolicy?.preferredProvider
-			) ?? null,
-		rateLimitPerMinute:
-			num(
-				firstDefined(
-					token.rateLimitPerMinute,
-					tokenPolicy?.rateLimitPerMinute,
-					service.rateLimitPerMinute,
-					servicePolicy?.rateLimitPerMinute
-				)
-			) ?? 0,
-		cacheTtlSeconds:
-			num(
-				firstDefined(
-					token.cacheTtlSeconds,
-					tokenPolicy?.cacheTtlSeconds,
-					service.cacheTtlSeconds,
-					servicePolicy?.cacheTtlSeconds
-				)
-			) ?? defaults.cacheTtlSeconds,
-		tokenBudget: resolveBudget(token, tokenPolicy),
-		serviceBudget: resolveBudget(service, servicePolicy),
-		// not a cascade — a single instance-wide value carried straight through
-		instanceBudget: {
-			dailyBudgetUsd: defaults.dailyBudgetUsd,
-			monthlyBudgetUsd: defaults.monthlyBudgetUsd
-		}
+		providerLists: e.providers.map((l) => l.values),
+		modelLists: e.models.map((l) => l.values),
+		preferredProvider: e.preferredProvider.value,
+		rateLimitPerMinute: e.rateLimitPerMinute.value,
+		cacheTtlSeconds: e.cacheTtlSeconds.value,
+		// always present: the input carries a token
+		tokenBudget: budgetValues(e.tokenBudget ?? resolveBudget([])),
+		serviceBudget: budgetValues(e.serviceBudget),
+		instanceBudget: budgetValues(e.instanceBudget)
 	};
 }

@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { resolveEffectiveConfig, type ResolveInput } from '$lib/server/effective-config';
+import {
+	explainEffectiveConfig,
+	explainInherited,
+	resolveEffectiveConfig,
+	type ExplainInput,
+	type ResolveInput
+} from '$lib/server/effective-config';
 
 // Loose row builders — resolveEffectiveConfig only reads the config columns, so
 // we cast partial literals to the row types to keep the cases readable.
@@ -159,5 +165,96 @@ describe('dual budgets', () => {
 
 	it('defaults the instance budget to 0 (unlimited) when unset', () => {
 		expect(resolve().instanceBudget).toEqual({ dailyBudgetUsd: 0, monthlyBudgetUsd: 0 });
+	});
+});
+
+describe('explainEffectiveConfig (provenance)', () => {
+	const named = <T>(row: T, name: string) => ({ ...row, name }) as T;
+	const full = (over: Partial<ExplainInput> = {}) =>
+		explainEffectiveConfig({
+			token: named(tok(), 'ci-bot'),
+			tokenPolicy: null,
+			service: named(svc(), 'billing'),
+			servicePolicy: null,
+			defaults,
+			...over
+		});
+
+	it('names the layer a scalar came from', () => {
+		const eff = full({
+			service: named(svc({ rateLimitPerMinute: 60 }), 'billing'),
+			tokenPolicy: named(preset({ rateLimitPerMinute: null, cacheTtlSeconds: 300 }), 'Strict')
+		});
+		expect(eff.rateLimitPerMinute).toEqual({
+			value: 60,
+			source: { layer: 'service', name: 'billing' }
+		});
+		expect(eff.cacheTtlSeconds).toEqual({
+			value: 300,
+			source: { layer: 'tokenPreset', name: 'Strict' }
+		});
+	});
+
+	it('reports unset scalars without a source and the cache TTL from the instance', () => {
+		const eff = full();
+		expect(eff.rateLimitPerMinute).toEqual({ value: 0, source: null });
+		expect(eff.preferredProvider).toEqual({ value: null, source: null });
+		expect(eff.cacheTtlSeconds).toEqual({ value: 60, source: { layer: 'instance', name: null } });
+	});
+
+	it('lists every contributing allowlist layer', () => {
+		const eff = full({
+			token: named(tok({ allowedProviders: ['openai'] }), 'ci-bot'),
+			servicePolicy: named(preset({ allowedProviders: ['openai', 'anthropic'] }), 'Default')
+		});
+		expect(eff.providers).toEqual([
+			{ values: ['openai'], source: { layer: 'token', name: 'ci-bot' } },
+			{ values: ['openai', 'anthropic'], source: { layer: 'servicePreset', name: 'Default' } }
+		]);
+		expect(eff.models).toEqual([]);
+	});
+
+	it('sources each budget scope separately', () => {
+		const eff = full({
+			token: named(tok({ dailyBudgetUsd: '5' }), 'ci-bot'),
+			servicePolicy: named(preset({ monthlyBudgetUsd: '500' }), 'Default')
+		});
+		expect(eff.tokenBudget?.daily).toEqual({
+			value: 5,
+			source: { layer: 'token', name: 'ci-bot' }
+		});
+		expect(eff.tokenBudget?.monthly).toEqual({ value: 0, source: null });
+		expect(eff.serviceBudget.monthly.source).toEqual({ layer: 'servicePreset', name: 'Default' });
+	});
+
+	it('explains a service on its own without a token budget', () => {
+		const eff = explainEffectiveConfig({
+			service: named(svc({ rateLimitPerMinute: 30 }), 'billing'),
+			servicePolicy: null,
+			defaults
+		});
+		expect(eff.tokenBudget).toBeNull();
+		expect(eff.rateLimitPerMinute.source).toEqual({ layer: 'service', name: 'billing' });
+	});
+
+	it('explainInherited clears only the edited layer inline values', () => {
+		const input: ExplainInput = {
+			token: named(tok({ rateLimitPerMinute: 5, dailyBudgetUsd: '1' }), 'ci-bot'),
+			tokenPolicy: named(preset({ dailyBudgetUsd: '3' }), 'Strict'),
+			service: named(svc({ rateLimitPerMinute: 60 }), 'billing'),
+			servicePolicy: null,
+			defaults
+		};
+		const inherited = explainInherited(input, 'token');
+		// a preset's rate of 0 is a set value, so it still wins over the service
+		expect(inherited.rateLimitPerMinute).toEqual({
+			value: 0,
+			source: { layer: 'tokenPreset', name: 'Strict' }
+		});
+		expect(inherited.tokenBudget?.daily.value).toBe(3);
+
+		const svcInherited = explainInherited(input, 'service');
+		expect(svcInherited.rateLimitPerMinute).toEqual({ value: 0, source: null });
+		expect(svcInherited.tokenBudget).toBeNull();
 	});
 });
