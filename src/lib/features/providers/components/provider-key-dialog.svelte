@@ -6,35 +6,69 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import EntityDialog from '$lib/components/form/entity-dialog.svelte';
 	import FormError from '$lib/components/form/form-error.svelte';
+	import DisclosureSection from '$lib/components/form/disclosure-section.svelte';
 	import { endpointPlaceholder } from '$lib/components/form/form-options';
-	import type { ProviderKeyDraft } from '$lib/features/providers/providers';
+	import {
+		credentialNoun,
+		keyPlaceholder,
+		labelPlaceholder,
+		type ProviderKeyDraft
+	} from '$lib/features/providers/providers';
 
 	let {
 		adding,
 		message,
+		connectionFailed = false,
 		onClose
 	}: {
 		/** the provider being added to, or null when the dialog is closed */
 		adding: ProviderKeyDraft | null;
 		message?: string;
+		/** the connection test rejected the credential; offer "Save anyway" */
+		connectionFailed?: boolean;
 		onClose: () => void;
 	} = $props();
+
+	let pending = $state(false);
+	// "Save anyway" skips the probe, so the pending label shouldn't claim a test
+	let skipping = $state(false);
+	const noun = $derived(credentialNoun(adding?.requiresEndpoint ?? false));
 </script>
 
-<!-- Add key -->
+{#snippet labelAndPriority()}
+	<div class="grid grid-cols-2 gap-3">
+		<div class="space-y-2">
+			<Label for="label">Label</Label>
+			<Input id="label" name="label" placeholder={labelPlaceholder(adding?.provider)} />
+		</div>
+		<div class="space-y-2">
+			<Label for="priority">Priority</Label>
+			<Input id="priority" name="priority" type="number" value="0" />
+		</div>
+	</div>
+	<p class="text-xs text-muted-foreground">
+		When a service hasn't pinned a key, the highest-priority one for the provider is used.
+	</p>
+{/snippet}
+
 <EntityDialog
 	open={adding !== null}
 	{onClose}
-	title="Add {adding?.label} key"
-	description="Stored encrypted. We only ever show the last 4 characters."
+	title="Add {adding?.label} {noun}"
+	description="Stored encrypted. We only ever show the last 4 characters. The connection is tested before saving."
 >
 	<form
 		method="post"
 		action="?/create"
 		class="space-y-4"
-		use:enhance={() =>
-			async ({ update }) =>
-				update()}
+		use:enhance={({ submitter }) => {
+			pending = true;
+			skipping = submitter?.getAttribute('name') === 'skipTest';
+			return async ({ update }) => {
+				await update();
+				pending = false;
+			};
+		}}
 	>
 		<input type="hidden" name="provider" value={adding?.provider} />
 		{#if adding?.requiresEndpoint}
@@ -90,28 +124,39 @@
 					id="secret"
 					name="secret"
 					type="password"
-					placeholder="sk-…"
+					placeholder={keyPlaceholder(adding?.provider)}
 					autocomplete="off"
 					required
 				/>
 			</div>
 		{/if}
-		<div class="grid grid-cols-2 gap-3">
-			<div class="space-y-2">
-				<Label for="label">Label</Label>
-				<Input id="label" name="label" placeholder="e.g. Azure East US" />
-			</div>
-			<div class="space-y-2">
-				<Label for="priority">Priority</Label>
-				<Input id="priority" name="priority" type="number" value="0" />
-			</div>
-		</div>
-		<p class="text-xs text-muted-foreground">
-			When a service hasn't pinned a key, the highest-priority one for the provider is used.
-		</p>
+		{#if adding?.hasKeys}
+			{@render labelAndPriority()}
+		{:else}
+			<!-- a first key needs neither: there is nothing to tell it apart from yet -->
+			<DisclosureSection title="Advanced" summary="Label, priority">
+				{@render labelAndPriority()}
+			</DisclosureSection>
+		{/if}
 		<FormError {message} />
 		<Dialog.Footer>
-			<Button type="submit">Save key</Button>
+			<!-- the primary button comes first in the DOM so Enter re-runs the test
+			     instead of submitting "Save anyway" -->
+			<Button type="submit" disabled={pending}>
+				{pending ? (skipping ? 'Saving…' : 'Testing connection…') : `Save ${noun}`}
+			</Button>
+			{#if connectionFailed}
+				<Button
+					type="submit"
+					name="skipTest"
+					value="1"
+					variant="outline"
+					class="sm:order-first"
+					disabled={pending}
+				>
+					Save anyway
+				</Button>
+			{/if}
 		</Dialog.Footer>
 	</form>
 </EntityDialog>

@@ -2,7 +2,7 @@
 import { desc, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { providerSecret } from '$lib/server/db/schema';
-import { encrypt } from '$lib/server/crypto';
+import { decrypt, encrypt } from '$lib/server/crypto';
 import { audit } from '$lib/server/audit';
 
 export function listProviderSecrets() {
@@ -22,6 +22,25 @@ export function listProviderSecrets() {
 			// group a provider's secrets together, highest priority first
 			.orderBy(providerSecret.provider, desc(providerSecret.priority), providerSecret.createdAt)
 	);
+}
+
+/**
+ * A stored secret with its credential decrypted, for a connection test. Returns
+ * null for an unknown id.
+ */
+export async function getProviderSecretCredential(
+	id: string
+): Promise<{ provider: string; baseUrl: string | null; secret: string } | null> {
+	const [row] = await db
+		.select({
+			provider: providerSecret.provider,
+			baseUrl: providerSecret.baseUrl,
+			encryptedSecret: providerSecret.encryptedSecret
+		})
+		.from(providerSecret)
+		.where(eq(providerSecret.id, id));
+	if (!row) return null;
+	return { provider: row.provider, baseUrl: row.baseUrl, secret: decrypt(row.encryptedSecret) };
 }
 
 /**

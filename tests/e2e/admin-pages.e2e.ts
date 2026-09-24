@@ -128,17 +128,13 @@ test.describe('admin pages', () => {
 		await expect(dialog).toBeHidden();
 	});
 
-	test('providers: renders every provider card', async ({ page }) => {
+	test('providers: lists every provider, configured or not', async ({ page }) => {
 		await page.goto('/app/providers');
 		await expect(page.getByRole('heading', { name: 'Providers' })).toBeVisible();
-		const openai = page
-			.locator('[data-slot="card"]')
-			.filter({ has: page.getByText('OpenAI', { exact: true }) });
-		await expect(openai).toBeVisible();
-		// the header's key count, not the "No key configured." body line
-		await expect(openai.locator('[data-slot="card-description"]')).toContainText(
-			/\d+\s+keys? configured/
-		);
+		// configured providers get a card, the rest a tile in the "Add a provider" grid
+		for (const label of ['OpenAI', 'Anthropic', 'Google Gemini', 'Azure OpenAI', 'Ollama']) {
+			await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
+		}
 	});
 
 	test('service and token detail pages show the usage toolbar', async ({ page }) => {
