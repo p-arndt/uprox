@@ -14,6 +14,7 @@
 		open = $bindable(false),
 		disabled = false,
 		services,
+		canCreateService = false,
 		policies,
 		providers,
 		recopyDefault,
@@ -22,7 +23,8 @@
 	}: {
 		open?: boolean;
 		disabled?: boolean;
-		services: { id: string; name: string }[];
+		services: { id: string; name: string; createdAt?: Date | string }[];
+		canCreateService?: boolean;
 		policies: { id: string; name: string }[];
 		providers: { id: string; label: string }[];
 		recopyDefault: boolean;
@@ -79,6 +81,7 @@
 			{policies}
 			{providers}
 			{services}
+			{canCreateService}
 			resetOnSuccess
 			{message}
 		>

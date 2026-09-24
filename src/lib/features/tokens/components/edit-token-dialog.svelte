@@ -10,13 +10,15 @@
 		policies,
 		providers,
 		services,
+		canCreateService = false,
 		message
 	}: {
 		editing: TokenFormValues | null;
 		onClose: () => void;
 		policies: { id: string; name: string }[];
 		providers: { id: string; label: string }[];
-		services: { id: string; name: string }[];
+		services: { id: string; name: string; createdAt?: Date | string }[];
+		canCreateService?: boolean;
 		message?: string;
 	} = $props();
 </script>
@@ -39,6 +41,7 @@
 				{policies}
 				{providers}
 				{services}
+				{canCreateService}
 				{message}
 			/>
 		{/key}

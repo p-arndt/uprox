@@ -25,6 +25,7 @@
 	import FieldLabel from '$lib/components/form/field-label.svelte';
 	import FormError from '$lib/components/form/form-error.svelte';
 	import SelectField from '$lib/components/form/select-field.svelte';
+	import ServicePicker from './service-picker.svelte';
 	import { presetOptions } from '$lib/components/form/form-options';
 
 	let {
@@ -35,6 +36,7 @@
 		policies,
 		providers,
 		services = [],
+		canCreateService = false,
 		resetOnSuccess = false,
 		message,
 		topFields,
@@ -49,7 +51,9 @@
 		policies: { id: string; name: string }[];
 		providers: { id: string; label: string }[];
 		/** services the token can belong to; empty hides the picker entirely */
-		services?: { id: string; name: string }[];
+		services?: { id: string; name: string; createdAt?: Date | string }[];
+		/** offer creating a service from the picker (services:manage) */
+		canCreateService?: boolean;
 		resetOnSuccess?: boolean;
 		/** server-side validation message, shown above the submit button */
 		message?: string;
@@ -67,9 +71,6 @@
 	let serviceId = $state(untrack(() => values.serviceId ?? ''));
 
 	const id = (field: string) => `${idPrefix}-${field}`;
-	// listServices() already includes the real Default service, so no synthetic
-	// entry here; '' only survives when Default doesn't exist yet
-	const serviceOptions = $derived(services.map((s) => ({ value: s.id, label: s.name })));
 </script>
 
 <form
@@ -91,19 +92,19 @@
 		<Input id={id('name')} name="name" placeholder="production" value={values.name} required />
 	</div>
 
-	{#if services.length > 0}
+	{#if services.length > 0 || canCreateService}
 		<div class="space-y-2">
 			<FieldLabel
 				for={id('serviceId')}
 				label="Service"
-				hint="Which service this token belongs to. Leave on Default to start — you can move it into a service later."
+				hint="Which service this token belongs to. Its limits and preset apply to the token. Type a new name in the search to create one."
 			/>
-			<SelectField
+			<ServicePicker
 				id={id('serviceId')}
 				name="serviceId"
 				bind:value={serviceId}
-				options={serviceOptions}
-				fallback="Default"
+				{services}
+				canCreate={canCreateService}
 			/>
 		</div>
 	{/if}
