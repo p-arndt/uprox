@@ -9,7 +9,7 @@ import {
 	deleteToken,
 	revealToken
 } from '$lib/server/tokens-admin';
-import { listServices } from '$lib/server/services';
+import { getOrCreateDefaultService, listServices } from '$lib/server/services';
 import { listPolicies } from '$lib/server/policies';
 import { getSettings } from '$lib/server/settings';
 import { inlineFromForm, splitList } from '$lib/server/parse-config';
@@ -87,8 +87,13 @@ export const actions: Actions = {
 		if (!id) return fail(400, { message: 'Missing token id' });
 		if (!name) return fail(400, { message: 'Name is required' });
 
-		// only reassign when a (non-blank) service was submitted
-		const serviceId = data.get('serviceId')?.toString() || undefined;
+		// absent = the picker wasn't rendered, so keep the service; blank = the
+		// Default service didn't exist when the form loaded, so resolve it now
+		const rawServiceId = data.get('serviceId');
+		const serviceId =
+			rawServiceId === null
+				? undefined
+				: rawServiceId.toString() || (await getOrCreateDefaultService())?.id;
 		await updateToken(id, {
 			name,
 			...(serviceId ? { serviceId } : {}),

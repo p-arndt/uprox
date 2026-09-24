@@ -8,6 +8,7 @@
 	} from '$lib/features/tokens/components/token-form.svelte';
 	import { emptyInlineLimits } from '$lib/features/policies/inline-limits';
 	import SelectField from '$lib/components/form/select-field.svelte';
+	import { initialServiceId } from '$lib/features/tokens/token-helpers';
 
 	let {
 		open = $bindable(false),
@@ -16,6 +17,7 @@
 		policies,
 		providers,
 		recopyDefault,
+		serviceId,
 		message
 	}: {
 		open?: boolean;
@@ -24,6 +26,8 @@
 		policies: { id: string; name: string }[];
 		providers: { id: string; label: string }[];
 		recopyDefault: boolean;
+		/** service to preselect (e.g. from ?service=); falls back to Default */
+		serviceId?: string | null;
 		message?: string;
 	} = $props();
 
@@ -37,12 +41,14 @@
 	// pre-checks the create-form "allow re-copying" box from the instance default
 	let recopyable = $state(false);
 
-	const createValues: TokenFormValues = {
+	// the dialog content remounts on every open, so the form re-seeds from this
+	const createValues: TokenFormValues = $derived({
 		...emptyInlineLimits(),
 		name: '',
 		scopes: [],
-		policyId: ''
-	};
+		policyId: '',
+		serviceId: initialServiceId(services, serviceId)
+	});
 
 	// Seed the create-form checkbox from the instance default each time it opens.
 	$effect(() => {
