@@ -25,6 +25,7 @@
 		recopyDefault,
 		serviceId,
 		defaults,
+		modelSuggestions = [],
 		message
 	}: {
 		open?: boolean;
@@ -38,6 +39,7 @@
 		serviceId?: string | null;
 		/** instance defaults, so blank limit fields can show what they inherit */
 		defaults?: InstanceDefaults;
+		modelSuggestions?: string[];
 		message?: string;
 	} = $props();
 
@@ -92,6 +94,7 @@
 			{services}
 			{canCreateService}
 			{defaults}
+			{modelSuggestions}
 			resetOnSuccess
 			{message}
 		>

@@ -87,6 +87,7 @@ export const load: PageServerLoad = async (event) => {
 		providerSecrets: options.providerSecrets,
 		providers: options.providers,
 		defaults: options.defaults,
+		modelSuggestions: options.modelSuggestions,
 		...analysis,
 		budget,
 		budgetThreshold: settings.budgetAlertThresholdPct / 100

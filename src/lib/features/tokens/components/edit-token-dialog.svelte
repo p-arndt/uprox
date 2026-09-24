@@ -30,6 +30,7 @@
 		services,
 		canCreateService = false,
 		defaults,
+		modelSuggestions = [],
 		message
 	}: {
 		editing: EditTokenValues | null;
@@ -40,6 +41,7 @@
 		canCreateService?: boolean;
 		/** instance defaults, so blank limit fields can show what they inherit */
 		defaults?: InstanceDefaults;
+		modelSuggestions?: string[];
 		message?: string;
 	} = $props();
 
@@ -89,6 +91,7 @@
 				{services}
 				{canCreateService}
 				{defaults}
+				{modelSuggestions}
 				{message}
 			>
 				{#snippet afterServiceFields()}

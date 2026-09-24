@@ -200,6 +200,7 @@
 					services={data.services}
 					canCreateService={canManageServices}
 					defaults={data.defaults}
+					modelSuggestions={data.modelSuggestions}
 					policies={data.policies}
 					providers={data.providers}
 					recopyDefault={data.recopyDefault}
@@ -378,5 +379,6 @@
 	services={data.services}
 	canCreateService={canManageServices}
 	defaults={data.defaults}
+	modelSuggestions={data.modelSuggestions}
 	message={dialogMessage(form, 'update')}
 />

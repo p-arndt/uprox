@@ -11,7 +11,7 @@ import { explainEffectiveConfig } from '$lib/server/effective-config';
 import { getSettings } from '$lib/server/settings';
 import { PROVIDERS } from '$lib/server/providers';
 import { listServices } from '$lib/server/services';
-import { listPolicies } from '$lib/server/policies';
+import { knownModelIds, listPolicies } from '$lib/server/policies';
 import { inlineLimitsFromRow } from '$lib/features/policies/inline-limits';
 import {
 	deleteTokenAction,
@@ -101,6 +101,7 @@ export const load: PageServerLoad = async (event) => {
 		inlineLimits: effective.inlineLimits,
 		effectiveConfig: effective.config,
 		defaults: effective.defaults,
+		modelSuggestions: await knownModelIds(),
 		services,
 		policies,
 		providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label })),

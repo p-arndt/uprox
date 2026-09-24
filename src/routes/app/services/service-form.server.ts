@@ -1,5 +1,5 @@
 /** Load data and form parsing shared by the service list and detail pages. */
-import { listPolicies } from '$lib/server/policies';
+import { knownModelIds, listPolicies } from '$lib/server/policies';
 import { listProviderSecrets } from '$lib/server/provider-secrets';
 import { inlineFromForm } from '$lib/server/parse-config';
 import { PROVIDERS } from '$lib/server/providers';
@@ -18,10 +18,11 @@ export function secretLabel(s: Pick<Secret, 'provider' | 'label' | 'hint'>) {
  * single-key providers, so it can't be used for that lookup).
  */
 export async function serviceFormOptions() {
-	const [policies, secrets, settings] = await Promise.all([
+	const [policies, secrets, settings, modelSuggestions] = await Promise.all([
 		listPolicies(),
 		listProviderSecrets(),
-		getSettings()
+		getSettings(),
+		knownModelIds()
 	]);
 	// Options for the per-service "upstream key" picker. Only meaningful where a
 	// provider has more than one key (e.g. several Azure resources); single-key
@@ -42,6 +43,7 @@ export async function serviceFormOptions() {
 		providerSecrets,
 		secrets,
 		providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label })),
+		modelSuggestions,
 		// the bottom of the cascade, so the form can show what blank fields inherit
 		defaults: {
 			cacheTtlSeconds: settings.cacheTtlSeconds,

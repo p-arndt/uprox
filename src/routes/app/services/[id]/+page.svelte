@@ -296,6 +296,7 @@
 			{#if editOpen}
 				<ServiceForm
 					defaults={data.defaults}
+					modelSuggestions={data.modelSuggestions}
 					action="?/update"
 					submitLabel="Save changes"
 					idPrefix="svc-detail-edit"

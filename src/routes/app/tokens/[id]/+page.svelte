@@ -215,6 +215,7 @@
 	services={data.services}
 	canCreateService={can(data.role, 'services:manage', data.memberPermissions)}
 	defaults={data.defaults}
+	modelSuggestions={data.modelSuggestions}
 	message={dialogMessage(form, 'update')}
 />
 

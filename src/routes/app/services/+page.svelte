@@ -118,6 +118,7 @@
 						</Dialog.Header>
 						<ServiceForm
 							defaults={data.defaults}
+							modelSuggestions={data.modelSuggestions}
 							action="?/create"
 							submitLabel="Create service"
 							idPrefix="svc-create"
@@ -260,6 +261,7 @@
 			{#key editing.id}
 				<ServiceForm
 					defaults={data.defaults}
+					modelSuggestions={data.modelSuggestions}
 					action="?/update"
 					submitLabel="Save changes"
 					idPrefix="svc-edit"

@@ -45,6 +45,7 @@
 		services = [],
 		canCreateService = false,
 		defaults,
+		modelSuggestions = [],
 		resetOnSuccess = false,
 		message,
 		topFields,
@@ -67,6 +68,8 @@
 		canCreateService?: boolean;
 		/** instance defaults; omitted = blank fields show a bare "inherit" */
 		defaults?: InstanceDefaults;
+		/** known model ids offered while typing an allowlist pattern */
+		modelSuggestions?: string[];
 		resetOnSuccess?: boolean;
 		/** server-side validation message, shown above the submit button */
 		message?: string;
@@ -163,7 +166,14 @@
 		</p>
 	</div>
 
-	<InlineLimitsFields {providers} {values} {inherited} idPrefix={id('inline')} scope="token">
+	<InlineLimitsFields
+		{providers}
+		{values}
+		{inherited}
+		{modelSuggestions}
+		idPrefix={id('inline')}
+		scope="token"
+	>
 		{#snippet advanced()}
 			{@render advancedFields?.()}
 		{/snippet}

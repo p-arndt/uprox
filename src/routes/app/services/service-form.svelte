@@ -40,6 +40,7 @@
 		providers,
 		secretOptions = [],
 		defaults,
+		modelSuggestions = [],
 		message,
 		resetOnSuccess = false
 	}: {
@@ -60,6 +61,8 @@
 		}[];
 		/** instance defaults; omitted = blank fields show a bare "inherit" */
 		defaults?: InstanceDefaults;
+		/** known model ids offered while typing an allowlist pattern */
+		modelSuggestions?: string[];
 		/** the server's error for this form's last submit, shown above the submit button */
 		message?: string | null;
 		resetOnSuccess?: boolean;
@@ -142,6 +145,7 @@
 	<Separator />
 
 	<InlineLimitsFields
+		{modelSuggestions}
 		{providers}
 		{values}
 		{inherited}

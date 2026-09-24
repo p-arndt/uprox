@@ -11,7 +11,7 @@ import {
 	updateTokenAction
 } from '$lib/server/token-actions';
 import { listServices } from '$lib/server/services';
-import { listPolicies } from '$lib/server/policies';
+import { knownModelIds, listPolicies } from '$lib/server/policies';
 import { getSettings } from '$lib/server/settings';
 import { inlineFromForm, splitList } from '$lib/server/parse-config';
 import { isOn } from '$lib/server/form';
@@ -41,6 +41,7 @@ export const load: PageServerLoad = async (event) => {
 		providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label })),
 		recopyDefault: settings.tokensRecopyableDefault,
 		// the bottom of the cascade, so the token forms can show what blank fields inherit
+		modelSuggestions: await knownModelIds(),
 		defaults: {
 			cacheTtlSeconds: settings.cacheTtlSeconds,
 			dailyBudgetUsd: settings.dailyBudgetUsd ?? 0,
