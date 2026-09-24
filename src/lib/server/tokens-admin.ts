@@ -196,6 +196,11 @@ export async function revealToken(id: string): Promise<{ name: string; plaintext
  * regenerated, so the access controls (scopes, model allowlist, policy) and the
  * display name are editable without reissuing. Only the fields present in
  * `patch` are written. Revoked tokens are left untouched.
+ *
+ * `expiresAt` must lie in the future (`null` = never expires): backdating would
+ * just be a silent revoke. `recopyable` can only be switched off, which drops
+ * the stored ciphertext; a hash-only token's plaintext no longer exists, so it
+ * can never become re-copyable again.
  */
 export async function updateToken(
 	id: string,
@@ -207,14 +212,21 @@ export async function updateToken(
 		scopes?: string[];
 		allowedModels?: string[];
 		policyId?: string | null;
+		expiresAt?: Date | null;
+		recopyable?: false;
 	} & Omit<InlineConfigInput, 'allowedModels'>
 ) {
+	if (patch.expiresAt && patch.expiresAt.getTime() <= Date.now()) {
+		throw new Error('Expiry must be in the future');
+	}
 	const set: Partial<typeof machineToken.$inferInsert> = {};
 	if (patch.name !== undefined) set.name = patch.name;
 	if (patch.serviceId !== undefined) set.serviceId = patch.serviceId;
 	if (patch.scopes !== undefined) set.scopes = patch.scopes;
 	if (patch.allowedModels !== undefined) set.allowedModels = patch.allowedModels;
 	if (patch.policyId !== undefined) set.policyId = patch.policyId;
+	if (patch.expiresAt !== undefined) set.expiresAt = patch.expiresAt;
+	if (patch.recopyable === false) set.encryptedToken = null;
 	Object.assign(
 		set,
 		inlineConfigColumns({

@@ -1,15 +1,14 @@
 import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { requireOrg, requirePermission } from '$lib/server/org';
+import { listTokens, createToken, revealToken } from '$lib/server/tokens-admin';
 import {
-	listTokens,
-	createToken,
-	updateToken,
-	revokeToken,
-	deleteToken,
-	revealToken
-} from '$lib/server/tokens-admin';
-import { getOrCreateDefaultService, listServices } from '$lib/server/services';
+	deleteTokenAction,
+	expiryFromForm,
+	revokeTokenAction,
+	updateTokenAction
+} from '$lib/server/token-actions';
+import { listServices } from '$lib/server/services';
 import { listPolicies } from '$lib/server/policies';
 import { getSettings } from '$lib/server/settings';
 import { inlineFromForm, splitList } from '$lib/server/parse-config';
@@ -55,8 +54,7 @@ export const actions: Actions = {
 		const allowedModels = splitList(data.get('allowedModels'));
 		// blank = no token preset; the service's preset (if any) still applies
 		const policyId = data.get('policyId')?.toString() || null;
-		const days = Number(data.get('expiresInDays')) || 0;
-		const expiresAt = days > 0 ? new Date(Date.now() + days * 86_400_000) : null;
+		const expiresAt = expiryFromForm(data.get('expiresInDays')) ?? null;
 		// checkbox: present only when ticked. When on, the raw token is stored
 		// encrypted so it can be revealed/copied again later.
 		const recopyable = isOn(data.get('recopyable'));
@@ -90,43 +88,7 @@ export const actions: Actions = {
 		if (!revealed) return fail(400, { message: 'This token cannot be re-copied' });
 		return { revealed };
 	},
-	update: async (event) => {
-		await requirePermission(event, 'tokens:manage');
-		const data = await event.request.formData();
-		const id = data.get('id')?.toString();
-		const name = data.get('name')?.toString().trim();
-		if (!id) return fail(400, { action: 'update' as const, message: 'Missing token id' });
-		if (!name) return fail(400, { action: 'update' as const, message: 'Name is required' });
-
-		// absent = the picker wasn't rendered, so keep the service; blank = the
-		// Default service didn't exist when the form loaded, so resolve it now
-		const rawServiceId = data.get('serviceId');
-		const serviceId =
-			rawServiceId === null
-				? undefined
-				: rawServiceId.toString() || (await getOrCreateDefaultService())?.id;
-		await updateToken(id, {
-			name,
-			...(serviceId ? { serviceId } : {}),
-			scopes: data.getAll('scopes').map((s) => s.toString()),
-			allowedModels: splitList(data.get('allowedModels')),
-			policyId: data.get('policyId')?.toString() || null,
-			...inlineFromForm(data)
-		});
-		return { success: true };
-	},
-	revoke: async (event) => {
-		await requirePermission(event, 'tokens:manage');
-		const data = await event.request.formData();
-		const id = data.get('id')?.toString();
-		if (id) await revokeToken(id);
-		return { success: true };
-	},
-	delete: async (event) => {
-		await requirePermission(event, 'tokens:manage');
-		const data = await event.request.formData();
-		const id = data.get('id')?.toString();
-		if (id) await deleteToken(id);
-		return { success: true };
-	}
+	update: (event) => updateTokenAction(event),
+	revoke: (event) => revokeTokenAction(event),
+	delete: (event) => deleteTokenAction(event)
 };

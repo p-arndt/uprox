@@ -124,6 +124,28 @@ describe('parseTokenPatch', () => {
 			'No updatable fields provided'
 		);
 	});
+
+	it('sets a future expiry or clears it with null', () => {
+		const now = Date.parse('2026-01-01T00:00:00Z');
+		expect(parseTokenPatch({ expiresAt: '2026-06-01T00:00:00Z' }, now)).toEqual({
+			expiresAt: new Date('2026-06-01T00:00:00Z')
+		});
+		expect(parseTokenPatch({ expiresAt: null }, now)).toEqual({ expiresAt: null });
+	});
+
+	it('rejects an expiry that is not in the future', () => {
+		const now = Date.parse('2026-01-01T00:00:00Z');
+		expect(apiError(() => parseTokenPatch({ expiresAt: '2025-12-31T00:00:00Z' }, now)).field).toBe(
+			'expiresAt'
+		);
+		expect(apiError(() => parseTokenPatch({ expiresAt: now }, now)).field).toBe('expiresAt');
+	});
+
+	it('only lets recopyable be switched off', () => {
+		expect(parseTokenPatch({ recopyable: false })).toEqual({ recopyable: false });
+		expect(apiError(() => parseTokenPatch({ recopyable: true })).field).toBe('recopyable');
+		expect(apiError(() => parseTokenPatch({ recopyable: null })).field).toBe('recopyable');
+	});
 });
 
 describe('tokenResponse', () => {
