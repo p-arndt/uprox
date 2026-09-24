@@ -391,7 +391,12 @@ describe('cache default prices', () => {
 			cacheRead: 0.5,
 			cacheWrite: 6.25
 		});
-		// introductory pricing through 2026-08-31; reverts to $3/$15 on 2026-09-01
+		expect(DEFAULT_MODEL_PRICES['claude-opus-5-5']).toEqual({
+			in: 4,
+			out: 20,
+			cacheRead: 0.2,
+			cacheWrite: 5
+		});
 		expect(DEFAULT_MODEL_PRICES['claude-sonnet-5']).toEqual({
 			in: 2,
 			out: 10,
@@ -403,6 +408,10 @@ describe('cache default prices', () => {
 	it('resolves dated Claude 5 ids without colliding with the 4.x rows', () => {
 		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'claude-opus-5-20260115')).toBe(
 			DEFAULT_MODEL_PRICES['claude-opus-5']
+		);
+		// the longer key must win over its "claude-opus-5" prefix
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'claude-opus-5-5')).toBe(
+			DEFAULT_MODEL_PRICES['claude-opus-5-5']
 		);
 		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'claude-sonnet-5')).toBe(
 			DEFAULT_MODEL_PRICES['claude-sonnet-5']
@@ -461,6 +470,29 @@ describe('cache default prices', () => {
 			longCacheRead: 0.04,
 			longCacheWrite: 0.5
 		});
+	});
+
+	it('seeds the GPT-6 tiers on the GPT-5.6 rate-card shape', () => {
+		expect(DEFAULT_MODEL_PRICES['gpt-6-astra']).toEqual({
+			in: 10,
+			out: 50,
+			cacheRead: 1,
+			cacheWrite: 12.5,
+			longIn: 20,
+			longOut: 75,
+			longCacheRead: 2,
+			longCacheWrite: 25
+		});
+		expect(DEFAULT_MODEL_PRICES['gpt-6-sol']).toMatchObject({ in: 2, out: 10, cacheRead: 0.2 });
+		expect(DEFAULT_MODEL_PRICES['gpt-6-luna']).toMatchObject({
+			in: 0.1,
+			out: 0.5,
+			cacheRead: 0.01,
+			cacheWrite: 0.125
+		});
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'gpt-6-sol-2026-09-22')).toBe(
+			DEFAULT_MODEL_PRICES['gpt-6-sol']
+		);
 	});
 
 	it('prices a GPT-5.6 request with both cache reads and writes', () => {

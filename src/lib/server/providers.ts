@@ -423,7 +423,12 @@ const gemini = (input: number, out: number, cacheRead: number): ModelPrice => ({
 });
 
 export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
-	// OpenAI — current GPT-5 series (most specific keys first, see lookup note below)
+	// OpenAI — GPT-6 series (released 2026-09; astra rolls out to a limited set of
+	// orgs first). Same shape as GPT-5.6: reads 0.1×, writes 1.25×, long-context card.
+	'gpt-6-astra': openai(10, 50, 0.1, 1.25, true),
+	'gpt-6-sol': openai(2, 10, 0.1, 1.25, true),
+	'gpt-6-luna': openai(0.1, 0.5, 0.1, 1.25, true),
+	// OpenAI — GPT-5 series (most specific keys first, see lookup note below)
 	'gpt-5.6-luna': openai(0.2, 1.2, 0.1, 1.25, true),
 	'gpt-5.6-terra': openai(2, 12, 0.1, 1.25, true),
 	'gpt-5.6-sol': openai(5, 30, 0.1, 1.25, true),
@@ -470,9 +475,11 @@ export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	// Anthropic — Claude 5 series
 	'claude-fable-5': anthropic(10, 50),
 	'claude-mythos-5': anthropic(10, 50),
+	// Opus 5.5 breaks the 0.1× cache-read pattern: reads bill at 0.05× input.
+	'claude-opus-5-5': { ...anthropic(4, 20), cacheRead: 0.2 },
 	'claude-opus-5': anthropic(5, 25),
-	// Sonnet 5 carries introductory $2/$10 pricing through 2026-08-31; it reverts
-	// to $3/$15 (the 4.x Sonnet rate) on 2026-09-01, so this row needs updating then.
+	// The launch "introductory" $2/$10 became the standard price; the announced
+	// rise to $3/$15 on 2026-09-01 was cancelled.
 	'claude-sonnet-5': anthropic(2, 10),
 	// Anthropic — current Claude 4.x series
 	'claude-opus-4-8': anthropic(5, 25),
