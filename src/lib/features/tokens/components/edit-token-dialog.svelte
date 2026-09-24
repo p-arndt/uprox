@@ -81,6 +81,7 @@
 			<TokenForm
 				action="?/update"
 				submitLabel="Save token"
+				pendingLabel="Saving…"
 				idPrefix="edit"
 				values={editing}
 				{policies}

@@ -2,14 +2,16 @@
 	import { enhance } from '$app/forms';
 	import { resolve } from '$app/paths';
 	import * as Table from '$lib/components/ui/table/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import ConfirmAction from '$lib/components/form/confirm-action.svelte';
+	import TokenConfirmDialog from '$lib/features/tokens/components/token-confirm-dialog.svelte';
 	import { relativeTime } from '$lib/format';
 	import { scopeBadges } from '$lib/scopes';
 	import { tokenStatus, type Token } from '$lib/features/tokens/tokens';
 	import { tokenPresetLabel } from '$lib/features/tokens/token-helpers';
 	import Ban from '@lucide/svelte/icons/ban';
+	import Ellipsis from '@lucide/svelte/icons/ellipsis';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Eye from '@lucide/svelte/icons/eye';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
@@ -25,19 +27,22 @@
 	} = $props();
 
 	const st = $derived(tokenStatus(token));
-	// always visible (touch has no hover), muted until the row is hovered
-	const hoverBtn =
-		'size-8 text-muted-foreground/70 transition-colors group-hover:text-muted-foreground hover:text-foreground';
 	const preset = $derived(tokenPresetLabel(token));
+
+	let revokeOpen = $state(false);
+	let deleteOpen = $state(false);
+	// a menu item can't be a submit button, so it submits this form instead
+	let revealForm = $state<HTMLFormElement>();
+	let revealing = $state(false);
 </script>
 
-<Table.Row class="group transition-colors hover:bg-accent/40">
+<Table.Row class="transition-colors hover:bg-accent/40">
 	<Table.Cell class="font-medium">
 		<a href={resolve('/app/tokens/[id]', { id: token.id })} class="hover:underline">
 			{token.name}
 		</a>
 	</Table.Cell>
-	<Table.Cell>
+	<Table.Cell class="hidden md:table-cell">
 		<span
 			title="Token prefix (the full token is shown only once at creation)"
 			class="inline-flex items-center rounded-md bg-muted/60 px-2 py-1 font-mono text-xs text-muted-foreground"
@@ -55,7 +60,7 @@
 			{#each scopeBadges(token.scopes) as s (s)}<Badge variant="outline">{s}</Badge>{/each}
 		</div>
 	</Table.Cell>
-	<Table.Cell>
+	<Table.Cell class="hidden md:table-cell">
 		{#if preset.source === 'token'}
 			<Badge variant="secondary">{preset.name}</Badge>
 		{:else if preset.source === 'service'}
@@ -73,90 +78,90 @@
 			</div>
 		{/if}
 	</Table.Cell>
-	<Table.Cell class="text-muted-foreground">{relativeTime(token.lastUsedAt)}</Table.Cell>
+	<Table.Cell class="hidden text-muted-foreground md:table-cell">
+		{relativeTime(token.lastUsedAt)}
+	</Table.Cell>
 	<Table.Cell>
 		<span class="inline-flex items-center gap-1.5 text-sm capitalize">
 			<span class="size-1.5 rounded-full {st.dot} {st.pulse ? 'dot-pulse' : ''}"></span>
 			{st.label}
 		</span>
 	</Table.Cell>
-	<Table.Cell>
+	<Table.Cell class="text-right">
 		{#if canManage}
-			<div class="flex items-center justify-end gap-0.5">
-				{#if !token.revokedAt}
-					{#if token.recopyable}
-						<form
-							method="post"
-							action="?/reveal"
-							use:enhance={() =>
-								async ({ update }) =>
-									update({ reset: false })}
-						>
-							<input type="hidden" name="id" value={token.id} />
-							<Button
-								type="submit"
-								variant="ghost"
-								size="icon"
-								class={hoverBtn}
-								title="Reveal & copy token"
-							>
-								<Eye class="size-4" />
-							</Button>
-						</form>
-					{/if}
-					<Button
-						variant="ghost"
-						size="icon"
-						class={hoverBtn}
-						title="Edit token"
-						onclick={() => onEdit(token)}
-					>
-						<Pencil class="size-4" />
-					</Button>
-					<ConfirmAction
-						action="?/revoke"
-						title={`Revoke “${token.name}”?`}
-						description="Any service still using this token will immediately fail to authenticate. This can't be undone."
-						actionLabel="Revoke token"
-					>
-						{#snippet trigger({ props })}
-							<Button
-								{...props}
-								variant="ghost"
-								size="icon"
-								class="{hoverBtn} hover:text-destructive"
-								title="Revoke token"
-							>
-								<Ban class="size-4" />
-							</Button>
-						{/snippet}
-						{#snippet fields()}
-							<input type="hidden" name="id" value={token.id} />
-						{/snippet}
-					</ConfirmAction>
-				{/if}
-				<ConfirmAction
-					action="?/delete"
-					title={`Delete “${token.name}”?`}
-					description="This permanently removes the token and its configuration. Audit-log history is kept but no longer linked to this token. This can't be undone."
-					actionLabel="Delete token"
-				>
-					{#snippet trigger({ props })}
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger>
+					{#snippet child({ props })}
 						<Button
 							{...props}
 							variant="ghost"
 							size="icon"
-							class="{hoverBtn} hover:text-destructive"
-							title="Delete token permanently"
+							class="size-10 text-muted-foreground hover:text-foreground"
+							aria-label="Actions for token {token.name}"
 						>
-							<Trash2 class="size-4" />
+							<Ellipsis class="size-4" />
 						</Button>
 					{/snippet}
-					{#snippet fields()}
-						<input type="hidden" name="id" value={token.id} />
-					{/snippet}
-				</ConfirmAction>
-			</div>
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end" class="min-w-44">
+					{#if !token.revokedAt}
+						<DropdownMenu.Item onSelect={() => onEdit(token)}>
+							<Pencil /> Edit
+						</DropdownMenu.Item>
+						{#if token.recopyable}
+							<DropdownMenu.Item disabled={revealing} onSelect={() => revealForm?.requestSubmit()}>
+								<Eye /> Reveal & copy
+							</DropdownMenu.Item>
+						{/if}
+						<DropdownMenu.Separator />
+						<DropdownMenu.Item variant="destructive" onSelect={() => (revokeOpen = true)}>
+							<Ban /> Revoke
+						</DropdownMenu.Item>
+					{/if}
+					<DropdownMenu.Item variant="destructive" onSelect={() => (deleteOpen = true)}>
+						<Trash2 /> Delete
+					</DropdownMenu.Item>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+
+			{#if token.recopyable && !token.revokedAt}
+				<form
+					bind:this={revealForm}
+					method="post"
+					action="?/reveal"
+					class="hidden"
+					use:enhance={() => {
+						revealing = true;
+						return async ({ update }) => {
+							try {
+								await update({ reset: false });
+							} finally {
+								revealing = false;
+							}
+						};
+					}}
+				>
+					<input type="hidden" name="id" value={token.id} />
+				</form>
+			{/if}
+			<TokenConfirmDialog
+				bind:open={revokeOpen}
+				action="?/revoke"
+				tokenId={token.id}
+				title={`Revoke “${token.name}”?`}
+				description="Any service still using this token will immediately fail to authenticate. This can't be undone."
+				actionLabel="Revoke token"
+				pendingLabel="Revoking…"
+			/>
+			<TokenConfirmDialog
+				bind:open={deleteOpen}
+				action="?/delete"
+				tokenId={token.id}
+				title={`Delete “${token.name}”?`}
+				description="This permanently removes the token and its configuration. Audit-log history is kept but no longer linked to this token. This can't be undone."
+				actionLabel="Delete token"
+				pendingLabel="Deleting…"
+			/>
 		{/if}
 	</Table.Cell>
 </Table.Row>

@@ -37,6 +37,7 @@
 	let {
 		action,
 		submitLabel,
+		pendingLabel,
 		idPrefix,
 		values,
 		policies,
@@ -52,6 +53,8 @@
 	}: {
 		action: string;
 		submitLabel: string;
+		/** submit label while the request runs, e.g. "Creating…" */
+		pendingLabel: string;
 		/** prefixes field ids so create & edit forms don't collide in the DOM */
 		idPrefix: string;
 		values: TokenFormValues;
@@ -81,6 +84,8 @@
 	let serviceId = $state(untrack(() => values.serviceId ?? ''));
 
 	const id = (field: string) => `${idPrefix}-${field}`;
+	// blocks a second submit while the first is in flight (no double-created tokens)
+	let pending = $state(false);
 	// follows the selects live, so switching service or preset updates the placeholders
 	const inherited = $derived(
 		defaults && inheritedForTokenForm({ serviceId, policyId, services, policies, defaults })
@@ -91,9 +96,16 @@
 	method="post"
 	{action}
 	class="space-y-4"
-	use:enhance={() =>
-		async ({ update }) =>
-			update({ reset: resetOnSuccess })}
+	use:enhance={() => {
+		pending = true;
+		return async ({ update }) => {
+			try {
+				await update({ reset: resetOnSuccess });
+			} finally {
+				pending = false;
+			}
+		};
+	}}
 >
 	{#if values.id}
 		<input type="hidden" name="id" value={values.id} />
@@ -111,7 +123,9 @@
 			<FieldLabel
 				for={id('serviceId')}
 				label="Service"
-				hint="Which service this token belongs to. Its limits and preset apply to the token. Type a new name in the search to create one."
+				hint={canCreateService
+					? 'Which service this token belongs to. Its limits and preset apply to the token. Pick one, or create a new one from the list.'
+					: 'Which service this token belongs to. Its limits and preset apply to the token. Only members who can manage services can add new ones.'}
 			/>
 			<ServicePicker
 				id={id('serviceId')}
@@ -129,7 +143,7 @@
 
 	<div class="space-y-2">
 		<FieldLabel
-			label="Permissions"
+			label="Endpoint access"
 			hint="Which gateway endpoints this token may call. Provider and model limits live under Access."
 		/>
 		<ScopePicker idPrefix={id('scope')} selected={values.scopes} />
@@ -158,6 +172,6 @@
 	<FormError {message} />
 
 	<Dialog.Footer>
-		<Button type="submit">{submitLabel}</Button>
+		<Button type="submit" disabled={pending}>{pending ? pendingLabel : submitLabel}</Button>
 	</Dialog.Footer>
 </form>

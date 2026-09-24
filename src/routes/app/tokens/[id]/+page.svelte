@@ -1,6 +1,7 @@
 <script lang="ts">
-	import * as Dialog from '$lib/components/ui/dialog/index.js';
+	import { untrack } from 'svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
+	import * as Alert from '$lib/components/ui/alert/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import EffectiveConfigSummary from '$lib/features/policies/components/effective-config-summary.svelte';
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -13,20 +14,22 @@
 	import { toast } from 'svelte-sonner';
 	import { formatDateTime, relativeTime } from '$lib/format';
 	import { can } from '$lib/permissions';
+	import { scopeBadges } from '$lib/scopes';
 	import KeyRound from '@lucide/svelte/icons/key-round';
 	import DetailHeader from '$lib/components/layout/detail-header.svelte';
 	import Eye from '@lucide/svelte/icons/eye';
-	import Copy from '@lucide/svelte/icons/copy';
-	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
 	import PageShell from '$lib/components/layout/page-shell.svelte';
-	import ConfirmAction from '$lib/components/form/confirm-action.svelte';
 	import EditTokenDialog, {
 		type EditTokenValues
 	} from '$lib/features/tokens/components/edit-token-dialog.svelte';
-	import { tokenStatus as statusOf } from '$lib/features/tokens/tokens';
+	import SecretDialog from '$lib/features/tokens/components/secret-dialog.svelte';
+	import TokenConfirmDialog from '$lib/features/tokens/components/token-confirm-dialog.svelte';
+	import { tokenStatus as statusOf, type RevealedSecret } from '$lib/features/tokens/tokens';
+	import { actionToast, dialogMessage } from '$lib/features/tokens/action-feedback';
 	import Pencil from '@lucide/svelte/icons/pencil';
 	import Ban from '@lucide/svelte/icons/ban';
 	import Trash2 from '@lucide/svelte/icons/trash-2';
+	import CircleOff from '@lucide/svelte/icons/circle-off';
 
 	let { data, form } = $props();
 
@@ -38,11 +41,20 @@
 	const canManage = $derived(can(data.role, 'tokens:manage', data.memberPermissions));
 
 	// Holds the revealed secret for the copy dialog (re-copyable tokens only).
-	let secret = $state<{ name: string; plaintext: string } | null>(null);
+	let secret = $state<RevealedSecret | null>(null);
 	let editing = $state<EditTokenValues | null>(null);
+	let revealing = $state(false);
+	let revokeOpen = $state(false);
+	let deleteOpen = $state(false);
+
 	$effect(() => {
-		if (form?.revealed) secret = form.revealed;
-		if (form?.success) editing = null;
+		const result = form;
+		untrack(() => {
+			const t = actionToast(result, editing ? 'update' : null);
+			if (t) toast[t.kind](t.message);
+			if (result?.revealed) secret = { ...result.revealed, recopyable: true };
+			if (result?.action === 'update' && result.success) editing = null;
+		});
 	});
 
 	function startEdit() {
@@ -57,10 +69,6 @@
 			expiresAt: t.expiresAt,
 			recopyable: t.recopyable
 		};
-	}
-	async function copy(text: string, msg = 'Copied to clipboard') {
-		await navigator.clipboard.writeText(text);
-		toast.success(msg);
 	}
 
 	const tokenStatus = $derived(statusOf(data.token));
@@ -94,16 +102,30 @@
 			>
 				{data.token.display}
 			</span>
-			{#if data.token.recopyable && canManage}
+			{#if data.token.recopyable && !data.token.revokedAt && canManage}
 				<form
 					method="post"
 					action="?/reveal"
-					use:enhance={() =>
-						async ({ update }) =>
-							update({ reset: false })}
+					use:enhance={() => {
+						revealing = true;
+						return async ({ update }) => {
+							try {
+								await update({ reset: false });
+							} finally {
+								revealing = false;
+							}
+						};
+					}}
 				>
-					<Button type="submit" variant="outline" size="sm" class="h-7 gap-1.5 text-xs">
-						<Eye class="size-3.5" /> Reveal
+					<Button
+						type="submit"
+						variant="outline"
+						size="sm"
+						class="h-7 gap-1.5 text-xs"
+						disabled={revealing}
+					>
+						<Eye class="size-3.5" />
+						{revealing ? 'Revealing…' : 'Reveal'}
 					</Button>
 				</form>
 			{/if}
@@ -129,50 +151,40 @@
 						<Button variant="outline" onclick={startEdit}>
 							<Pencil class="size-4" /> Edit
 						</Button>
-						<ConfirmAction
-							action="?/revoke"
-							title={`Revoke “${data.token.name}”?`}
-							description="Any service still using this token will immediately fail to authenticate. This can't be undone."
-							actionLabel="Revoke token"
+						<Button
+							variant="outline"
+							class="text-muted-foreground hover:text-destructive"
+							onclick={() => (revokeOpen = true)}
 						>
-							{#snippet trigger({ props })}
-								<Button
-									{...props}
-									variant="outline"
-									class="text-muted-foreground hover:text-destructive"
-								>
-									<Ban class="size-4" /> Revoke
-								</Button>
-							{/snippet}
-						</ConfirmAction>
+							<Ban class="size-4" /> Revoke
+						</Button>
 					{/if}
-					<ConfirmAction
-						action="?/delete"
-						title={`Delete “${data.token.name}”?`}
-						description="This permanently removes the token and its configuration. Audit-log history is kept but no longer linked to this token. This can't be undone."
-						actionLabel="Delete token"
+					<Button
+						variant="outline"
+						class="text-muted-foreground hover:text-destructive"
+						onclick={() => (deleteOpen = true)}
 					>
-						{#snippet trigger({ props })}
-							<Button
-								{...props}
-								variant="outline"
-								class="text-muted-foreground hover:text-destructive"
-							>
-								<Trash2 class="size-4" /> Delete
-							</Button>
-						{/snippet}
-					</ConfirmAction>
+						<Trash2 class="size-4" /> Delete
+					</Button>
 				</div>
 			{/if}
 		{/snippet}
 		{#snippet extra()}
-			<div class="flex flex-wrap gap-1 pt-0.5">
-				{#each data.token.scopes as s (s)}<Badge variant="outline">{s}</Badge>{:else}<Badge
-						variant="outline">All endpoints</Badge
-					>{/each}
+			<div class="flex flex-wrap items-center gap-1 pt-0.5">
+				<span class="mr-1 text-xs text-muted-foreground">Endpoint access:</span>
+				{#each scopeBadges(data.token.scopes) as s (s)}<Badge variant="outline">{s}</Badge>{/each}
 			</div>
 		{/snippet}
 	</DetailHeader>
+
+	{#if data.token.revokedAt}
+		<Alert.Root variant="destructive">
+			<CircleOff />
+			<Alert.Title>
+				Revoked {formatDateTime(data.token.revokedAt)}. This token can no longer authenticate.
+			</Alert.Title>
+		</Alert.Root>
+	{/if}
 
 	<Card.Root>
 		<Card.Header>
@@ -203,46 +215,26 @@
 	services={data.services}
 	canCreateService={can(data.role, 'services:manage', data.memberPermissions)}
 	defaults={data.defaults}
-	message={form?.action === 'update' ? form.message : undefined}
+	message={dialogMessage(form, 'update')}
 />
 
-<!-- re-copy reveal: shows the stored secret again for a re-copyable token -->
-<Dialog.Root
-	open={secret !== null}
-	onOpenChange={(v) => {
-		if (!v) secret = null;
-	}}
->
-	<Dialog.Content class="sm:max-w-lg">
-		<Dialog.Header>
-			<Dialog.Title>Token secret</Dialog.Title>
-			<Dialog.Description>
-				The full secret for <span class="font-medium text-foreground">{secret?.name}</span>. You can
-				reveal it again any time from this page.
-			</Dialog.Description>
-		</Dialog.Header>
-		<div
-			class="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
-		>
-			<TriangleAlert class="mt-0.5 size-4 shrink-0 text-amber-600" />
-			<span>This token is stored encrypted so it can be re-copied. Keep it secret.</span>
-		</div>
-		<div class="relative min-w-0">
-			<code class="block overflow-x-auto rounded-lg bg-muted py-2.5 pr-11 pl-3 text-xs"
-				>{secret?.plaintext}</code
-			>
-			<Button
-				size="icon"
-				variant="ghost"
-				class="absolute top-1/2 right-1.5 size-7 -translate-y-1/2"
-				onclick={() => secret && copy(secret.plaintext, 'Token copied')}
-				title="Copy token"
-			>
-				<Copy class="size-3.5" />
-			</Button>
-		</div>
-		<Dialog.Footer>
-			<Button onclick={() => (secret = null)}>Done</Button>
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+<SecretDialog {secret} onClose={() => (secret = null)} />
+
+{#if canManage}
+	<TokenConfirmDialog
+		bind:open={revokeOpen}
+		action="?/revoke"
+		title={`Revoke “${data.token.name}”?`}
+		description="Any service still using this token will immediately fail to authenticate. This can't be undone."
+		actionLabel="Revoke token"
+		pendingLabel="Revoking…"
+	/>
+	<TokenConfirmDialog
+		bind:open={deleteOpen}
+		action="?/delete"
+		title={`Delete “${data.token.name}”?`}
+		description="This permanently removes the token and its configuration. Audit-log history is kept but no longer linked to this token. This can't be undone."
+		actionLabel="Delete token"
+		pendingLabel="Deleting…"
+	/>
+{/if}
