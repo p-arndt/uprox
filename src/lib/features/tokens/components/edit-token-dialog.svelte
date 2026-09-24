@@ -3,6 +3,11 @@
 		type TokenFormValues
 	} from '$lib/features/tokens/components/token-form.svelte';
 	import EntityDialog from '$lib/components/form/entity-dialog.svelte';
+	import type {
+		InstanceDefaults,
+		PresetLayerRow,
+		ServiceLayerRow
+	} from '$lib/features/policies/effective-config';
 
 	let {
 		editing,
@@ -10,13 +15,16 @@
 		policies,
 		providers,
 		services,
+		defaults,
 		message
 	}: {
 		editing: TokenFormValues | null;
 		onClose: () => void;
-		policies: { id: string; name: string }[];
+		policies: (PresetLayerRow & { name: string })[];
 		providers: { id: string; label: string }[];
-		services: { id: string; name: string }[];
+		services: (ServiceLayerRow & { name: string })[];
+		/** instance defaults, so blank limit fields can show what they inherit */
+		defaults?: InstanceDefaults;
 		message?: string;
 	} = $props();
 </script>
@@ -39,6 +47,7 @@
 				{policies}
 				{providers}
 				{services}
+				{defaults}
 				{message}
 			/>
 		{/key}
