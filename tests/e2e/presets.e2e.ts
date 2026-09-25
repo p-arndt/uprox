@@ -95,7 +95,8 @@ test('a preset in use shows its usage, and deleting it detaches the service', as
 
 	// attach it to a new service through the services page form
 	await page.goto('/app/services');
-	await page.getByRole('button', { name: 'New service' }).click();
+	// on an empty instance the empty state offers a second "New service" button
+	await page.getByRole('button', { name: 'New service' }).first().click();
 	const svcDialog = page.getByRole('dialog', { name: 'Create service' });
 	await svcDialog.getByLabel('Name', { exact: true }).fill(serviceName);
 	await pickOption(page, svcDialog.getByLabel('Preset', { exact: true }), presetName);
