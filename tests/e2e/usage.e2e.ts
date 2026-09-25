@@ -291,9 +291,7 @@ test.describe('cost analysis page', () => {
 		await expect(headlineValue(page, 'Requests')).not.toHaveText(/^0$/);
 	});
 
-	test('the headline has an errors & denials cell counting the seeded denial', async ({
-		page
-	}) => {
+	test('the headline has an errors & denials cell counting the seeded denial', async ({ page }) => {
 		await page.goto('/app/usage?range=7d');
 		await expectStreamsSettled(page);
 
@@ -329,9 +327,7 @@ test.describe('cost analysis page', () => {
 		await expect(page.getByText('Spend over time')).toBeVisible();
 	});
 
-	test('a budget ceiling shows its gauge between the headline and the chart', async ({
-		page
-	}) => {
+	test('a budget ceiling shows its gauge between the headline and the chart', async ({ page }) => {
 		await setInstanceMonthlyBudget(page, '100000');
 		try {
 			await page.goto('/app/usage?range=30d');
