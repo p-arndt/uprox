@@ -60,25 +60,31 @@
 		listOpen = false;
 	}
 
-	function onkeydown(e: KeyboardEvent) {
-		if (!open && e.key === 'ArrowDown' && matches.length > 0) {
-			e.preventDefault();
+	/** Arrow/Escape handling for the suggestion list; true when the key was used. */
+	function navigateList(e: KeyboardEvent): boolean {
+		if (e.key === 'ArrowDown' && !open && matches.length > 0) {
 			listOpen = true;
 			active = 0;
-		} else if (open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
-			e.preventDefault();
+		} else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && open) {
 			const step = e.key === 'ArrowDown' ? 1 : -1;
 			active = (active + step + matches.length) % matches.length;
+		} else if (e.key === 'Escape' && open) {
+			listOpen = false;
 		} else if (e.key === 'Enter' && open && highlighted) {
-			e.preventDefault();
 			add(highlighted);
-		} else if ((e.key === 'Enter' || e.key === ',' || e.key === 'Tab') && draft.trim() !== '') {
+		} else {
+			return false;
+		}
+		e.preventDefault();
+		return true;
+	}
+
+	function onkeydown(e: KeyboardEvent) {
+		if (navigateList(e)) return;
+		if ((e.key === 'Enter' || e.key === ',' || e.key === 'Tab') && draft.trim() !== '') {
 			// Tab still moves focus after adding; Enter must not submit the whole form
 			if (e.key !== 'Tab') e.preventDefault();
 			add(draft);
-		} else if (e.key === 'Escape' && open) {
-			e.preventDefault();
-			listOpen = false;
 		} else if (e.key === 'Backspace' && draft === '' && chips.length > 0) {
 			chips = chips.slice(0, -1);
 		}
