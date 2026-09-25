@@ -60,8 +60,10 @@ async function loadValidInvitation(event: RequestEvent) {
  * Accept the invitation for the signed-in user. Requires a logged-in user whose
  * email matches the invited address.
  */
-async function acceptAndRedirect(event: RequestEvent) {
-	const current = event.locals.user;
+async function acceptAndRedirect(
+	event: RequestEvent,
+	current: { id: string; email: string } | null | undefined = event.locals.user
+) {
 	if (!current) {
 		return fail(401, { message: 'You must be signed in to accept this invitation.' });
 	}
@@ -112,8 +114,9 @@ export const actions: Actions = {
 		}
 
 		// Email is taken from the invitation only — never from posted form data.
+		let created;
 		try {
-			await auth.api.signUpEmail({
+			created = await auth.api.signUpEmail({
 				body: { email: inv.email, password, name },
 				headers: event.request.headers
 			});
@@ -124,7 +127,9 @@ export const actions: Actions = {
 			return fail(500, { message: 'Unexpected error during registration.', name });
 		}
 
-		return acceptAndRedirect(event);
+		// locals.user was resolved before this account existed, so accept for the
+		// user sign-up just created rather than the request's empty session.
+		return acceptAndRedirect(event, created.user);
 	},
 
 	oidc: async (event) => {
