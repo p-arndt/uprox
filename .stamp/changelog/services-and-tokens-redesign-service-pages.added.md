@@ -1,0 +1,1 @@
+Services and tokens redesign: service pages list their tokens and issue new ones, token and service pages show the settings that actually apply and where they come from, and the tokens table can be searched, filtered, grouped and sorted
