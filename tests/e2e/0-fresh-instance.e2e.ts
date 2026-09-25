@@ -40,9 +40,14 @@ test.describe('fresh instance onboarding', () => {
 		expect(errors, 'browser console errors').toEqual([]);
 	});
 
-	test('/app shows the setup checklist with nothing done', async ({ page }) => {
+	test('/app lands on the cost analysis even before any traffic', async ({ page }) => {
 		await page.goto('/app');
-		await expect(page).toHaveURL(/\/app$/);
+		await expect(page).toHaveURL(/\/app\/usage(\?|$)/);
+	});
+
+	test('/app?setup shows the setup checklist with nothing done', async ({ page }) => {
+		await page.goto('/app?setup');
+		await expect(page).toHaveURL(/\/app\?setup/);
 		await expect(page.getByRole('heading', { name: 'Get started with uprox' })).toBeVisible();
 		await expect(page.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
 		await expect(page.getByText('0 of 3 steps done')).toBeVisible();

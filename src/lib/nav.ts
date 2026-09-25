@@ -30,6 +30,14 @@ export interface NavSection {
 }
 
 export const NAV_SECTIONS: NavSection[] = [
+	// the start page (/app lands on the cost analysis), so it heads the sidebar
+	{
+		label: 'Monitor',
+		items: [
+			{ href: '/app/usage', label: 'Cost analysis', icon: ChartColumn },
+			{ href: '/app/audit', label: 'Audit Log', icon: ScrollText }
+		]
+	},
 	{
 		label: 'Gateway',
 		// setup order: an upstream first, then who may call it, then how to call it
@@ -38,13 +46,6 @@ export const NAV_SECTIONS: NavSection[] = [
 			{ href: '/app/services', label: 'Services', icon: Boxes },
 			{ href: '/app/tokens', label: 'Machine Tokens', icon: KeyRound },
 			{ href: '/app/connect', label: 'Connect', icon: Cable }
-		]
-	},
-	{
-		label: 'Monitor',
-		items: [
-			{ href: '/app/usage', label: 'Cost analysis', icon: ChartColumn },
-			{ href: '/app/audit', label: 'Audit Log', icon: ScrollText }
 		]
 	},
 	{

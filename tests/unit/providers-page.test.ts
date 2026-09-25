@@ -55,20 +55,20 @@ describe('providers page toasts', () => {
 });
 
 describe('setupChecklistRedirect', () => {
-	it('keeps a fresh instance on the checklist', () => {
-		expect(setupChecklistRedirect(0, new URL('http://x/app'))).toBeNull();
-	});
-
-	it('hands over to the cost analysis once traffic exists', () => {
-		expect(setupChecklistRedirect(3, new URL('http://x/app'))).toBe('/app/usage');
+	it('lands on the cost analysis', () => {
+		expect(setupChecklistRedirect(new URL('http://x/app'))).toBe('/app/usage');
 	});
 
 	it('never redirects when the checklist is asked for explicitly', () => {
-		expect(setupChecklistRedirect(3, new URL('http://x/app?setup'))).toBeNull();
+		expect(setupChecklistRedirect(new URL('http://x/app?setup'))).toBeNull();
 	});
 });
 
 describe('nav', () => {
+	it('puts the cost analysis, the start page, first', () => {
+		expect(NAV_SECTIONS[0]?.items[0]?.href).toBe('/app/usage');
+	});
+
 	it('lists the gateway pages in setup order', () => {
 		const gateway = NAV_SECTIONS.find((s) => s.label === 'Gateway');
 		expect(gateway?.items.map((i) => i.href)).toEqual([

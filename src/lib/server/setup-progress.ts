@@ -27,11 +27,11 @@ export async function setupProgress(): Promise<SetupProgress> {
 export const SETUP_CHECKLIST_PARAM = 'setup';
 
 /**
- * Where `/app` should send the operator instead of the checklist: the cost
- * analysis once any request has ever been proxied, unless the checklist was
- * asked for explicitly. Null keeps them on the checklist.
+ * Where `/app` should send the operator instead of the checklist: always the
+ * cost analysis, the start page even on a fresh instance (its empty state links
+ * back here), unless the checklist was asked for explicitly. Null keeps them on
+ * the checklist.
  */
-export function setupChecklistRedirect(requests: number, url: URL): '/app/usage' | null {
-	if (url.searchParams.has(SETUP_CHECKLIST_PARAM)) return null;
-	return requests > 0 ? '/app/usage' : null;
+export function setupChecklistRedirect(url: URL): '/app/usage' | null {
+	return url.searchParams.has(SETUP_CHECKLIST_PARAM) ? null : '/app/usage';
 }
