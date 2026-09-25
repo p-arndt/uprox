@@ -4,6 +4,24 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.28.0 - 2026-09-25
+
+### Added
+
+- Prices for GPT-6 (astra, sol, luna) and Claude Opus 5.5
+- Provider keys are tested against the upstream when they are saved
+- Services and tokens redesign: service pages list their tokens and issue new ones, token and service pages show the settings that actually apply and where they come from, and the tokens table can be searched, filtered, grouped and sorted
+- Token editing: an endpoint access picker, new services right from the token dialog, edit/revoke/delete on the token page, and expiry can be changed later
+
+### Changed
+
+- Breaking for API users: service and preset names must be unique (409 otherwise), and gateway denials are logged as `gateway.<endpoint>` with status `deny` instead of `policy.deny`
+- Dashboard polish: every save gives feedback, the cost analysis is the start page, presets show where they are used, allowed models suggest known ids, and the audit log filters on the server
+
+### Fixed
+
+- Invited people who sign up with a new account now join the organisation; the token dialogs no longer submit twice or lose the one-time secret on Escape
+
 ## 0.27.1 - 2026-09-21
 
 ### Fixed
