@@ -30,13 +30,15 @@
 
 	let chips = $state<string[]>(untrack(() => addModelPatterns([], value)));
 	let draft = $state('');
-	let focused = $state(false);
+	// Opened by typing or ArrowDown, closed after a pick: a list left open over
+	// the rest of the form swallows clicks meant for the fields below it.
+	let listOpen = $state(false);
 	let active = $state(-1);
 	let input = $state<HTMLInputElement>();
 
 	const listId = $derived(`${id}-suggestions`);
 	const matches = $derived(matchSuggestions(suggestions, chips, draft));
-	const open = $derived(focused && matches.length > 0);
+	const open = $derived(listOpen && matches.length > 0);
 	const highlighted = $derived(active >= 0 ? matches[active] : undefined);
 	const errors = $derived(chips.map(modelPatternError).filter((e): e is string => e !== null));
 	const unknown = $derived(
@@ -55,10 +57,15 @@
 		if (raw.trim() === '') return;
 		chips = addModelPatterns(chips, raw);
 		draft = '';
+		listOpen = false;
 	}
 
 	function onkeydown(e: KeyboardEvent) {
-		if (open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+		if (!open && e.key === 'ArrowDown' && matches.length > 0) {
+			e.preventDefault();
+			listOpen = true;
+			active = 0;
+		} else if (open && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
 			e.preventDefault();
 			const step = e.key === 'ArrowDown' ? 1 : -1;
 			active = (active + step + matches.length) % matches.length;
@@ -71,13 +78,14 @@
 			add(draft);
 		} else if (e.key === 'Escape' && open) {
 			e.preventDefault();
-			focused = false;
+			listOpen = false;
 		} else if (e.key === 'Backspace' && draft === '' && chips.length > 0) {
 			chips = chips.slice(0, -1);
 		}
 	}
 
 	function oninput() {
+		listOpen = draft.trim() !== '';
 		// a pasted list commits at once
 		if (draft.includes(',')) add(draft);
 	}
@@ -128,9 +136,8 @@
 			bind:value={draft}
 			{onkeydown}
 			{oninput}
-			onfocus={() => (focused = true)}
 			onblur={() => {
-				focused = false;
+				listOpen = false;
 				add(draft);
 			}}
 		/>
