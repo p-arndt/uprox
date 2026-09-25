@@ -351,6 +351,8 @@ test.describe('token detail page', () => {
 		).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Reveal' })).toHaveCount(0);
 		await expect(page.getByRole('button', { name: 'Edit', exact: true })).toHaveCount(0);
+		// the revoke confirm's overlay blocks clicks until its close animation ends
+		await expect(page.locator('[data-slot="alert-dialog-overlay"]')).toHaveCount(0);
 
 		await page.getByRole('button', { name: 'Delete', exact: true }).click();
 		await page
