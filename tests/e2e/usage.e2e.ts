@@ -141,8 +141,12 @@ test.describe('cost analysis page', () => {
 		await page.goto('/app/usage?range=30d');
 		await expectStreamsSettled(page);
 
-		// the previous-period comparison landed in the headline
-		await expect(page.getByText('vs prev 30 days').first()).toBeVisible();
+		// the previous-period comparison landed in the headline, and its tooltip
+		// names the exact dates it compares against
+		const comparison = page.getByText('vs previous period').first();
+		await expect(comparison).toBeVisible();
+		await comparison.hover();
+		await expect(page.getByText(/^Compared with .*\d{4}/).first()).toBeVisible();
 
 		// each secondary panel is behind a tab; open every one that is offered
 		for (const tab of ['What changed', 'Composition', 'Model efficiency', 'Token meters']) {
@@ -265,10 +269,99 @@ test.describe('cost analysis page', () => {
 		await expect(page.getByRole('heading', { name: 'Cost analysis' })).toBeVisible();
 		const empty = page.getByText(/No gateway traffic for/);
 		await expect(empty).toBeVisible();
-		await expect(empty).toContainText('2001-01-01');
+		// the custom range is labelled as a readable date span (en-US in Playwright)
+		await expect(empty).toContainText(/Jan 1\s*–\s*2, 2001/);
 		await expectStreamsSettled(page);
 		// the range label is interpolated, not the template source
 		// (regression from d4ab6a8, src/lib/components/usage-workbench.svelte:81-83)
 		await expect(empty).not.toContainText('rangeLabel=');
+
+		// the gateway has traffic outside this window, so the page says when it
+		// last saw a request instead of implying nothing was ever proxied
+		await expect(page.getByText(/^Last request:/)).toBeVisible();
+		await expect(page.getByText('Nothing proxied yet')).toHaveCount(0);
+
+		// a custom window offers the rolling presets to widen to
+		const widen7 = page.getByRole('link', { name: 'Show 7 days' });
+		await expect(widen7).toBeVisible();
+		await expect(page.getByRole('link', { name: 'Show 30 days' })).toBeVisible();
+		await widen7.click();
+		await expect(page).toHaveURL(/[?&]range=7d(&|$)/);
+		await expect(empty).toHaveCount(0);
+		await expect(headlineValue(page, 'Requests')).not.toHaveText(/^0$/);
+	});
+
+	test('the headline has an errors & denials cell counting the seeded denial', async ({ page }) => {
+		await page.goto('/app/usage?range=7d');
+		await expectStreamsSettled(page);
+
+		const cell = page.locator('p:text-is("Errors & denials")').locator('..');
+		await expect(headlineValue(page, 'Errors & denials')).toHaveText(/^\d+\.\d%$/);
+		await expect(headlineValue(page, 'Errors & denials')).not.toHaveText('0.0%');
+		await expect(cell).toContainText(/\d+ errors · [1-9]\d* denied/);
+	});
+
+	test('the chart metric switch is kept in the URL', async ({ page }) => {
+		await page.goto('/app/usage?range=30d');
+		const metrics = page.getByRole('group', { name: 'Chart metric' });
+		await expect(metrics.getByRole('button', { name: 'Spend' })).toHaveAttribute(
+			'aria-pressed',
+			'true'
+		);
+
+		await metrics.getByRole('button', { name: 'Tokens' }).click();
+		await expect(page).toHaveURL(/[?&]metric=tokens(&|$)/);
+		await expect(page.getByText('Tokens over time')).toBeVisible();
+
+		// a reload (or a shared link) restores the picked metric
+		await page.reload();
+		await expect(metrics.getByRole('button', { name: 'Tokens' })).toHaveAttribute(
+			'aria-pressed',
+			'true'
+		);
+		await expect(page.getByText('Tokens over time')).toBeVisible();
+
+		// the default metric is not spelled out in the URL
+		await metrics.getByRole('button', { name: 'Spend' }).click();
+		await expect(page).not.toHaveURL(/[?&]metric=/);
+		await expect(page.getByText('Spend over time')).toBeVisible();
+	});
+
+	test('a budget ceiling shows its gauge between the headline and the chart', async ({ page }) => {
+		await setInstanceMonthlyBudget(page, '100000');
+		try {
+			await page.goto('/app/usage?range=30d');
+			await expectStreamsSettled(page);
+
+			const gauge = page
+				.locator('[data-slot="card"]')
+				.filter({ has: page.getByText('Budget headroom', { exact: true }) });
+			await expect(gauge).toBeVisible();
+			await expect(gauge).toContainText('$100,000.00');
+
+			const chart = page.locator('[data-slot="card"]').filter({ hasText: 'Spend over time' });
+			const headline = headlineValue(page, 'Spend');
+			const [headlineBox, gaugeBox, chartBox] = await Promise.all([
+				headline.boundingBox(),
+				gauge.boundingBox(),
+				chart.boundingBox()
+			]);
+			expect(gaugeBox!.y).toBeGreaterThan(headlineBox!.y);
+			expect(gaugeBox!.y).toBeLessThan(chartBox!.y);
+		} finally {
+			// an instance ceiling is enforced by the gateway, so never leave one behind
+			await setInstanceMonthlyBudget(page, '');
+		}
 	});
 });
+
+/** Set (or with '' clear) the instance's monthly ceiling through the settings page. */
+async function setInstanceMonthlyBudget(page: Page, value: string) {
+	await page.goto('/app/settings');
+	const card = page
+		.locator('[data-slot="card"]')
+		.filter({ has: page.getByText('Instance budget', { exact: true }) });
+	await card.getByLabel('Monthly ceiling (USD)').fill(value);
+	await card.getByRole('button', { name: 'Save' }).click();
+	await expect(page.getByText('Instance budget saved')).toBeVisible();
+}
