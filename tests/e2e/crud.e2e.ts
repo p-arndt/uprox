@@ -87,7 +87,9 @@ test.describe('dashboard CRUD', () => {
 		await page.getByLabel('Name').fill(name);
 		await page.getByRole('button', { name: 'Create service' }).click();
 
-		await expect(page.getByRole('cell', { name })).toBeVisible();
+		// the name cell holds a link to the service; the actions cell's buttons are
+		// labelled "Edit <name>" / "Delete <name>", so match the link exactly
+		await expect(page.getByRole('link', { name, exact: true })).toBeVisible();
 	});
 
 	test('issues a machine token and reveals the secret once', async ({ page }) => {
@@ -106,7 +108,7 @@ test.describe('dashboard CRUD', () => {
 		await expect(reveal).toBeVisible();
 		// the dialog also shows a curl example in a second <code> block
 		await expect(reveal.getByText(/^uprox_live_/)).toBeVisible();
-		await reveal.getByRole('button', { name: 'Done' }).click();
+		await reveal.getByRole('button', { name: "I've copied it" }).click();
 
 		// the token now appears in the table as active, masked
 		const row = page.getByRole('row', { name: new RegExp(tokenName) });
