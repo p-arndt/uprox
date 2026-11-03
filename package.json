@@ -42,7 +42,7 @@
 		"@lucide/svelte": "^1.28.0",
 		"@playwright/test": "^1.62.1",
 		"@sveltejs/adapter-node": "^5.5.7",
-		"@sveltejs/kit": "^2.70.2",
+		"@sveltejs/kit": "^2.70.3",
 		"@sveltejs/vite-plugin-svelte": "^7.2.0",
 		"@tailwindcss/forms": "^0.5.11",
 		"@tailwindcss/typography": "^0.5.20",
@@ -50,7 +50,7 @@
 		"@tanstack/table-core": "^8.21.3",
 		"@types/node": "^26",
 		"@types/nodemailer": "^8.0.1",
-		"@vitest/browser-playwright": "^4.1.10",
+		"@vitest/browser-playwright": "^4.1.12",
 		"bits-ui": "^2.18.1",
 		"clsx": "^2.1.1",
 		"drizzle-kit": "^0.31.10",
@@ -81,13 +81,13 @@
 		"typescript": "^6.0.3",
 		"typescript-eslint": "^8.65.0",
 		"vaul-svelte": "1.0.0-next.7",
-		"vite": "^8.2.0",
-		"vitest": "^4.1.10"
+		"vite": "^8.3.5",
+		"vitest": "^4.1.12"
 	},
 	"dependencies": {
 		"better-auth": "^1.6.25",
 		"drizzle-orm": "^0.45.2",
-		"nodemailer": "^9.0.3",
+		"nodemailer": "^10.3.1",
 		"postgres": "^3.4.9"
 	}
 }
