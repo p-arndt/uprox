@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## 0.29.0 - 2026-11-06
+
+### Added
+
+- Make startup and shutdown safe for multiple replicas
+- Share gateway and login rate limits across replicas via Postgres
+
 ## 0.28.2 - 2026-11-03
 
 ### Fixed
