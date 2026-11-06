@@ -44,6 +44,10 @@ ENV NODE_ENV=production
 ENV BODY_SIZE_LIMIT=Infinity
 # We need to set the trust proxy to true to make sure that the application works behind a reverse proxy
 ENV AUTH_TRUST_HOST=true
+# adapter-node drains in-flight requests on SIGTERM for up to this many seconds;
+# streamed LLM responses can run for minutes. Keep compose stop_grace_period above it.
+# No HEALTHCHECK: distroless has no shell/curl — let Traefik probe GET /healthz.
+ENV SHUTDOWN_TIMEOUT=120
 
 EXPOSE 3000 
 CMD ["build/index.js"]

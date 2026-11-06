@@ -1,6 +1,6 @@
 import { building, dev } from '$app/environment';
 import { auth } from '$lib/server/auth';
-import { db } from '$lib/server/db';
+import { connectionOptions, db } from '$lib/server/db';
 import { gatewayError } from '$lib/server/gateway';
 import { seedDefaultModelPrices } from '$lib/server/pricing';
 import { isSetupComplete } from '$lib/server/setup';
@@ -8,7 +8,16 @@ import { redirect, text, type Handle } from '@sveltejs/kit';
 import { type ServerInit } from '@sveltejs/kit';
 import { sequence } from '@sveltejs/kit/hooks';
 import { svelteKitHandler } from 'better-auth/svelte-kit';
+import { drizzle } from 'drizzle-orm/postgres-js';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
+import postgres from 'postgres';
+
+/**
+ * pg_advisory_lock key serialising migrate + seed across replicas. Arbitrary
+ * but fixed: every uprox version must use the same value. Passed as a string
+ * and cast server-side because the key is a bigint.
+ */
+const MIGRATION_LOCK_KEY = '7315220461190427';
 
 export const init: ServerInit = async () => {
 	try {
@@ -19,12 +28,32 @@ export const init: ServerInit = async () => {
 		throw error;
 	}
 
-	await migrate(db, { migrationsFolder: 'drizzle' });
-	console.log('Migrations completed successfully');
+	// Drizzle's migrator takes no lock, so replicas booting together would race.
+	// A session-level advisory lock must be released on the connection that took
+	// it, hence a dedicated single-connection client instead of the pool (whose
+	// reserve() lacks the begin() the migrator needs). No statement_timeout on
+	// it: waiting for another replica's migration must not abort the lock call.
+	// Needs a direct Postgres connection (or PgBouncer in session mode).
+	const lockClient = postgres({ ...connectionOptions, max: 1 });
+	try {
+		console.log('Waiting for migration lock');
+		await lockClient`SELECT pg_advisory_lock(${MIGRATION_LOCK_KEY}::bigint)`;
+		try {
+			await migrate(drizzle(lockClient), { migrationsFolder: 'drizzle' });
+			console.log('Migrations completed successfully');
 
-	// Platform-default model prices live in code, not in a migration. Idempotent.
-	await seedDefaultModelPrices();
-	console.log('Default model prices seeded');
+			// Platform-default model prices live in code, not in a migration. Idempotent.
+			await seedDefaultModelPrices();
+			console.log('Default model prices seeded');
+		} finally {
+			// Never mask the migration error; a dropped session frees the lock anyway.
+			await lockClient`SELECT pg_advisory_unlock(${MIGRATION_LOCK_KEY}::bigint)`.catch((error) =>
+				console.error('Failed to release migration lock:', error)
+			);
+		}
+	} finally {
+		await lockClient.end({ timeout: 5 });
+	}
 };
 
 /**
@@ -86,6 +115,8 @@ const handleSetup: Handle = async ({ event, resolve }) => {
 	const path = event.url.pathname;
 	const onSetup = path === '/setup';
 	const isAuthApi = path.startsWith('/api/auth/');
+	// Load-balancer probe must answer 200 even before setup is done.
+	if (path === '/healthz') return resolve(event);
 	if (await isSetupComplete()) {
 		if (onSetup) redirect(302, '/login');
 	} else if (!onSetup && !isAuthApi) {
@@ -147,6 +178,7 @@ const handleAccessLog: Handle = async ({ event, resolve }) => {
 		(path.startsWith('/_app/') ||
 			path.startsWith('/@') ||
 			path === '/favicon.ico' ||
+			path === '/healthz' ||
 			path.startsWith('/api/auth/'));
 	if (!skip) {
 		console.log(

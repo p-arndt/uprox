@@ -24,12 +24,17 @@ function positiveInt(value: string | undefined, fallback: number): number {
 	return Number.isInteger(n) && n > 0 ? n : fallback;
 }
 
-const client = postgres({
+/** Connection target, shared with the one-off migration-lock client in hooks.server.ts. */
+export const connectionOptions = {
 	host: POSTGRES_HOST,
 	port: POSTGRES_PORT ? Number(POSTGRES_PORT) : 5432,
 	user: POSTGRES_USER,
 	password: POSTGRES_PASSWORD,
-	database: POSTGRES_DB,
+	database: POSTGRES_DB
+};
+
+const client = postgres({
+	...connectionOptions,
 	// Explicit rather than implicit. Measured on a 400k-row audit log: raising
 	// this to 20 made the usage page ~2x slower, because the extra concurrent
 	// aggregates contend for the same database CPUs. Tune per deployment.
