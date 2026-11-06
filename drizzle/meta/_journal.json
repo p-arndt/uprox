@@ -141,6 +141,13 @@
       "when": 1789495600308,
       "tag": "0019_drop_tracing",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793956287228,
+      "tag": "0020_shared_rate_limits",
+      "breakpoints": true
     }
   ]
 }

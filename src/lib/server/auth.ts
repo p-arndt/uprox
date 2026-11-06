@@ -19,7 +19,8 @@ import {
 	user as authUser,
 	session as authSession,
 	account as authAccount,
-	verification as authVerification
+	verification as authVerification,
+	rateLimit as authRateLimit
 } from '$lib/server/db/auth.schema';
 
 // Optional single OIDC provider, configured via env (see auth-config.ts).
@@ -41,9 +42,13 @@ export const auth = betterAuth({
 			user: authUser,
 			session: authSession,
 			account: authAccount,
-			verification: authVerification
+			verification: authVerification,
+			rateLimit: authRateLimit
 		}
 	}),
+	// Keep login/sign-up rate-limit counters in Postgres so they hold across
+	// replicas (the default in-memory store is per process).
+	rateLimit: { storage: 'database' },
 	emailAndPassword: { enabled: isEmailAuthEnabled(), autoSignIn: true },
 	databaseHooks: {
 		user: {
