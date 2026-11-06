@@ -309,6 +309,24 @@ export const budgetAlertState = pgTable(
 );
 
 /**
+ * Per-token request counters for the gateway rate limiter (ratelimit.ts): one
+ * row per (token, minute window), shared by every replica. Rows older than a
+ * couple of minutes are swept by ratelimit.ts.
+ */
+export const rateLimitWindow = pgTable(
+	'rate_limit_window',
+	{
+		tokenId: uuid('token_id')
+			.notNull()
+			.references(() => machineToken.id, { onDelete: 'cascade' }),
+		// date_trunc('minute', now()) in DB time, so replicas agree on the window
+		windowStart: timestamp('window_start', { withTimezone: true }).notNull(),
+		count: integer('count').notNull()
+	},
+	(t) => [primaryKey({ columns: [t.tokenId, t.windowStart] })]
+);
+
+/**
  * Per-model token pricing used to estimate request cost for spend tracking and
  * budgets. Prices are in USD per 1,000,000 tokens.
  *

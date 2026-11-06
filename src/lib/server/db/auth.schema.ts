@@ -1,5 +1,14 @@
 import { relations } from 'drizzle-orm';
-import { pgTable, text, uuid, timestamp, boolean, index } from 'drizzle-orm/pg-core';
+import {
+	pgTable,
+	text,
+	uuid,
+	timestamp,
+	boolean,
+	index,
+	integer,
+	bigint
+} from 'drizzle-orm/pg-core';
 
 export const user = pgTable('user', {
 	id: uuid('id').primaryKey().defaultRandom(),
@@ -77,6 +86,16 @@ export const verification = pgTable(
 	},
 	(table) => [index('verification_identifier_idx').on(table.identifier)]
 );
+
+// better-auth's login/sign-up rate-limit counters (rateLimit.storage =
+// 'database'), shared by every replica. `key` is "<ip><path>"; lastRequest is
+// epoch milliseconds. better-auth prunes expired rows itself.
+export const rateLimit = pgTable('rate_limit', {
+	id: uuid('id').primaryKey().defaultRandom(),
+	key: text('key').notNull().unique(),
+	count: integer('count').notNull(),
+	lastRequest: bigint('last_request', { mode: 'number' }).notNull()
+});
 
 /**
  * Pending invitations to join the instance. There is no organization to scope

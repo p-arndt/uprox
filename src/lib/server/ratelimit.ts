@@ -1,19 +1,19 @@
 /**
- * In-memory sliding-window rate limiter, keyed by machine-token id.
+ * Postgres-backed fixed-window rate limiter, keyed by machine-token id.
  *
- * The limit (requests per minute) comes from the token's policy. This is a
- * single-instance, best-effort limiter: the window lives in process memory, so
- * it resets on restart and is not shared across replicas. That's an acceptable
- * trade-off for the monolith MVP — it protects the gateway from runaway
- * callers without a Redis dependency. When the gateway is split out and scaled
- * horizontally, swap this module for a shared store (Redis token bucket)
- * behind the same `checkRateLimit` signature.
+ * The limit (requests per minute) comes from the token's policy. Counters live
+ * in `rate_limit_window` (one row per token and minute), so every replica sees
+ * the same count and the limit holds across restarts. The window boundary is
+ * taken from the database clock, so replicas with skewed clocks still agree.
+ *
+ * ponytail: fixed one-minute window, so a caller can burst up to 2× the limit
+ * across a minute boundary. Upgrade path: a sliding window weighted from the
+ * current and previous bucket (both rows already exist). One hot row per token
+ * and minute, so a token doing thousands of req/min serializes on that row
+ * lock; batch counts in memory per replica if that ever shows up.
  */
-
-/** tokenId → ascending list of request timestamps (ms) within the window */
-const windows = new Map<string, number[]>();
-
-const WINDOW_MS = 60_000;
+import { sql } from 'drizzle-orm';
+import { db } from '$lib/server/db';
 
 export interface RateLimitResult {
 	ok: boolean;
@@ -28,38 +28,59 @@ export interface RateLimitResult {
 /**
  * Record a request against `tokenId` and decide whether it's allowed.
  * `limitPerMinute` of 0 (or less) means unlimited — always allowed, untracked.
+ * Rejected requests are not counted.
  */
-export function checkRateLimit(tokenId: string, limitPerMinute: number): RateLimitResult {
+export async function checkRateLimit(
+	tokenId: string,
+	limitPerMinute: number
+): Promise<RateLimitResult> {
 	if (!limitPerMinute || limitPerMinute <= 0) return { ok: true };
 
-	const now = Date.now();
-	const cutoff = now - WINDOW_MS;
-
-	const hits = (windows.get(tokenId) ?? []).filter((t) => t > cutoff);
-
-	if (hits.length >= limitPerMinute) {
-		// oldest hit falls out of the window at hits[0] + WINDOW_MS
-		const retryAfter = Math.max(1, Math.ceil(((hits[0] ?? now) + WINDOW_MS - now) / 1000));
-		windows.set(tokenId, hits);
-		return { ok: false, retryAfter, limit: limitPerMinute, remaining: 0 };
+	// The upsert only increments while count < limit; no returned row = rejected.
+	// The second branch reports how long the (shared) window still runs.
+	let rows: { count: number | null; seconds_left: string | number }[];
+	try {
+		rows = await countHit(tokenId, limitPerMinute);
+	} catch (err) {
+		// Fail open: a DB blip (or a token deleted mid-request, FK violation) must
+		// not turn a best-effort guard into a gateway outage.
+		console.error('[ratelimit] check failed, admitting request', err);
+		return { ok: true };
 	}
 
-	hits.push(now);
-	windows.set(tokenId, hits);
-	return { ok: true, limit: limitPerMinute, remaining: limitPerMinute - hits.length };
+	const row = rows[0];
+	if (row?.count == null) {
+		const retryAfter = Math.max(1, Math.ceil(Number(row?.seconds_left ?? 60)));
+		return { ok: false, retryAfter, limit: limitPerMinute, remaining: 0 };
+	}
+	return { ok: true, limit: limitPerMinute, remaining: limitPerMinute - row.count };
+}
+
+async function countHit(tokenId: string, limitPerMinute: number) {
+	return (await db.execute(sql`
+		with hit as (
+			insert into rate_limit_window (token_id, window_start, count)
+			values (${tokenId}, date_trunc('minute', now()), 1)
+			on conflict (token_id, window_start) do update
+				set count = rate_limit_window.count + 1
+				where rate_limit_window.count < ${limitPerMinute}
+			returning count
+		)
+		select
+			(select count from hit) as count,
+			extract(epoch from date_trunc('minute', now()) + interval '1 minute' - now()) as seconds_left
+	`)) as unknown as { count: number | null; seconds_left: string | number }[];
 }
 
 /**
- * Periodically drop windows that have fully aged out so the map doesn't grow
- * unbounded for tokens that stop making requests. Best-effort; cheap.
+ * Drop windows that are long over. Every replica runs this; the delete is
+ * idempotent, so overlapping sweeps are harmless.
  */
 const sweep = setInterval(() => {
-	const cutoff = Date.now() - WINDOW_MS;
-	for (const [tokenId, hits] of windows) {
-		const live = hits.filter((t) => t > cutoff);
-		if (live.length === 0) windows.delete(tokenId);
-		else windows.set(tokenId, live);
-	}
-}, WINDOW_MS);
+	db.execute(
+		sql`delete from rate_limit_window where window_start < now() - interval '2 minutes'`
+	).catch((err) => console.error('[ratelimit] sweep failed', err));
+}, 60_000);
 // don't keep the process alive just for the sweep
 if (typeof sweep === 'object' && 'unref' in sweep) sweep.unref();
+import.meta.hot?.dispose(() => clearInterval(sweep));

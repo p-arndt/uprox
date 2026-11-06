@@ -45,9 +45,9 @@ export async function checkAccess(
 		);
 	}
 
-	// rate limiting (in-memory, per token) — protects the gateway and upstream
-	// from runaway callers before we do any I/O.
-	const rl = checkRateLimit(token.tokenId, token.effective.rateLimitPerMinute);
+	// rate limiting (per token, shared across replicas via Postgres) — protects
+	// the gateway and upstream from runaway callers before any upstream I/O.
+	const rl = await checkRateLimit(token.tokenId, token.effective.rateLimitPerMinute);
 	if (!rl.ok) {
 		return reject(
 			ctx,

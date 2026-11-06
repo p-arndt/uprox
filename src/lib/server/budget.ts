@@ -37,8 +37,7 @@ export type BudgetScope = 'service' | 'token' | 'instance';
  * request is admitted, and reconcile it against the exact cost (via the audit
  * log) once the request completes and its reservation is released.
  *
- * Like the rate limiter (see ratelimit.ts), this lives in process memory: it's
- * a single-instance, best-effort guard that resets on restart and is not shared
+ * This lives in process memory: it's a single-instance, best-effort guard that resets on restart and is not shared
  * across replicas — an acceptable trade-off for the monolith MVP. When the
  * gateway is scaled horizontally, back these reservations with a shared store
  * (e.g. Redis) behind the same reserve/release signatures.
