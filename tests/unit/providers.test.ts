@@ -124,6 +124,14 @@ describe('authHeaders', () => {
 		expect(authHeaders(PROVIDERS.openai, 'sk-123')).toEqual({ authorization: 'Bearer sk-123' });
 	});
 
+	it('sends x-api-key and anthropic-version for Anthropic', () => {
+		expect(authHeaders(PROVIDERS.anthropic, 'sk-ant')).toEqual({
+			authorization: 'Bearer sk-ant',
+			'x-api-key': 'sk-ant',
+			'anthropic-version': '2023-06-01'
+		});
+	});
+
 	it('uses an api-key header for the api-key scheme (Azure)', () => {
 		expect(authHeaders(PROVIDERS.azure, 'azkey')).toEqual({ 'api-key': 'azkey' });
 	});

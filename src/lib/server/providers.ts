@@ -22,13 +22,15 @@ export interface ProviderDef {
 	capabilities: GatewayScope[];
 	/**
 	 * How the upstream authenticates. 'bearer' sends `Authorization: Bearer <key>`
-	 * (OpenAI, Anthropic); 'api-key' sends an `api-key: <key>` header (Azure);
+	 * (OpenAI); 'anthropic' sends the key as both Bearer and `x-api-key` plus the
+	 * `anthropic-version` header the native endpoints (e.g. `/v1/models`) require;
+	 * 'api-key' sends an `api-key: <key>` header (Azure);
 	 * 'google' sends an `x-goog-api-key: <key>` header (native Gemini API);
 	 * 'basic' sends `Authorization: Basic <base64(user:pass)>` (Ollama behind a
 	 * reverse proxy), with the stored secret holding `username:password`.
 	 * Defaults to 'bearer'.
 	 */
-	authScheme?: 'bearer' | 'api-key' | 'google' | 'basic';
+	authScheme?: 'bearer' | 'anthropic' | 'api-key' | 'google' | 'basic';
 	/**
 	 * When true the upstream needs no credential: the stored secret may be empty.
 	 * Used by self-hosted providers (Ollama) where auth is optional — a reverse
@@ -89,7 +91,8 @@ const PROVIDER_DEFS = {
 		// chat completions and model listing — no Responses API, no embeddings.
 		baseUrl: 'https://api.anthropic.com/v1',
 		modelPrefixes: ['claude-'],
-		capabilities: ['chat', 'models']
+		capabilities: ['chat', 'models'],
+		authScheme: 'anthropic'
 	},
 	gemini: {
 		id: 'gemini',
@@ -246,9 +249,20 @@ export function resolveBaseUrl(provider: ProviderDef, endpoint: string | null): 
 	return base;
 }
 
+/** Stable API version for Anthropic's native endpoints. */
+const ANTHROPIC_VERSION = '2023-06-01';
+
 /** Auth header(s) for an upstream request, per the provider's auth scheme. */
 export function authHeaders(provider: ProviderDef, apiKey: string): Record<string, string> {
 	switch (provider.authScheme) {
+		case 'anthropic':
+			// Chat completions (OpenAI-compatible) take Bearer; model listing is the
+			// native API, which wants x-api-key and rejects requests without a version.
+			return {
+				authorization: `Bearer ${apiKey}`,
+				'x-api-key': apiKey,
+				'anthropic-version': ANTHROPIC_VERSION
+			};
 		case 'api-key':
 			return { 'api-key': apiKey };
 		case 'google':
