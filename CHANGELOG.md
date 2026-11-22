@@ -4,6 +4,12 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.29.1 - 2026-11-22
+
+### Fixed
+
+- Anthropic keys now pass the connection test and model listing, which failed with anthropic-version: header is required.
+
 ## 0.29.0 - 2026-11-06
 
 ### Added
