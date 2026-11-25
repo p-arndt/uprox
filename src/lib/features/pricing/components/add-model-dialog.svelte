@@ -56,7 +56,7 @@
 {/snippet}
 
 <Dialog.Root bind:open>
-	<Dialog.Content>
+	<Dialog.Content class="max-h-[calc(100dvh-2rem)] overflow-y-auto">
 		<Dialog.Header>
 			<Dialog.Title>Add model price</Dialog.Title>
 			<Dialog.Description>Prices are in USD per 1,000,000 tokens.</Dialog.Description>
