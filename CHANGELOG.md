@@ -4,6 +4,20 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
 follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## 0.30.0 - 2026-11-25
+
+### Added
+
+- Backfill the cost of requests recorded without a price once their model has one, from the Model Prices page
+- Keep default model prices current from LiteLLM's public price list (daily; turn off with PRICE_SYNC=off)
+- Set a long-context threshold per model, so Claude Haiku 5.5 bills its higher rates above 100k prompt tokens
+- Refresh prices from LiteLLM on demand with a button on the Model Prices page
+
+### Fixed
+
+- Add or correct default prices for Claude Fable/Mythos 5.1–5.2, Sonnet 5.5, Haiku 5.5, GPT-6.1/6.2, GPT-5.6 Sol, GPT-4.1/o3 cache reads and Gemini 4
+
 ## 0.29.1 - 2026-11-22
 
 ### Fixed
