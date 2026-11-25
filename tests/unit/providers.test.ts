@@ -309,29 +309,53 @@ describe('costFromPrice with cache tokens', () => {
 	});
 });
 
+describe('per-model long-context threshold (Haiku 5.5: over 100k)', () => {
+	const haiku = DEFAULT_MODEL_PRICES['claude-haiku-5-5'];
+	assert(haiku);
+
+	it('bills exactly 100k prompt tokens on the standard card', () => {
+		expect(contextTierForPromptTokens(haiku, 100_000)).toBe('standard');
+		expect(costFromPrice(haiku, 100_000, 1_000)).toBe((100_000 * 0.1 + 1_000 * 0.5) / 1e6);
+	});
+
+	it('flips the whole request — cache traffic counted in the prompt — above 100k', () => {
+		expect(contextTierForPromptTokens(haiku, 100_001)).toBe('long');
+		// 150k prompt = 120k cache reads + 10k writes + 20k fresh, 1k out
+		expect(costFromPrice(haiku, 150_000, 1_000, 120_000, 10_000)).toBe(
+			Math.round(((20_000 * 0.5 + 120_000 * 0.05 + 10_000 * 0.625 + 1_000 * 2.5) / 1e6) * 1e8) / 1e8
+		);
+	});
+
+	it('keeps the 272k default for prices without their own threshold', () => {
+		const p = { in: 1, out: 1, longIn: 2 };
+		expect(contextTierForPromptTokens(p, LONG_CONTEXT_MIN_PROMPT_TOKENS - 1)).toBe('standard');
+		expect(contextTierForPromptTokens(p, LONG_CONTEXT_MIN_PROMPT_TOKENS)).toBe('long');
+	});
+});
+
 describe('long-context pricing', () => {
 	const sol = DEFAULT_MODEL_PRICES['gpt-5.6-sol'];
 	assert(sol);
 
 	it('bills the standard card right up to the threshold', () => {
-		// 1 token below: 271_999 @ $5/1M
+		// 1 token below: 271_999 @ $4/1M
 		expect(costFromPrice(sol, LONG_CONTEXT_MIN_PROMPT_TOKENS - 1, 0)).toBe(
-			((LONG_CONTEXT_MIN_PROMPT_TOKENS - 1) * 5) / 1e6
+			((LONG_CONTEXT_MIN_PROMPT_TOKENS - 1) * 4) / 1e6
 		);
 	});
 
 	it('flips the whole request — output included — at the threshold', () => {
-		// exactly at the threshold: input @ $10/1M and output @ $45/1M, not $5/$30
+		// exactly at the threshold: input @ $8/1M and output @ $30/1M, not $4/$20
 		expect(costFromPrice(sol, LONG_CONTEXT_MIN_PROMPT_TOKENS, 1_000)).toBe(
-			(LONG_CONTEXT_MIN_PROMPT_TOKENS * 10 + 1_000 * 45) / 1e6
+			(LONG_CONTEXT_MIN_PROMPT_TOKENS * 8 + 1_000 * 30) / 1e6
 		);
 	});
 
 	it('prices long-context cache traffic at the long rates', () => {
 		// 300k prompt = 200k cache reads + 50k cache writes + 50k fresh input
-		// 50k @ $10 + 200k @ $1 + 50k @ $12.50 + 1k out @ $45
+		// 50k @ $8 + 200k @ $0.80 + 50k @ $10 + 1k out @ $30
 		expect(costFromPrice(sol, 300_000, 1_000, 200_000, 50_000)).toBe(
-			(50_000 * 10 + 200_000 * 1 + 50_000 * 12.5 + 1_000 * 45) / 1e6
+			(50_000 * 8 + 200_000 * 0.8 + 50_000 * 10 + 1_000 * 30) / 1e6
 		);
 	});
 
@@ -405,6 +429,42 @@ describe('cache default prices', () => {
 			cacheRead: 0.2,
 			cacheWrite: 5
 		});
+		expect(DEFAULT_MODEL_PRICES['claude-fable-5-2']).toEqual({
+			in: 8,
+			out: 40,
+			cacheRead: 0.2,
+			cacheWrite: 10
+		});
+		expect(DEFAULT_MODEL_PRICES['claude-fable-5-1']).toEqual({
+			in: 10,
+			out: 50,
+			cacheRead: 0.25,
+			cacheWrite: 12.5
+		});
+		expect(DEFAULT_MODEL_PRICES['claude-sonnet-5-5']).toEqual({
+			in: 2,
+			out: 10,
+			cacheRead: 0.1,
+			cacheWrite: 2.5
+		});
+		expect(DEFAULT_MODEL_PRICES['claude-haiku-5-5']).toEqual({
+			in: 0.1,
+			out: 0.5,
+			cacheRead: 0.01,
+			cacheWrite: 0.125,
+			longIn: 0.5,
+			longOut: 2.5,
+			longCacheRead: 0.05,
+			longCacheWrite: 0.625,
+			longMinPromptTokens: 100_001
+		});
+		// point releases must not fall through to their base model's price
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'claude-fable-5-2')).toBe(
+			DEFAULT_MODEL_PRICES['claude-fable-5-2']
+		);
+		expect(resolvePrice(DEFAULT_MODEL_PRICES, 'gemini-3.5-flash-lite')).toBe(
+			DEFAULT_MODEL_PRICES['gemini-3.5-flash-lite']
+		);
 		expect(DEFAULT_MODEL_PRICES['claude-sonnet-5']).toEqual({
 			in: 2,
 			out: 10,
@@ -449,14 +509,14 @@ describe('cache default prices', () => {
 
 	it('seeds the GPT-5.6 tiers, which bill cache writes at 1.25× input', () => {
 		expect(DEFAULT_MODEL_PRICES['gpt-5.6-sol']).toEqual({
-			in: 5,
-			out: 30,
-			cacheRead: 0.5,
-			cacheWrite: 6.25,
-			longIn: 10,
-			longOut: 45,
-			longCacheRead: 1,
-			longCacheWrite: 12.5
+			in: 4,
+			out: 20,
+			cacheRead: 0.4,
+			cacheWrite: 5,
+			longIn: 8,
+			longOut: 30,
+			longCacheRead: 0.8,
+			longCacheWrite: 10
 		});
 		expect(DEFAULT_MODEL_PRICES['gpt-5.6-terra']).toEqual({
 			in: 2,
@@ -507,9 +567,9 @@ describe('cache default prices', () => {
 		const price = DEFAULT_MODEL_PRICES['gpt-5.6-sol'];
 		assert(price);
 		// prompt_tokens 10k = 6k cache reads + 3k cache writes + 1k fresh input.
-		// 1k @ $5 + 6k @ $0.5 + 3k @ $6.25 + 500 out @ $30
-		// = 5000 + 3000 + 18750 + 15000 = 41750 per 1M = $0.04175
-		expect(costFromPrice(price, 10_000, 500, 6_000, 3_000)).toBe(0.04175);
+		// 1k @ $4 + 6k @ $0.4 + 3k @ $5 + 500 out @ $20
+		// = 4000 + 2400 + 15000 + 10000 = 31400 per 1M = $0.0314
+		expect(costFromPrice(price, 10_000, 500, 6_000, 3_000)).toBe(0.0314);
 	});
 
 	it('bills a pre-5.6 OpenAI cache write as plain input, never at the 1.25× fallback', () => {

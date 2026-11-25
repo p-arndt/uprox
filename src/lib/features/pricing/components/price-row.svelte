@@ -4,6 +4,7 @@
 	import {
 		TIER_FIELDS,
 		tierValues,
+		longThresholdLabel,
 		type PriceRow,
 		type PriceTier
 	} from '$lib/features/pricing/pricing';
@@ -35,18 +36,20 @@
 	const field = $derived(TIER_FIELDS[tier]);
 	// The tier that isn't on screen still has to survive the round-trip, so its
 	// four rates ride along as hidden inputs — the actions submit the whole row.
+	// The long card's threshold isn't edited inline either, so it rides along too.
 	const hidden = $derived(
 		(Object.keys(TIER_FIELDS) as PriceTier[])
 			.filter((t) => t !== tier)
-			.flatMap((t) => {
+			.flatMap((t): (readonly [string, number | null])[] => {
 				const v = tierValues(price, t);
 				return [
 					[TIER_FIELDS[t].input, v.input],
 					[TIER_FIELDS[t].output, v.output],
 					[TIER_FIELDS[t].cacheRead, v.cacheRead],
 					[TIER_FIELDS[t].cacheWrite, v.cacheWrite]
-				] as const;
+				];
 			})
+			.concat([['longMinPromptTokens', price.longMinPromptTokens]])
 			.map(([name, v]) => ({ name, value: v == null ? '' : String(v) }))
 	);
 
@@ -84,7 +87,14 @@
 </script>
 
 <Table.Row class="group">
-	<Table.Cell class="font-medium">{price.model}</Table.Cell>
+	<Table.Cell class="font-medium">
+		{price.model}
+		{#if tier === 'long' && price.longInputPerMtok !== null && longThresholdLabel(price.longMinPromptTokens) !== longThresholdLabel()}
+			<span class="ml-1 text-xs font-normal text-muted-foreground">
+				from {longThresholdLabel(price.longMinPromptTokens)}
+			</span>
+		{/if}
+	</Table.Cell>
 	{#if showProvider}
 		<Table.Cell class="text-muted-foreground">{price.providerLabel}</Table.Cell>
 	{/if}

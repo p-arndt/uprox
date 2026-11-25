@@ -3,7 +3,7 @@
 	import * as Table from '$lib/components/ui/table/index.js';
 	import PriceRow from '$lib/features/pricing/components/price-row.svelte';
 	import type { TableState } from '$lib/state/table.svelte';
-	import { LONG_CONTEXT_MIN_PROMPT_TOKENS, type PriceTier } from '$lib/features/pricing/pricing';
+	import { longThresholdLabel, type PriceTier } from '$lib/features/pricing/pricing';
 	import Search from '@lucide/svelte/icons/search';
 	import ArrowUp from '@lucide/svelte/icons/arrow-up';
 	import ArrowDown from '@lucide/svelte/icons/arrow-down';
@@ -29,7 +29,7 @@
 		canManage: boolean;
 	} = $props();
 
-	const longThresholdLabel = `${Math.round(LONG_CONTEXT_MIN_PROMPT_TOKENS / 1000)}k`;
+	const defaultThreshold = longThresholdLabel();
 
 	// Only the active column carries aria-sort, so screen readers announce the
 	// one order that actually applies.
@@ -59,8 +59,8 @@
 {#if tier === 'long'}
 	<p class="text-xs text-muted-foreground">
 		Long-context rates bill the whole request — input, cache traffic and output — once its prompt
-		reaches {longThresholdLabel} tokens. Models showing “—” have a single rate card and always bill the
-		short-context prices.
+		reaches the model's threshold ({defaultThreshold} tokens unless noted next to the model). Models showing
+		“—” have a single rate card and always bill the short-context prices.
 	</p>
 {/if}
 

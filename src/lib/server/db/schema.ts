@@ -370,6 +370,10 @@ export const modelPrice = pgTable(
 		longOutputPerMtok: numeric('long_output_per_mtok', { precision: 12, scale: 4 }),
 		longCacheReadPerMtok: numeric('long_cache_read_per_mtok', { precision: 12, scale: 4 }),
 		longCacheWritePerMtok: numeric('long_cache_write_per_mtok', { precision: 12, scale: 4 }),
+		// Inclusive prompt size (tokens) at which the long card applies. NULL uses
+		// LONG_CONTEXT_MIN_PROMPT_TOKENS (OpenAI's 272k); Haiku 5.5, say, flips
+		// above 100k. Ignored while long_input_per_mtok is NULL.
+		longMinPromptTokens: integer('long_min_prompt_tokens'),
 		createdAt: timestamp('created_at').defaultNow().notNull(),
 		updatedAt: timestamp('updated_at')
 			.defaultNow()
@@ -449,7 +453,12 @@ export const auditLog = pgTable(
 			.where(sql`${t.action} like 'gateway.%'`),
 		// budget enforcement sums spend per service / per token since a day or month start
 		index('audit_log_service_created_idx').on(t.serviceId, t.createdAt),
-		index('audit_log_token_created_idx').on(t.tokenId, t.createdAt)
+		index('audit_log_token_created_idx').on(t.tokenId, t.createdAt),
+		// requests that reported usage but got no cost (their model had no price):
+		// the backlog the pricing page offers to backfill. Stays tiny once priced.
+		index('audit_log_unpriced_idx')
+			.on(t.model)
+			.where(sql`${t.costUsd} is null and ${t.inputTokens} is not null`)
 	]
 );
 

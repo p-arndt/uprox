@@ -8,7 +8,7 @@
  * cached in memory for a few seconds so the gateway doesn't hit the database on
  * every request; writes invalidate the cache immediately.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, notInArray, sql } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { modelPrice } from '$lib/server/db/schema';
 import { audit } from '$lib/server/audit';
@@ -90,11 +90,22 @@ export function invalidatePriceCache(): void {
  * of being frozen at whatever was seeded first. Instance overrides are separate
  * (isDefault = false) rows and are never touched here — the conflict target is
  * the default partial unique index.
+ *
+ * A full write (the default) also deletes default rows for models missing from
+ * `prices`, so the defaults are exactly the written map: turning the LiteLLM
+ * sync off drops its extra models again, as do models LiteLLM later removes.
+ *
+ * With `updateExisting: false` only models without a default row are inserted
+ * and nothing is deleted: used at startup on an instance that has synced
+ * before, so a restart doesn't roll synced prices back to the code list.
  */
-export async function seedDefaultModelPrices(): Promise<void> {
-	const rows = Object.entries(DEFAULT_MODEL_PRICES).map(([model, p]) => ({
+export async function seedDefaultModelPrices(
+	prices: Record<string, ModelPrice> = DEFAULT_MODEL_PRICES,
+	{ updateExisting = true }: { updateExisting?: boolean } = {}
+): Promise<void> {
+	const rows = Object.entries(prices).map(([model, p]) => ({
 		isDefault: true,
-		model,
+		model: model.toLowerCase(),
 		provider: providerForModel(model)?.id ?? null,
 		inputPerMtok: String(p.in),
 		outputPerMtok: String(p.out),
@@ -103,13 +114,18 @@ export async function seedDefaultModelPrices(): Promise<void> {
 		longInputPerMtok: p.longIn != null ? String(p.longIn) : null,
 		longOutputPerMtok: p.longOut != null ? String(p.longOut) : null,
 		longCacheReadPerMtok: p.longCacheRead != null ? String(p.longCacheRead) : null,
-		longCacheWritePerMtok: p.longCacheWrite != null ? String(p.longCacheWrite) : null
+		longCacheWritePerMtok: p.longCacheWrite != null ? String(p.longCacheWrite) : null,
+		longMinPromptTokens: p.longMinPromptTokens ?? null
 	}));
 	if (rows.length === 0) return;
-	await db
-		.insert(modelPrice)
-		.values(rows)
-		.onConflictDoUpdate({
+	const insert = db.insert(modelPrice).values(rows);
+	if (!updateExisting) {
+		await insert.onConflictDoNothing({
+			target: modelPrice.model,
+			where: eq(modelPrice.isDefault, true)
+		});
+	} else {
+		await insert.onConflictDoUpdate({
 			target: modelPrice.model,
 			targetWhere: eq(modelPrice.isDefault, true),
 			set: {
@@ -122,10 +138,35 @@ export async function seedDefaultModelPrices(): Promise<void> {
 				longOutputPerMtok: sql`excluded.long_output_per_mtok`,
 				longCacheReadPerMtok: sql`excluded.long_cache_read_per_mtok`,
 				longCacheWritePerMtok: sql`excluded.long_cache_write_per_mtok`,
+				longMinPromptTokens: sql`excluded.long_min_prompt_tokens`,
 				updatedAt: new Date()
 			}
 		});
+		await db.delete(modelPrice).where(
+			and(
+				eq(modelPrice.isDefault, true),
+				notInArray(
+					modelPrice.model,
+					rows.map((r) => r.model)
+				)
+			)
+		);
+	}
 	invalidatePriceCache();
+}
+
+/**
+ * Whether the defaults hold models beyond the built-in list — i.e. a LiteLLM
+ * sync has succeeded on this database (a code-list-only write prunes them).
+ */
+export async function hasSyncedDefaultPrices(): Promise<boolean> {
+	const codeModels = Object.keys(DEFAULT_MODEL_PRICES).map((m) => m.toLowerCase());
+	const [row] = await db
+		.select({ id: modelPrice.id })
+		.from(modelPrice)
+		.where(and(eq(modelPrice.isDefault, true), notInArray(modelPrice.model, codeModels)))
+		.limit(1);
+	return row != null;
 }
 
 /** All modelPrice rows for the instance (both defaults and custom overrides). */
@@ -155,7 +196,8 @@ export async function getEffectivePriceMap(): Promise<PriceMap> {
 		...(r.longInputPerMtok != null ? { longIn: Number(r.longInputPerMtok) } : {}),
 		...(r.longOutputPerMtok != null ? { longOut: Number(r.longOutputPerMtok) } : {}),
 		...(r.longCacheReadPerMtok != null ? { longCacheRead: Number(r.longCacheReadPerMtok) } : {}),
-		...(r.longCacheWritePerMtok != null ? { longCacheWrite: Number(r.longCacheWritePerMtok) } : {})
+		...(r.longCacheWritePerMtok != null ? { longCacheWrite: Number(r.longCacheWritePerMtok) } : {}),
+		...(r.longMinPromptTokens != null ? { longMinPromptTokens: r.longMinPromptTokens } : {})
 	});
 	const map: PriceMap = {};
 	// defaults first, then custom rows override any matching model
@@ -188,6 +230,8 @@ export interface EffectiveModelPrice {
 	longOutputPerMtok: number | null;
 	longCacheReadPerMtok: number | null;
 	longCacheWritePerMtok: number | null;
+	/** inclusive prompt-token threshold of the long card; null = the 272k default */
+	longMinPromptTokens: number | null;
 	/** 'custom' when the instance has its own row, else 'default' */
 	source: 'default' | 'custom';
 	/** the platform default beneath an override, if one exists */
@@ -199,6 +243,7 @@ export interface EffectiveModelPrice {
 	defaultLongOutputPerMtok: number | null;
 	defaultLongCacheReadPerMtok: number | null;
 	defaultLongCacheWritePerMtok: number | null;
+	defaultLongMinPromptTokens: number | null;
 }
 
 /**
@@ -234,6 +279,7 @@ export async function listEffectiveModelPrices(): Promise<EffectiveModelPrice[]>
 			longOutputPerMtok: num(eff.longOutputPerMtok),
 			longCacheReadPerMtok: num(eff.longCacheReadPerMtok),
 			longCacheWritePerMtok: num(eff.longCacheWritePerMtok),
+			longMinPromptTokens: eff.longMinPromptTokens ?? null,
 			source: o ? 'custom' : 'default',
 			defaultInputPerMtok: d ? Number(d.inputPerMtok) : null,
 			defaultOutputPerMtok: d ? Number(d.outputPerMtok) : null,
@@ -242,7 +288,8 @@ export async function listEffectiveModelPrices(): Promise<EffectiveModelPrice[]>
 			defaultLongInputPerMtok: d ? num(d.longInputPerMtok) : null,
 			defaultLongOutputPerMtok: d ? num(d.longOutputPerMtok) : null,
 			defaultLongCacheReadPerMtok: d ? num(d.longCacheReadPerMtok) : null,
-			defaultLongCacheWritePerMtok: d ? num(d.longCacheWritePerMtok) : null
+			defaultLongCacheWritePerMtok: d ? num(d.longCacheWritePerMtok) : null,
+			defaultLongMinPromptTokens: d?.longMinPromptTokens ?? null
 		};
 	});
 }
@@ -263,6 +310,8 @@ export interface ModelPriceInput {
 	longOutputPerMtok?: number | null;
 	longCacheReadPerMtok?: number | null;
 	longCacheWritePerMtok?: number | null;
+	/** inclusive long-card threshold in prompt tokens; omit/null = 272k default */
+	longMinPromptTokens?: number | null;
 }
 
 /** Serialize an optional numeric price to the DB's string|null column shape. */
@@ -289,7 +338,8 @@ export async function createOrgModelPrice(input: ModelPriceInput) {
 			longInputPerMtok: priceStr(input.longInputPerMtok),
 			longOutputPerMtok: priceStr(input.longOutputPerMtok),
 			longCacheReadPerMtok: priceStr(input.longCacheReadPerMtok),
-			longCacheWritePerMtok: priceStr(input.longCacheWritePerMtok)
+			longCacheWritePerMtok: priceStr(input.longCacheWritePerMtok),
+			longMinPromptTokens: input.longMinPromptTokens ?? null
 		})
 		.onConflictDoUpdate({
 			target: modelPrice.model,
@@ -305,6 +355,7 @@ export async function createOrgModelPrice(input: ModelPriceInput) {
 				longOutputPerMtok: priceStr(input.longOutputPerMtok),
 				longCacheReadPerMtok: priceStr(input.longCacheReadPerMtok),
 				longCacheWritePerMtok: priceStr(input.longCacheWritePerMtok),
+				longMinPromptTokens: input.longMinPromptTokens ?? null,
 				updatedAt: new Date()
 			}
 		})
@@ -333,6 +384,7 @@ export async function updateOrgModelPrice(
 		longOutputPerMtok?: number | null;
 		longCacheReadPerMtok?: number | null;
 		longCacheWritePerMtok?: number | null;
+		longMinPromptTokens?: number | null;
 	}
 ) {
 	const [row] = await db
@@ -358,6 +410,9 @@ export async function updateOrgModelPrice(
 				: {}),
 			...(patch.longCacheWritePerMtok !== undefined
 				? { longCacheWritePerMtok: priceStr(patch.longCacheWritePerMtok) }
+				: {}),
+			...(patch.longMinPromptTokens !== undefined
+				? { longMinPromptTokens: patch.longMinPromptTokens }
 				: {}),
 			updatedAt: new Date()
 		})

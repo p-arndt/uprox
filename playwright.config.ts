@@ -37,7 +37,9 @@ export default defineConfig({
 			...process.env,
 			POSTGRES_DB: TEST_DB,
 			E2E_DB: TEST_DB,
-			ORIGIN
+			ORIGIN,
+			// no outbound price fetches from tests: the pricing page must show the built-in list
+			PRICE_SYNC: 'off'
 		}
 	}
 });

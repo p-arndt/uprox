@@ -359,14 +359,17 @@ export interface ModelPrice {
 	cacheWrite?: number;
 	/**
 	 * Long-context rates, billed for a request whose prompt reaches
-	 * {@link LONG_CONTEXT_MIN_PROMPT_TOKENS}. All four are optional and only
-	 * `longIn` decides the tier applies at all: a price with no `longIn` bills
-	 * every request at the standard rates, which is what most models do.
+	 * `longMinPromptTokens` (default {@link LONG_CONTEXT_MIN_PROMPT_TOKENS}). All
+	 * are optional and only `longIn` decides the tier applies at all: a price with
+	 * no `longIn` bills every request at the standard rates, which is what most
+	 * models do.
 	 */
 	longIn?: number;
 	longOut?: number;
 	longCacheRead?: number;
 	longCacheWrite?: number;
+	/** Inclusive prompt-token threshold for the long card; unset = the 272k default. */
+	longMinPromptTokens?: number;
 }
 
 /**
@@ -426,9 +429,8 @@ const openai = (
 // Gemini charges a cache-read discount but no per-token cache-write surcharge on
 // its OpenAI-compatible surface (explicit caches are billed by storage time, not
 // tokens), so writes stay at the plain input rate. Cached reads are billed at an
-// explicit rate from the docs. Prices use the standard (≤200k-token) context
-// tier; long-context requests are billed higher upstream but priced here at the
-// base rate.
+// explicit rate from the docs. The Pro models bill prompts over 200k tokens on
+// a higher card, set per row; the Flash tiers have a single rate card.
 const gemini = (input: number, out: number, cacheRead: number): ModelPrice => ({
 	in: input,
 	out,
@@ -439,13 +441,18 @@ const gemini = (input: number, out: number, cacheRead: number): ModelPrice => ({
 export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	// OpenAI — GPT-6 series (released 2026-09; astra rolls out to a limited set of
 	// orgs first). Same shape as GPT-5.6: reads 0.1×, writes 1.25×, long-context card.
+	// GPT-6.1/6.2 cache reads at 0.05× input (GPT-6.0 keeps 0.1×).
+	'gpt-6.2-astra': openai(8, 40, 0.05, 1.25, true),
+	'gpt-6.2-sol': openai(2, 10, 0.05, 1.25, true),
+	'gpt-6.1-sol': openai(2, 10, 0.05, 1.25, true),
+	'gpt-6.1-terra': openai(1, 5, 0.05, 1.25, true),
 	'gpt-6-astra': openai(10, 50, 0.1, 1.25, true),
 	'gpt-6-sol': openai(2, 10, 0.1, 1.25, true),
 	'gpt-6-luna': openai(0.1, 0.5, 0.1, 1.25, true),
 	// OpenAI — GPT-5 series (most specific keys first, see lookup note below)
 	'gpt-5.6-luna': openai(0.2, 1.2, 0.1, 1.25, true),
 	'gpt-5.6-terra': openai(2, 12, 0.1, 1.25, true),
-	'gpt-5.6-sol': openai(5, 30, 0.1, 1.25, true),
+	'gpt-5.6-sol': openai(4, 20, 0.1, 1.25, true),
 	// the pro tiers list no cached-input rate at all — they don't discount cache
 	// traffic, so reads and writes both bill as plain input (readRatio 1).
 	'gpt-5.5-pro': openai(30, 180, 1, 1, true),
@@ -455,12 +462,20 @@ export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	'gpt-5.4-mini': openai(0.75, 4.5, 0.1),
 	'gpt-5.4-nano': openai(0.2, 1.25, 0.1),
 	'gpt-5.4': openai(2.5, 15, 0.1, 1, true),
-	// OpenAI — older models (GPT-4.x / o-series cache reads at ~0.5× input)
+	// older GPT-5 releases: single rate card, cache reads at 0.1×
+	'gpt-5.2-pro': openai(21, 168, 1),
+	'gpt-5.2': openai(1.75, 14, 0.1),
+	'gpt-5.1': openai(1.25, 10, 0.1),
+	'gpt-5-pro': openai(15, 120, 1),
+	'gpt-5-mini': openai(0.25, 2, 0.1),
+	'gpt-5-nano': openai(0.05, 0.4, 0.1),
+	'gpt-5': openai(1.25, 10, 0.1),
+	// OpenAI — older models (GPT-4o caches reads at 0.5× input, GPT-4.1 / o3 at 0.25×)
 	'gpt-4o': openai(2.5, 10, 0.5),
 	'gpt-4o-mini': openai(0.15, 0.6, 0.5),
-	'gpt-4.1': openai(2, 8, 0.5),
-	'gpt-4.1-mini': openai(0.4, 1.6, 0.5),
-	o3: openai(2, 8, 0.5),
+	'gpt-4.1': openai(2, 8, 0.25),
+	'gpt-4.1-mini': openai(0.4, 1.6, 0.25),
+	o3: openai(2, 8, 0.25),
 	// OpenAI — speech-to-text (token-billed models only). gpt-4o-transcribe and
 	// its mini report token usage, so they cost like a text model; `in` is the
 	// text-input rate (audio-input tokens aren't separable in the usage figure).
@@ -478,6 +493,10 @@ export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	// under-costed here. Cache reads run at 0.25× the input rate (0.1× on mini).
 	// dall-e-2/3 are billed per generated image, not per token, and report no
 	// usage at all — intentionally absent, so their requests carry a null cost.
+	'gpt-image-2.6-sunburst': openai(5, 30, 0.25),
+	'gpt-image-2.6-flare': openai(5, 30, 0.25),
+	'gpt-image-2.5-sunburst': openai(5, 30, 0.25),
+	'gpt-image-2.5-flare': openai(5, 30, 0.25),
 	'gpt-image-2': openai(5, 30, 0.25),
 	'gpt-image-1.5': openai(5, 32, 0.25),
 	'gpt-image-1-mini': openai(2, 8, 0.1),
@@ -486,11 +505,28 @@ export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	// OpenAI — embeddings (input-only; no output tokens and no prompt caching)
 	'text-embedding-3-small': { in: 0.02, out: 0 },
 	'text-embedding-3-large': { in: 0.13, out: 0 },
-	// Anthropic — Claude 5 series
+	// Anthropic — Claude 5 series. The 5.1+ Fable/Mythos tiers cache reads at
+	// 0.025× input, Opus/Sonnet 5.5 at 0.05×; everything else keeps 0.1×. The
+	// versioned keys must stay: without them prefix matching would bill e.g.
+	// claude-fable-5-2 at the claude-fable-5 rate.
+	'claude-fable-5-2': { ...anthropic(8, 40), cacheRead: 0.2 },
+	'claude-mythos-5-2': { ...anthropic(8, 40), cacheRead: 0.2 },
+	'claude-fable-5-1': { ...anthropic(10, 50), cacheRead: 0.25 },
+	'claude-mythos-5-1': { ...anthropic(10, 50), cacheRead: 0.25 },
 	'claude-fable-5': anthropic(10, 50),
 	'claude-mythos-5': anthropic(10, 50),
-	// Opus 5.5 breaks the 0.1× cache-read pattern: reads bill at 0.05× input.
 	'claude-opus-5-5': { ...anthropic(4, 20), cacheRead: 0.2 },
+	'claude-sonnet-5-5': { ...anthropic(2, 10), cacheRead: 0.1 },
+	// Haiku 5.5 bills a prompt *over* 100k tokens (cache reads/writes included)
+	// at 5× every rate — hence the inclusive threshold of 100_001.
+	'claude-haiku-5-5': {
+		...anthropic(0.1, 0.5),
+		longIn: 0.5,
+		longOut: 2.5,
+		longCacheRead: 0.05,
+		longCacheWrite: 0.625,
+		longMinPromptTokens: 100_001
+	},
 	'claude-opus-5': anthropic(5, 25),
 	// The launch "introductory" $2/$10 became the standard price; the announced
 	// rise to $3/$15 on 2026-09-01 was cancelled.
@@ -508,17 +544,42 @@ export const DEFAULT_MODEL_PRICES: Record<string, ModelPrice> = {
 	'claude-3-5-sonnet': anthropic(3, 15),
 	'claude-3-5-haiku': anthropic(0.8, 4),
 	'claude-sonnet-4': anthropic(3, 15),
+	// Google Gemini — Gemini 4 series. Carbon and Argon are on INTRODUCTORY pricing
+	// through 2026-11-30; from 2026-12-01 they double to $4 / $20 / $0.20.
+	'gemini-4-carbon': gemini(2, 10, 0.1),
+	'gemini-4-argon': gemini(2, 10, 0.1),
+	'gemini-4-neon': gemini(3, 15, 0.15),
+	'gemini-4-hydrogen': gemini(1.5, 7.5, 0.075),
 	// Google Gemini — current Gemini 3 series (cache reads at the docs' explicit rate)
-	// 3.7 and 3.6 Flash share one rate card and are on INTRODUCTORY pricing through
-	// 2026-12-31; on 2027-01-01 every rate doubles to $1.50 / $7.50 / $0.15, so both
-	// rows need updating then.
+	// 3.8, 3.7 and 3.6 Flash share one rate card and are on INTRODUCTORY pricing
+	// through 2026-12-31; on 2027-01-01 every rate doubles to $1.50 / $7.50 / $0.15,
+	// so these rows need updating then.
+	'gemini-3.8-flash': gemini(0.75, 3.75, 0.075),
 	'gemini-3.7-flash': gemini(0.75, 3.75, 0.075),
 	'gemini-3.6-flash': gemini(0.75, 3.75, 0.075),
+	// the -lite key must exist, or prefix matching bills it as gemini-3.5-flash
+	'gemini-3.5-flash-lite': gemini(0.3, 2.5, 0.03),
 	'gemini-3.5-flash': gemini(1.5, 9, 0.15),
-	'gemini-3.1-pro': gemini(2, 12, 0.2),
+	'gemini-3-flash': gemini(0.5, 3, 0.05),
+	// Gemini Pro bills prompts over 200k tokens on a higher card
+	'gemini-3.1-pro': {
+		...gemini(2, 12, 0.2),
+		longIn: 4,
+		longOut: 18,
+		longCacheRead: 0.4,
+		longCacheWrite: 4,
+		longMinPromptTokens: 200_001
+	},
 	'gemini-3.1-flash-lite': gemini(0.25, 1.5, 0.025),
 	// Google Gemini — 2.5 series (cache reads ~0.1× input)
-	'gemini-2.5-pro': gemini(1.25, 10, 0.125),
+	'gemini-2.5-pro': {
+		...gemini(1.25, 10, 0.125),
+		longIn: 2.5,
+		longOut: 15,
+		longCacheRead: 0.25,
+		longCacheWrite: 2.5,
+		longMinPromptTokens: 200_001
+	},
 	'gemini-2.5-flash-lite': gemini(0.1, 0.4, 0.01),
 	'gemini-2.5-flash': gemini(0.3, 2.5, 0.03),
 	// Google Gemini — embeddings (input-only; no output tokens, no prompt caching)
@@ -545,14 +606,15 @@ export type ContextTier = 'standard' | 'long';
  * rule, used both to pick the rates and to label the request.
  */
 export function contextTierForPromptTokens(price: ModelPrice, promptTokens: number): ContextTier {
-	return price.longIn != null && promptTokens >= LONG_CONTEXT_MIN_PROMPT_TOKENS
+	return price.longIn != null &&
+		promptTokens >= (price.longMinPromptTokens ?? LONG_CONTEXT_MIN_PROMPT_TOKENS)
 		? 'long'
 		: 'standard';
 }
 
 /**
  * The rate card a request of this prompt size bills against: the long-context
- * one once the prompt reaches {@link LONG_CONTEXT_MIN_PROMPT_TOKENS}, else the
+ * one once the prompt reaches its threshold (`longMinPromptTokens`, default {@link LONG_CONTEXT_MIN_PROMPT_TOKENS}), else the
  * standard one. Models without a long-context rate (`longIn` unset) always bill
  * standard. Within the long card an unset cache rate stays unset, so the
  * multiplier fallback below applies to the long input rate.

@@ -8,6 +8,11 @@
  */
 export const LONG_CONTEXT_MIN_PROMPT_TOKENS = 272_000;
 
+/** A long-card threshold as a compact label, e.g. 272_000 → "272k", 100_001 → "100k". */
+export function longThresholdLabel(minPromptTokens: number | null = null): string {
+	return `${Math.round((minPromptTokens ?? LONG_CONTEXT_MIN_PROMPT_TOKENS) / 1000)}k`;
+}
+
 /** A model price augmented with its resolved provider, the unit the table renders. */
 export interface PriceRow {
 	id: string | null;
@@ -21,6 +26,8 @@ export interface PriceRow {
 	longOutputPerMtok: number | null;
 	longCacheReadPerMtok: number | null;
 	longCacheWritePerMtok: number | null;
+	/** inclusive prompt-token threshold of the long card; null = LONG_CONTEXT_MIN_PROMPT_TOKENS */
+	longMinPromptTokens: number | null;
 	source: 'default' | 'custom';
 	defaultInputPerMtok: number | null;
 	defaultOutputPerMtok: number | null;
@@ -30,6 +37,7 @@ export interface PriceRow {
 	defaultLongOutputPerMtok: number | null;
 	defaultLongCacheReadPerMtok: number | null;
 	defaultLongCacheWritePerMtok: number | null;
+	defaultLongMinPromptTokens: number | null;
 	providerKey: string;
 	providerLabel: string;
 }

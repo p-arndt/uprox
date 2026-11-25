@@ -128,6 +128,23 @@ describe('parsePricingCreate', () => {
 		});
 	});
 
+	it('parses the long-context threshold as a positive integer, null to reset', () => {
+		const base = { model: 'm', inputPerMtok: 1, outputPerMtok: 1 };
+		expect(parsePricingCreate({ ...base, longMinPromptTokens: 100_001 })).toMatchObject({
+			longMinPromptTokens: 100_001
+		});
+		expect(parsePricingCreate({ ...base, longMinPromptTokens: null })).toMatchObject({
+			longMinPromptTokens: null
+		});
+		expect(parsePricingCreate(base)).not.toHaveProperty('longMinPromptTokens');
+		expect(apiError(() => parsePricingCreate({ ...base, longMinPromptTokens: 0 })).field).toBe(
+			'longMinPromptTokens'
+		);
+		expect(apiError(() => parsePricingCreate({ ...base, longMinPromptTokens: 1.5 })).field).toBe(
+			'longMinPromptTokens'
+		);
+	});
+
 	it('rejects missing or negative prices', () => {
 		expect(apiError(() => parsePricingCreate({ inputPerMtok: 1, outputPerMtok: 1 })).field).toBe(
 			'model'

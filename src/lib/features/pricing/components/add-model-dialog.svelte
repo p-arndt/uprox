@@ -5,11 +5,14 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
-	import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/features/pricing/pricing';
+	import {
+		LONG_CONTEXT_MIN_PROMPT_TOKENS,
+		longThresholdLabel
+	} from '$lib/features/pricing/pricing';
 	import SelectField from '$lib/components/form/select-field.svelte';
 	import FormError from '$lib/components/form/form-error.svelte';
 
-	const longThresholdLabel = `${Math.round(LONG_CONTEXT_MIN_PROMPT_TOKENS / 1000)}k`;
+	const defaultThreshold = longThresholdLabel();
 	const AUTO_READ = 'auto (0.1× input)';
 	const AUTO_WRITE = 'auto (1.25× input)';
 
@@ -115,9 +118,21 @@
 
 			<div class="space-y-3 rounded-lg border p-3">
 				<p class="text-xs text-muted-foreground">
-					Long context (optional) — rates billed for the whole request once its prompt reaches {longThresholdLabel}
-					tokens. Leave the input rate blank for models with a single rate card.
+					Long context (optional) — rates billed for the whole request once its prompt reaches the
+					threshold ({defaultThreshold} tokens unless set). Leave the input rate blank for models with
+					a single rate card.
 				</p>
+				<div class="space-y-2">
+					<Label for="longMinPromptTokens">Threshold (prompt tokens)</Label>
+					<Input
+						id="longMinPromptTokens"
+						name="longMinPromptTokens"
+						type="number"
+						step="1"
+						min="1"
+						placeholder={String(LONG_CONTEXT_MIN_PROMPT_TOKENS)}
+					/>
+				</div>
 				<div class="grid grid-cols-2 gap-4">
 					{@render rateField('longInputPerMtok', 'Input $ / 1M', 'none')}
 					{@render rateField('longOutputPerMtok', 'Output $ / 1M', 'none')}

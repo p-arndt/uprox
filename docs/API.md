@@ -207,18 +207,19 @@ Effective prices for every model: the custom row where one exists, otherwise the
 
 Creates the custom price for `model`, or replaces it if one exists.
 
-| Field                   | Type                  | Notes                                      |
-| ----------------------- | --------------------- | ------------------------------------------ |
-| `model`                 | string, required      | model name or prefix, lower-cased on write |
-| `provider`              | string, nullable      |                                            |
-| `inputPerMtok`          | number >= 0, required |                                            |
-| `outputPerMtok`         | number >= 0, required |                                            |
-| `cacheReadPerMtok`      | number >= 0, nullable | omitted: derived from the input price      |
-| `cacheWritePerMtok`     | number >= 0, nullable | omitted: derived from the input price      |
-| `longInputPerMtok`      | number >= 0, nullable | omitted: single rate card                  |
-| `longOutputPerMtok`     | number >= 0, nullable | long-context rate card                     |
-| `longCacheReadPerMtok`  | number >= 0, nullable | long-context rate card                     |
-| `longCacheWritePerMtok` | number >= 0, nullable | long-context rate card                     |
+| Field                   | Type                   | Notes                                                               |
+| ----------------------- | ---------------------- | ------------------------------------------------------------------- |
+| `model`                 | string, required       | model name or prefix, lower-cased on write                          |
+| `provider`              | string, nullable       |                                                                     |
+| `inputPerMtok`          | number >= 0, required  |                                                                     |
+| `outputPerMtok`         | number >= 0, required  |                                                                     |
+| `cacheReadPerMtok`      | number >= 0, nullable  | omitted: derived from the input price                               |
+| `cacheWritePerMtok`     | number >= 0, nullable  | omitted: derived from the input price                               |
+| `longInputPerMtok`      | number >= 0, nullable  | omitted: single rate card                                           |
+| `longOutputPerMtok`     | number >= 0, nullable  | long-context rate card                                              |
+| `longCacheReadPerMtok`  | number >= 0, nullable  | long-context rate card                                              |
+| `longCacheWritePerMtok` | number >= 0, nullable  | long-context rate card                                              |
+| `longMinPromptTokens`   | integer >= 1, nullable | prompt tokens at which the long card applies; omitted/null: 272,000 |
 
 Returns `201` with the price row.
 

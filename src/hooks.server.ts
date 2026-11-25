@@ -3,6 +3,7 @@ import { auth } from '$lib/server/auth';
 import { connectionOptions, db } from '$lib/server/db';
 import { gatewayError } from '$lib/server/gateway';
 import { seedDefaultModelPrices } from '$lib/server/pricing';
+import { priceSyncEnabled, seedDefaultsForSync, startPriceSync } from '$lib/server/price-sync';
 import { isSetupComplete } from '$lib/server/setup';
 import { redirect, text, type Handle } from '@sveltejs/kit';
 import { type ServerInit } from '@sveltejs/kit';
@@ -43,8 +44,14 @@ export const init: ServerInit = async () => {
 			console.log('Migrations completed successfully');
 
 			// Platform-default model prices live in code, not in a migration. Idempotent.
-			await seedDefaultModelPrices();
+			// With the LiteLLM sync on (started below, after the lock), an instance that
+			// has synced before keeps its synced prices instead of rolling back to the
+			// code list; see seedDefaultsForSync.
+			const syncPrices = priceSyncEnabled();
+			if (syncPrices) await seedDefaultsForSync();
+			else await seedDefaultModelPrices();
 			console.log('Default model prices seeded');
+			if (syncPrices && !building) startPriceSync();
 		} finally {
 			// Never mask the migration error; a dropped session frees the lock anyway.
 			await lockClient`SELECT pg_advisory_unlock(${MIGRATION_LOCK_KEY}::bigint)`.catch((error) =>

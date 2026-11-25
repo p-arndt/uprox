@@ -86,7 +86,9 @@ const VERBS: Record<string, string> = {
 	delete: 'deleted',
 	revoke: 'revoked',
 	reveal: 'revealed',
-	deny: 'denied'
+	deny: 'denied',
+	sync: 'synced',
+	backfill: 'backfilled'
 };
 
 /**

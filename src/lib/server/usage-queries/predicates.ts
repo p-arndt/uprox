@@ -3,7 +3,6 @@ import { eq, gte, lt, sql } from 'drizzle-orm';
 import { service, machineToken, auditLog } from '$lib/server/db/schema';
 import type { ResolvedRange } from '$lib/features/usage/range';
 import { NULL_VALUE, type UsageDimension, type UsageFilter } from '$lib/features/usage/group';
-import { LONG_CONTEXT_MIN_PROMPT_TOKENS } from '$lib/features/pricing/pricing';
 
 /**
  * The shared filter for the usage breakdowns: gateway traffic inside a resolved
@@ -84,7 +83,7 @@ export const DIMENSION_SQL: Record<
 		// fallbackLabel's "Unpriced" instead of being called Standard, which would
 		// quietly park denials and errors in a real rate card.
 		label: sql`max(case ${auditLog.contextTier} when 'long' then 'Long context' when 'standard' then 'Standard' end)`,
-		hint: sql`max(case ${auditLog.contextTier} when 'long' then ${`from ${LONG_CONTEXT_MIN_PROMPT_TOKENS / 1000}K prompt tokens`}::text end)`
+		hint: sql`max(case ${auditLog.contextTier} when 'long' then ${'over the model’s long-context threshold'}::text end)`
 	}
 };
 

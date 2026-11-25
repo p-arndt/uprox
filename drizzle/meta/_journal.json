@@ -148,6 +148,20 @@
       "when": 1793956287228,
       "tag": "0020_shared_rate_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1795641418644,
+      "tag": "0021_long_min_prompt_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1795644785155,
+      "tag": "0022_unpriced_requests_index",
+      "breakpoints": true
     }
   ]
 }

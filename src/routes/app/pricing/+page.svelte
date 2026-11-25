@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
+	import { enhance } from '$app/forms';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import PageHeader from '$lib/components/layout/page-header.svelte';
 	import PageShell from '$lib/components/layout/page-shell.svelte';
 	import EmptyState from '$lib/components/layout/empty-state.svelte';
 	import AddModelDialog from '$lib/features/pricing/components/add-model-dialog.svelte';
+	import UnpricedRequests from '$lib/features/pricing/components/unpriced-requests.svelte';
 	import { createTableState } from '$lib/state/table.svelte';
 	import {
 		providerTabs,
@@ -16,6 +18,7 @@
 	import { can } from '$lib/permissions';
 	import Coins from '@lucide/svelte/icons/coins';
 	import Plus from '@lucide/svelte/icons/plus';
+	import RefreshCw from '@lucide/svelte/icons/refresh-cw';
 	import PricingToolbar from './pricing-toolbar.svelte';
 	import PricingTable from './pricing-table.svelte';
 
@@ -28,7 +31,7 @@
 
 	let providerFilter = $state('all');
 	// Which rate card the four price columns show. Long context is what a request
-	// bills at once its prompt reaches LONG_CONTEXT_MIN_PROMPT_TOKENS; models
+	// bills at once its prompt reaches the model's threshold; models
 	// without one show "—" and bill the standard card at any size.
 	let tier = $state<PriceTier>('standard');
 
@@ -67,6 +70,7 @@
 	});
 
 	let addOpen = $state(false);
+	let refreshing = $state(false);
 	const addProvider = $derived(
 		providerFilter !== 'all' && providerFilter !== OTHER_PROVIDER_KEY ? providerFilter : ''
 	);
@@ -79,14 +83,50 @@
 			budgets. Platform defaults apply unless your organization sets its own price.
 		{/snippet}
 		{#snippet action()}
-			{#if canManage}
-				<Button onclick={() => (addOpen = true)}>
-					<Plus class="size-4" />
-					Add model
-				</Button>
-			{/if}
+			<div class="flex flex-wrap items-center gap-2">
+				{#if canManage && data.priceSync}
+					<form
+						method="post"
+						action="?/refresh"
+						use:enhance={() => {
+							refreshing = true;
+							return async ({ result, update }) => {
+								refreshing = false;
+								if (result.type === 'success') {
+									await update({ reset: false });
+									toast.success(
+										`Prices refreshed from LiteLLM (${result.data?.count ?? 0} models)`
+									);
+								} else if (result.type === 'failure') {
+									toast.error(String(result.data?.message ?? 'Price refresh failed'));
+								} else if (result.type === 'error') {
+									toast.error(result.error?.message ?? 'Price refresh failed');
+								}
+							};
+						}}
+					>
+						<Button
+							type="submit"
+							variant="outline"
+							disabled={refreshing}
+							title="Fetch the latest default prices from LiteLLM now (otherwise daily)"
+						>
+							<RefreshCw class={['size-4', refreshing && 'animate-spin']} />
+							{refreshing ? 'Refreshing…' : 'Refresh prices'}
+						</Button>
+					</form>
+				{/if}
+				{#if canManage}
+					<Button onclick={() => (addOpen = true)}>
+						<Plus class="size-4" />
+						Add model
+					</Button>
+				{/if}
+			</div>
 		{/snippet}
 	</PageHeader>
+
+	<UnpricedRequests unpriced={data.unpriced} {canManage} />
 
 	{#if data.prices.length === 0}
 		<EmptyState

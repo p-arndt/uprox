@@ -8,13 +8,18 @@ import {
 	deleteOrgModelPrice
 } from '$lib/server/pricing';
 import { PROVIDERS } from '$lib/server/providers';
+import { priceSyncEnabled, syncDefaultModelPrices } from '$lib/server/price-sync';
+import { audit } from '$lib/server/audit';
+import { backfillMissingCosts, unpricedSummary } from '$lib/server/cost-backfill';
 import { parseOptionalPrice, parsePrice } from '$lib/server/form';
 
 export const load: PageServerLoad = async (event) => {
 	await requireOrg(event);
 	return {
 		prices: await listEffectiveModelPrices(),
-		providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label }))
+		providers: Object.values(PROVIDERS).map((p) => ({ id: p.id, label: p.label })),
+		priceSync: priceSyncEnabled(),
+		unpriced: await unpricedSummary()
 	};
 };
 
@@ -42,6 +47,20 @@ function parseLongTier(data: FormData) {
 }
 
 /**
+ * The long card's prompt-token threshold: blank = the 272k default (null),
+ * otherwise a positive integer. Returns false when the value is invalid.
+ */
+function parseLongThreshold(value: FormDataEntryValue | null): number | null | false {
+	const s = value
+		?.toString()
+		.trim()
+		.replace(/[_,\s]/g, '');
+	if (!s) return null;
+	const n = Number(s);
+	return Number.isInteger(n) && n >= 1 ? n : false;
+}
+
+/**
  * Parse and validate the rate-card fields shared by create and update. Returns
  * the prices, or a validation message.
  */
@@ -56,6 +75,9 @@ function parsePriceForm(data: FormData) {
 		return { error: 'Cache prices must be non-negative numbers' } as const;
 	const long = parseLongTier(data);
 	if (long === null) return { error: 'Long-context prices must be non-negative numbers' } as const;
+	const longMinPromptTokens = parseLongThreshold(data.get('longMinPromptTokens'));
+	if (longMinPromptTokens === false)
+		return { error: 'Long-context threshold must be a positive whole number of tokens' } as const;
 	return {
 		prices: {
 			provider: data.get('provider')?.toString() || null,
@@ -63,7 +85,8 @@ function parsePriceForm(data: FormData) {
 			outputPerMtok,
 			cacheReadPerMtok,
 			cacheWritePerMtok,
-			...long
+			...long,
+			longMinPromptTokens
 		}
 	};
 }
@@ -89,6 +112,35 @@ export const actions: Actions = {
 		const row = await updateOrgModelPrice(id, parsed.prices);
 		if (!row) return fail(404, { action: 'update', message: 'Not found' });
 		return { action: 'update', success: true };
+	},
+	/** Pull the LiteLLM price list now instead of waiting for the daily sync. */
+	refresh: async (event) => {
+		await requirePermission(event, 'pricing:manage');
+		if (!priceSyncEnabled())
+			return fail(400, { action: 'refresh', message: 'Price sync is turned off (PRICE_SYNC=off)' });
+		const count = await syncDefaultModelPrices();
+		await audit({
+			action: 'pricing.sync',
+			status: count != null ? 'ok' : 'error',
+			detail: count != null ? `${count} prices from LiteLLM` : 'LiteLLM price list fetch failed'
+		});
+		if (count == null)
+			return fail(502, {
+				action: 'refresh',
+				message: 'Could not fetch the LiteLLM price list — current prices were kept'
+			});
+		return { action: 'refresh', success: true, count };
+	},
+	/** Cost the requests recorded without a price, now that their model has one. */
+	backfill: async (event) => {
+		await requirePermission(event, 'pricing:manage');
+		const count = await backfillMissingCosts();
+		await audit({
+			action: 'pricing.backfill',
+			status: 'ok',
+			detail: `${count} request costs backfilled`
+		});
+		return { action: 'backfill', success: true, count };
 	},
 	delete: async (event) => {
 		await requirePermission(event, 'pricing:manage');

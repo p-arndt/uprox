@@ -37,6 +37,12 @@ function nullableRates(body: JsonBody): NullableRates {
 	return rates;
 }
 
+/** The optional long-card threshold: a positive integer, or null to reset to the default. */
+function longThreshold(body: JsonBody): Pick<ModelPriceInput, 'longMinPromptTokens'> {
+	const v = optionalNumber(body, 'longMinPromptTokens', { integer: true, min: 1 });
+	return v === undefined ? {} : { longMinPromptTokens: v };
+}
+
 /** POST /api/pricing. Creates or replaces the custom price for `model`. */
 export function parsePricingCreate(body: JsonBody): ModelPriceInput {
 	return {
@@ -44,7 +50,8 @@ export function parsePricingCreate(body: JsonBody): ModelPriceInput {
 		provider: optionalString(body, 'provider') ?? null,
 		inputPerMtok: requiredNumber(body, 'inputPerMtok'),
 		outputPerMtok: requiredNumber(body, 'outputPerMtok'),
-		...nullableRates(body)
+		...nullableRates(body),
+		...longThreshold(body)
 	};
 }
 
@@ -57,7 +64,8 @@ export function parsePricingPatch(body: JsonBody): PricingPatch {
 		provider: optionalString(body, 'provider'),
 		inputPerMtok: optionalNumber(body, 'inputPerMtok', { nullable: false }),
 		outputPerMtok: optionalNumber(body, 'outputPerMtok', { nullable: false }),
-		...nullableRates(body)
+		...nullableRates(body),
+		...longThreshold(body)
 	});
 	requireSomeField(patch);
 	return patch;
